@@ -1,0 +1,21 @@
+data "aws_iam_policy_document" "{{ name }}_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["{{ service }}"]
+    }
+  }
+}
+
+resource "aws_iam_role" "{{ name }}" {
+  name               = "{{ name }}"
+  assume_role_policy = data.aws_iam_policy_document.{{ name }}_assume.json
+}
+{% for arn in policies %}
+resource "aws_iam_role_policy_attachment" "{{ name }}_{{ loop.index }}" {
+  role       = aws_iam_role.{{ name }}.name
+  policy_arn = "{{ arn }}"
+}
+{% endfor %}

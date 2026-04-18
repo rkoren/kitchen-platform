@@ -1,0 +1,19 @@
+data:
+  source: kaggle  # kaggle | local | s3
+  dataset: heart-disease-uci
+  target_col: target
+  test_size: 0.2
+  random_seed: 42
+
+features:
+  numeric_impute_strategy: median
+  categorical_impute_strategy: most_frequent
+  scale: true
+
+train:
+  model: xgboost  # xgboost | random_forest | logistic_regression
+  n_estimators: 100
+  max_depth: 6
+  learning_rate: 0.1
+  random_seed: 42
+  cv_folds: 5

@@ -1,0 +1,43 @@
+stages:
+  ingest:
+    cmd: python src/ingest/run.py
+    deps:
+      - src/ingest/run.py
+    params:
+      - params.yaml:
+          - data.source
+          - data.target_col
+    outs:
+      - data/raw/
+
+  features:
+    cmd: python src/features/run.py
+    deps:
+      - src/features/run.py
+      - data/raw/
+    params:
+      - params.yaml:
+          - features
+    outs:
+      - data/processed/
+
+  train:
+    cmd: python src/train/run.py
+    deps:
+      - src/train/run.py
+      - data/processed/
+    params:
+      - params.yaml:
+          - train
+    outs:
+      - models/
+
+  evaluate:
+    cmd: python src/evaluate/run.py
+    deps:
+      - src/evaluate/run.py
+      - models/
+      - data/processed/
+    metrics:
+      - metrics.json:
+          cache: false

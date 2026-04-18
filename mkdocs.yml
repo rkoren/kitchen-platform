@@ -1,0 +1,59 @@
+site_name: light-ml-platform
+site_description: IaC CLI and end-to-end MLOps pipeline for healthcare tabular data
+site_url: https://rkoren.github.io/light-ml-platform
+repo_url: https://github.com/rkoren/light-ml-platform
+repo_name: rkoren/light-ml-platform
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - recipes:
+    - Overview: recipes/index.md
+    - Quickstart: recipes/quickstart.md
+    - YAML Spec Reference: recipes/yaml-spec.md
+    - CI/CD Integration: recipes/ci-cd.md
+  - pipeline:
+    - Overview: pipeline/index.md
+    - Quickstart: pipeline/quickstart.md
+    - Data Versioning: pipeline/data-versioning.md
+    - Experiment Tracking: pipeline/experiment-tracking.md
+    - Model Serving: pipeline/model-serving.md
+    - Monitoring: pipeline/monitoring.md
+    - Orchestration: pipeline/orchestration.md

@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv*/
+venv/
+*.env
+
+# Test artifacts
+.coverage
+.pytest_cache/
+
+# Docs build output
+site/
+
+# DVC — ignore data directories, but commit .dvc pointer files
+/pipeline/data/
+/pipeline/mlruns/
+.dvcignore
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.terraform.lock.hcl
+
+# Evidently reports (generated artifacts)
+/pipeline/monitoring/*.html
+/pipeline/monitoring/*.json
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.pem
+*.key
+secrets/
+
+# Claude
+.claude
+CLAUDE.md

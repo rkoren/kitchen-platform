@@ -1,0 +1,22 @@
+resource "aws_lambda_function" "{{ name }}" {
+  function_name = "{{ name }}"
+  role          = aws_iam_role.{{ role }}.arn
+{% if image_uri %}
+  package_type = "Image"
+  image_uri    = "{{ image_uri }}"
+{% else %}
+  runtime = "{{ runtime }}"
+  handler = "{{ handler }}"
+{% endif %}
+  memory_size = {{ memory_mb }}
+  timeout     = {{ timeout_s }}
+{% if environment %}
+  environment {
+    variables = {
+{% for key, value in environment.items() %}
+      {{ key }} = "{{ value }}"
+{% endfor %}
+    }
+  }
+{% endif %}
+}

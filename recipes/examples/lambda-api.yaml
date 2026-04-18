@@ -1,0 +1,23 @@
+# Example spec: Lambda function with an S3 bucket and IAM role
+name: my-api
+region: us-east-1
+
+resources:
+  - type: s3
+    name: my-api-artifacts
+    versioning: true
+
+  - type: iam_role
+    name: my-api-exec
+    service: lambda.amazonaws.com
+    policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  - type: lambda
+    name: my-api
+    runtime: python3.11
+    handler: src.serve.app.handler
+    memory_mb: 512
+    timeout_s: 30
+    role: my-api-exec
+    image_uri: "123456789.dkr.ecr.us-east-1.amazonaws.com/my-api:latest"
