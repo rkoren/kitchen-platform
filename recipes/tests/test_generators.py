@@ -207,6 +207,36 @@ def test_lambda_role_reference_normalised():
     assert "aws_iam_role.my_exec_role.arn" in out
 
 
+def test_lambda_depends_on_generated_for_iam_role_policies():
+    role = IAMRoleSpec(
+        type="iam_role",
+        name="my-exec-role",
+        service="lambda.amazonaws.com",
+        policies=[
+            "arn:aws:iam::aws:policy/AWSLambdaBasicExecutionRole",
+            "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+        ],
+    )
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role")
+    out = lambda_generate(spec, all_resources=[role])
+    assert "depends_on" in out
+    assert "aws_iam_role_policy_attachment.my_exec_role_1" in out
+    assert "aws_iam_role_policy_attachment.my_exec_role_2" in out
+
+
+def test_lambda_no_depends_on_without_all_resources():
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role")
+    out = lambda_generate(spec)
+    assert "depends_on" not in out
+
+
+def test_lambda_no_depends_on_for_role_with_no_policies():
+    role = IAMRoleSpec(type="iam_role", name="my-exec-role", service="lambda.amazonaws.com")
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role")
+    out = lambda_generate(spec, all_resources=[role])
+    assert "depends_on" not in out
+
+
 # --- Dispatch ---
 
 def test_generate_resource_dispatches_s3():

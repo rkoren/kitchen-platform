@@ -35,7 +35,7 @@ def generate(
     _write_provider(spec.region, out_dir)
 
     for resource in spec.resources:
-        tf_content = generate_resource(resource)
+        tf_content = generate_resource(resource, all_resources=spec.resources)
         filename = f"{resource.type.replace('_', '-')}-{resource.name}.tf"
         tf_file = out_dir / filename
         tf_file.write_text(tf_content, encoding="utf-8")

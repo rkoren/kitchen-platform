@@ -22,4 +22,11 @@ resource "aws_lambda_function" "{{ name | tf_id }}" {
     }
   }
 {% endif %}
+{% if policy_count > 0 %}
+  depends_on = [
+{%- for i in range(1, policy_count + 1) %}
+    aws_iam_role_policy_attachment.{{ role | tf_id }}_{{ i }},
+{%- endfor %}
+  ]
+{% endif %}
 }
