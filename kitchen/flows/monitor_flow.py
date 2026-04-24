@@ -22,7 +22,7 @@ def upload_report(report):
     raise NotImplementedError
 
 
-@flow(name="monitor-pipeline")
+@flow(name="monitor")
 def monitor_pipeline():
     reference = load_reference_data()
     current = load_current_data()

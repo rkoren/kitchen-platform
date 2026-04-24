@@ -3,7 +3,7 @@ stages:
   ingest:
     cmd: python -m kitchen.ingest.run
     deps:
-      - pipeline/ingest/run.py
+      - kitchen/ingest/run.py
     params:
       - params.yaml:
           - data.source

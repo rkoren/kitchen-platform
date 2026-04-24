@@ -22,7 +22,7 @@ def evaluate_model():
     raise NotImplementedError
 
 
-@flow(name="train-pipeline")
+@flow(name="train")
 def train_pipeline():
     raw = ingest()
     processed = build_features(raw)
