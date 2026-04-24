@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pipeline"
+name = "kitchen"
 version = "0.1.0"
-description = "End-to-end MLOps pipeline for healthcare tabular data"
+description = "Reusable MLOps framework: data ingestion, experiment tracking, serving"
 requires-python = ">=3.11"
 dependencies = [
     # Data
@@ -21,11 +21,15 @@ dependencies = [
     # Serving
     "fastapi>=0.110",
     "uvicorn>=0.29",
-    "mangum>=0.17",         # FastAPI adapter for Lambda
+    "mangum>=0.17",
     # Monitoring
     "evidently>=0.4",
     # Orchestration
     "prefect>=2.19",
+    # Data ingestion
+    "kaggle>=1.6",
+    # Params
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -41,11 +45,11 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["kitchen"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=src --cov-report=term-missing"
+addopts = "-v --cov=kitchen --cov-report=term-missing"
 
 [tool.ruff]
 line-length = 100
