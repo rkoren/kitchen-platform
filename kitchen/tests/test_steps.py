@@ -1,6 +1,5 @@
 """Tests for FeatureBuilder, Trainer, and Evaluator contracts."""
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd

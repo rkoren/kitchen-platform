@@ -19,10 +19,16 @@ Project repos implement these and wire them into dvc.yaml stages:
 """
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from kitchen.store import DataStore
+    from kitchen.tracking import Tracker
 
 
 class FeatureBuilder(ABC):
@@ -32,11 +38,8 @@ class FeatureBuilder(ABC):
     def build(self, raw: pd.DataFrame) -> pd.DataFrame:
         """Return a processed DataFrame from raw input."""
 
-    def run(self, store: "DataStore", params: dict) -> None:
+    def run(self, store: DataStore, params: dict) -> None:
         """Load raw data, build features, persist to processed stage."""
-        from kitchen.store import DataStore  # avoid circular at module level
-
-        assert isinstance(store, DataStore)
         raw = store.load_csv(params.get("raw_file", "data.csv"))
         processed = self.build(raw)
         store.save_parquet(processed, params.get("processed_file", "features.parquet"))
@@ -49,16 +52,10 @@ class Trainer(ABC):
     def fit(self, df: pd.DataFrame, params: dict) -> object:
         """Train and return a model object."""
 
-    def run(self, store: "DataStore", tracker: "Tracker", params: dict) -> None:
+    def run(self, store: DataStore, tracker: Tracker, params: dict) -> object:
         """Load features, fit model, log to MLflow, save artifact."""
-        from kitchen.store import DataStore
-        from kitchen.tracking import Tracker
-
-        assert isinstance(store, DataStore)
-        assert isinstance(tracker, Tracker)
-
         df = store.load_parquet(params.get("processed_file", "features.parquet"))
-        with tracker.run(run_name=params.get("run_name"), params=params) as run:
+        with tracker.run(run_name=params.get("run_name"), params=params):
             model = self.fit(df, params)
             tracker.log_model(model, artifact_path="model")
             store.models_dir.mkdir(parents=True, exist_ok=True)
@@ -72,17 +69,10 @@ class Evaluator(ABC):
     def evaluate(self, model: object, df: pd.DataFrame) -> dict[str, float]:
         """Return a flat dict of metric_name -> value."""
 
-    def run(self, model: object, store: "DataStore", params: dict) -> dict[str, float]:
+    def run(self, model: object, store: DataStore, params: dict) -> dict[str, float]:
         """Load eval data, compute metrics, write metrics.json."""
-        import json
-
-        from kitchen.store import DataStore
-
-        assert isinstance(store, DataStore)
-
         df = store.load_parquet(params.get("processed_file", "features.parquet"))
         metrics = self.evaluate(model, df)
-
         metrics_path = Path(params.get("metrics_file", "metrics.json"))
         metrics_path.write_text(json.dumps(metrics, indent=2))
         return metrics
