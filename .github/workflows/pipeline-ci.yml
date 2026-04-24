@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build serving image
-        run: docker build -t pipeline-serve ./pipeline/src/serve
+        run: docker build -t pipeline-serve -f pipeline/src/serve/Dockerfile pipeline
 
   # Runs on pull requests — generate + plan only, no changes applied
   infra-plan:
