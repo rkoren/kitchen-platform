@@ -6,3 +6,18 @@ resource "aws_ecr_repository" "{{ name | tf_id }}" {
     scan_on_push = {{ scan_on_push | lower }}
   }
 }
+{% if lambda_access %}
+resource "aws_ecr_repository_policy" "{{ name | tf_id }}" {
+  repository = aws_ecr_repository.{{ name | tf_id }}.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "LambdaECRAccess"
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+    }]
+  })
+}
+{% endif %}

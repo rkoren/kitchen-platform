@@ -118,6 +118,20 @@ def test_ecr_immutable_tags():
     assert 'image_tag_mutability = "IMMUTABLE"' in out
 
 
+def test_ecr_no_lambda_policy_by_default():
+    spec = ECRSpec(type="ecr", name="my-repo")
+    out = ecr_generate(spec)
+    assert "aws_ecr_repository_policy" not in out
+
+
+def test_ecr_lambda_access_adds_repository_policy():
+    spec = ECRSpec(type="ecr", name="my-repo", lambda_access=True)
+    out = ecr_generate(spec)
+    assert "aws_ecr_repository_policy" in out
+    assert "lambda.amazonaws.com" in out
+    assert "ecr:BatchGetImage" in out
+
+
 # --- Lambda ---
 
 def test_lambda_image_uri():

@@ -22,6 +22,7 @@ class ECRSpec(BaseModel):
     name: str
     scan_on_push: bool = True
     image_tag_mutability: Literal["MUTABLE", "IMMUTABLE"] = "MUTABLE"
+    lambda_access: bool = False
 
 
 class LambdaSpec(BaseModel):

@@ -17,6 +17,7 @@ resources:
     name: pipeline-serve
     scan_on_push: true
     image_tag_mutability: MUTABLE
+    lambda_access: true
 
   # Lambda execution role
   - type: iam_role
