@@ -11,5 +11,6 @@ def test_health():
 
 
 def test_predict_not_implemented():
-    response = client.post("/predict", json={"feature": 1})
+    with TestClient(app, raise_server_exceptions=False) as c:
+        response = c.post("/predict", json={"feature": 1})
     assert response.status_code == 500
