@@ -14,7 +14,7 @@ recipes generate infra.yaml --out ./tf
 ### [`pipeline/`](pipeline/) — MLOps Pipeline
 ML pipeline for data (Kaggle competitions), covering data versioning, experiment tracking, model serving, drift monitoring, and orchestration.
 
-| Concern | Tool |
+| Component | Tool |
 |---|---|
 | Data versioning | DVC + S3 |
 | Experiment tracking | MLflow |
