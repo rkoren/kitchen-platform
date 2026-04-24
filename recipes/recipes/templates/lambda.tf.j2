@@ -16,9 +16,9 @@ resource "aws_lambda_function" "{{ name | tf_id }}" {
 {% if environment %}
   environment {
     variables = {
-{% for key, value in environment.items() %}
+{%- for key, value in environment.items() %}
       {{ key }} = "{{ value }}"
-{% endfor %}
+{%- endfor %}
     }
   }
 {% endif %}

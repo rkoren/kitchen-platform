@@ -55,3 +55,6 @@ secrets/
 # Claude
 .claude
 CLAUDE.md
+
+# Scripts
+scripts
