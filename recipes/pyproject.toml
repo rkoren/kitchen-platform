@@ -18,8 +18,8 @@ dependencies = [
 [project.scripts]
 recipes = "recipes.cli:app"
 
-[tool.hatch.envs.default]
-dependencies = [
+[project.optional-dependencies]
+dev = [
     "pytest>=8.0",
     "pytest-cov",
     "ruff",

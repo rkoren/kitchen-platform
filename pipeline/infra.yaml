@@ -1,0 +1,38 @@
+name: pipeline
+region: us-east-1
+
+resources:
+  # DVC remote — raw and processed datasets
+  - type: s3
+    name: pipeline-dvc-store
+    versioning: true
+
+  # MLflow artifact store — models, plots, metrics
+  - type: s3
+    name: pipeline-mlflow-artifacts
+    versioning: false
+
+  # Container registry for the serving image
+  - type: ecr
+    name: pipeline-serve
+    scan_on_push: true
+    image_tag_mutability: MUTABLE
+
+  # Lambda execution role
+  - type: iam_role
+    name: pipeline-lambda-exec
+    service: lambda.amazonaws.com
+    policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+  # Serving endpoint — references the ECR repo defined above
+  - type: lambda
+    name: pipeline-serve
+    role: pipeline-lambda-exec
+    ecr_repo: pipeline-serve
+    memory_mb: 1024
+    timeout_s: 30
+    environment:
+      DVC_BUCKET: pipeline-dvc-store
+      MLFLOW_BUCKET: pipeline-mlflow-artifacts

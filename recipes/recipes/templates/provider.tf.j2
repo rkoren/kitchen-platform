@@ -5,6 +5,10 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # Backend config is supplied at `terraform init` time via -backend-config flags.
+  # See: https://developer.hashicorp.com/terraform/language/settings/backends/configuration#partial-configuration
+  backend "s3" {}
 }
 
 provider "aws" {

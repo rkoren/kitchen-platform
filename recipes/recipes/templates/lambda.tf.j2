@@ -1,7 +1,10 @@
-resource "aws_lambda_function" "{{ name }}" {
+resource "aws_lambda_function" "{{ name | tf_id }}" {
   function_name = "{{ name }}"
-  role          = aws_iam_role.{{ role }}.arn
-{% if image_uri %}
+  role          = aws_iam_role.{{ role | tf_id }}.arn
+{% if ecr_repo %}
+  package_type = "Image"
+  image_uri    = "${aws_ecr_repository.{{ ecr_repo | tf_id }}.repository_url}:latest"
+{% elif image_uri %}
   package_type = "Image"
   image_uri    = "{{ image_uri }}"
 {% else %}

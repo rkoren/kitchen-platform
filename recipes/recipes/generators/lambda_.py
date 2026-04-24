@@ -9,6 +9,7 @@ _env = Environment(
     loader=FileSystemLoader(Path(__file__).parent.parent / "templates"),
     keep_trailing_newline=True,
 )
+_env.filters["tf_id"] = lambda s: s.replace("-", "_")
 
 
 def generate(spec: LambdaSpec) -> str:

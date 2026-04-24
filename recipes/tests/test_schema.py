@@ -2,7 +2,7 @@
 import pytest
 from pydantic import ValidationError
 
-from recipes.schema import IAMRoleSpec, LambdaSpec, RecipeSpec, S3Spec
+from recipes.schema import ECRSpec, IAMRoleSpec, LambdaSpec, RecipeSpec, S3Spec
 
 FULL_SPEC = {
     "name": "my-api",
@@ -15,11 +15,12 @@ FULL_SPEC = {
             "service": "lambda.amazonaws.com",
             "policies": ["arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"],
         },
+        {"type": "ecr", "name": "my-repo"},
         {
             "type": "lambda",
             "name": "my-function",
             "role": "my-exec",
-            "image_uri": "123456789.dkr.ecr.us-east-1.amazonaws.com/my-api:latest",
+            "ecr_repo": "my-repo",
             "memory_mb": 512,
             "timeout_s": 30,
         },
@@ -30,14 +31,15 @@ FULL_SPEC = {
 def test_full_spec_parses():
     spec = RecipeSpec.model_validate(FULL_SPEC)
     assert spec.name == "my-api"
-    assert len(spec.resources) == 3
+    assert len(spec.resources) == 4
 
 
 def test_resource_types_discriminated():
     spec = RecipeSpec.model_validate(FULL_SPEC)
     assert isinstance(spec.resources[0], S3Spec)
     assert isinstance(spec.resources[1], IAMRoleSpec)
-    assert isinstance(spec.resources[2], LambdaSpec)
+    assert isinstance(spec.resources[2], ECRSpec)
+    assert isinstance(spec.resources[3], LambdaSpec)
 
 
 def test_region_default():
@@ -62,13 +64,39 @@ def test_iam_role_policies_default_empty():
     assert spec.policies == []
 
 
+def test_ecr_defaults():
+    spec = ECRSpec.model_validate({"type": "ecr", "name": "my-repo"})
+    assert spec.scan_on_push is True
+    assert spec.image_tag_mutability == "MUTABLE"
+
+
+def test_ecr_immutable():
+    spec = ECRSpec.model_validate(
+        {"type": "ecr", "name": "my-repo", "image_tag_mutability": "IMMUTABLE"}
+    )
+    assert spec.image_tag_mutability == "IMMUTABLE"
+
+
+def test_ecr_invalid_mutability_raises():
+    with pytest.raises(ValidationError):
+        ECRSpec.model_validate({"type": "ecr", "name": "x", "image_tag_mutability": "INVALID"})
+
+
 def test_lambda_defaults():
     spec = LambdaSpec.model_validate({"type": "lambda", "name": "fn", "role": "my-role"})
     assert spec.memory_mb == 128
     assert spec.timeout_s == 3
     assert spec.environment == {}
     assert spec.image_uri is None
+    assert spec.ecr_repo is None
     assert spec.runtime is None
+
+
+def test_lambda_ecr_repo_field():
+    spec = LambdaSpec.model_validate(
+        {"type": "lambda", "name": "fn", "role": "r", "ecr_repo": "my-repo"}
+    )
+    assert spec.ecr_repo == "my-repo"
 
 
 def test_missing_name_raises():

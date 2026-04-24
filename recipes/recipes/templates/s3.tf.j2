@@ -1,9 +1,9 @@
-resource "aws_s3_bucket" "{{ name }}" {
+resource "aws_s3_bucket" "{{ name | tf_id }}" {
   bucket = "{{ name }}"
 }
 {% if versioning %}
-resource "aws_s3_bucket_versioning" "{{ name }}" {
-  bucket = aws_s3_bucket.{{ name }}.id
+resource "aws_s3_bucket_versioning" "{{ name | tf_id }}" {
+  bucket = aws_s3_bucket.{{ name | tf_id }}.id
 
   versioning_configuration {
     status = "Enabled"

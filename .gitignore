@@ -25,7 +25,8 @@ site/
 mlruns/
 mlartifacts/
 
-# Terraform
+# Terraform — generated output and state (never commit state)
+pipeline/tf/
 **/.terraform/
 *.tfstate
 *.tfstate.backup

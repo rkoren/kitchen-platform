@@ -46,8 +46,8 @@ def test_generate_creates_resource_tf_files(tmp_path):
     spec.write_text(VALID_SPEC)
     out = tmp_path / "tf"
     runner.invoke(app, ["generate", str(spec), "--out", str(out)])
-    assert (out / "test-bucket.tf").exists()
-    assert (out / "test-role.tf").exists()
+    assert (out / "s3-test-bucket.tf").exists()
+    assert (out / "iam-role-test-role.tf").exists()
 
 
 def test_generate_creates_output_dir(tmp_path):

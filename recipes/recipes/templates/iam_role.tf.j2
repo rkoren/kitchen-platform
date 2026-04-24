@@ -1,4 +1,4 @@
-data "aws_iam_policy_document" "{{ name }}_assume" {
+data "aws_iam_policy_document" "{{ name | tf_id }}_assume" {
   statement {
     actions = ["sts:AssumeRole"]
 
@@ -9,13 +9,13 @@ data "aws_iam_policy_document" "{{ name }}_assume" {
   }
 }
 
-resource "aws_iam_role" "{{ name }}" {
+resource "aws_iam_role" "{{ name | tf_id }}" {
   name               = "{{ name }}"
-  assume_role_policy = data.aws_iam_policy_document.{{ name }}_assume.json
+  assume_role_policy = data.aws_iam_policy_document.{{ name | tf_id }}_assume.json
 }
 {% for arn in policies %}
-resource "aws_iam_role_policy_attachment" "{{ name }}_{{ loop.index }}" {
-  role       = aws_iam_role.{{ name }}.name
+resource "aws_iam_role_policy_attachment" "{{ name | tf_id }}_{{ loop.index }}" {
+  role       = aws_iam_role.{{ name | tf_id }}.name
   policy_arn = "{{ arn }}"
 }
 {% endfor %}

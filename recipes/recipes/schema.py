@@ -17,6 +17,13 @@ class IAMRoleSpec(BaseModel):
     policies: list[str] = []
 
 
+class ECRSpec(BaseModel):
+    type: Literal["ecr"]
+    name: str
+    scan_on_push: bool = True
+    image_tag_mutability: Literal["MUTABLE", "IMMUTABLE"] = "MUTABLE"
+
+
 class LambdaSpec(BaseModel):
     type: Literal["lambda"]
     name: str
@@ -26,11 +33,12 @@ class LambdaSpec(BaseModel):
     memory_mb: int = 128
     timeout_s: int = 3
     image_uri: str | None = None
+    ecr_repo: str | None = None  # logical name of an ecr resource; generates a TF reference
     environment: dict[str, str] = {}
 
 
 ResourceSpec = Annotated[
-    Union[S3Spec, IAMRoleSpec, LambdaSpec],
+    Union[S3Spec, IAMRoleSpec, ECRSpec, LambdaSpec],
     Field(discriminator="type"),
 ]
 

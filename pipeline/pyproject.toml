@@ -28,13 +28,16 @@ dependencies = [
     "prefect>=2.19",
 ]
 
-[tool.hatch.envs.default]
-dependencies = [
+[project.optional-dependencies]
+dev = [
     "pytest>=8.0",
     "pytest-cov",
-    "httpx",               # FastAPI test client
+    "httpx",
     "ruff",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
