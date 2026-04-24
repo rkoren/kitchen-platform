@@ -6,10 +6,13 @@ on:
     paths:
       - "kitchen/**"
       - "recipes/**"
+      - ".github/workflows/kitchen-ci.yml"
   pull_request:
     paths:
       - "kitchen/**"
       - "recipes/**"
+      - ".github/workflows/kitchen-ci.yml"
+  workflow_dispatch:
 
 jobs:
   test:
