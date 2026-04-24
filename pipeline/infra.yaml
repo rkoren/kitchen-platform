@@ -25,6 +25,7 @@ resources:
     policies:
       - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
 
   # Serving endpoint — references the ECR repo defined above
   - type: lambda
