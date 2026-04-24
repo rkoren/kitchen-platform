@@ -37,7 +37,7 @@ jobs:
 
   docker-build:
     runs-on: ubuntu-latest
-    needs: test
+    needs: infra-apply
     if: github.ref == 'refs/heads/main'
 
     permissions:
@@ -112,7 +112,7 @@ jobs:
 
   infra-apply:
     runs-on: ubuntu-latest
-    needs: [test, docker-build]
+    needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     permissions:
