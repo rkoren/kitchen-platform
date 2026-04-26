@@ -179,6 +179,55 @@ jobs:
             -backend-config="key=${{ inputs.tf-state-key }}" \
             -backend-config="region=${{ inputs.aws-region }}"
 
+      # Lambda requires an image in ECR at creation time.
+      # On first bootstrap the image doesn't exist yet — continue-on-error
+      # allows docker-build to proceed; lambda-deploy finishes the apply.
+      - name: Terraform Apply
+        working-directory: tf
+        run: terraform apply -auto-approve
+        continue-on-error: true
+
+  lambda-deploy:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+
+      - name: Install recipes
+        run: pip install "recipes @ git+https://github.com/rkoren/light-ml-platform#subdirectory=recipes"
+
+      - name: Generate Terraform
+        run: recipes generate ${{ inputs.infra-spec }} --out tf
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Terraform Init
+        working-directory: tf
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ inputs.tf-state-key }}" \
+            -backend-config="region=${{ inputs.aws-region }}"
+
       - name: Terraform Apply
         working-directory: tf
         run: terraform apply -auto-approve
