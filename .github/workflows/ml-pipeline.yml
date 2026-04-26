@@ -35,6 +35,10 @@ on:
       aws-region:
         type: string
         default: "us-east-1"
+      cov-package:
+        type: string
+        default: ""
+        description: "Package name to pass to --cov (e.g. 'src'). Leave empty to skip coverage."
     secrets:
       AWS_ROLE_ARN:
         required: true
@@ -53,13 +57,18 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev]" pytest-cov
 
       - name: Lint
         run: ruff check .
 
       - name: Test
-        run: pytest tests/ -v
+        run: |
+          COV_FLAG=""
+          if [ -n "${{ inputs.cov-package }}" ]; then
+            COV_FLAG="--cov=${{ inputs.cov-package }}"
+          fi
+          pytest tests/ -v $COV_FLAG
 
   docker-build:
     runs-on: ubuntu-latest

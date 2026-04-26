@@ -23,7 +23,7 @@ dependencies = [
     "uvicorn>=0.29",
     "mangum>=0.17",
     # Monitoring
-    "evidently>=0.4",
+    "evidently>=0.7",
     # Orchestration
     "prefect>=2.19",
     # Data ingestion

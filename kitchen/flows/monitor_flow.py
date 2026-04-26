@@ -1,9 +1,9 @@
 import boto3
 import pandas as pd
 import yaml
-from evidently import ColumnMapping
-from evidently.metric_preset import DataDriftPreset
-from evidently.report import Report
+from evidently.legacy.pipeline.column_mapping import ColumnMapping
+from evidently.legacy.metric_preset import DataDriftPreset
+from evidently.legacy.report import Report
 from prefect import flow, task
 
 from kitchen.store import DataStore
