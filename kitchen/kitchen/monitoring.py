@@ -31,6 +31,7 @@ class DriftReport:
         numerical: list[str] | None = None,
         categorical: list[str] | None = None,
     ) -> None:
+        """Prepare a drift report. Column mapping is only built when at least one column arg is given."""
         self.reference = reference
         self.current = current
         self._column_mapping: ColumnMapping | None = None
@@ -43,6 +44,7 @@ class DriftReport:
         self._report: Report | None = None
 
     def run(self) -> DriftReport:
+        """Compute the drift report. Returns self so calls can be chained."""
         self._report = Report(metrics=[DataDriftPreset()])
         self._report.run(
             reference_data=self.reference,
@@ -52,11 +54,13 @@ class DriftReport:
         return self
 
     def as_html(self) -> str:
+        """Render the report as an HTML string. Requires run() first."""
         if self._report is None:
             raise RuntimeError("Call run() before as_html()")
         return self._report.get_html()
 
     def upload(self, bucket: str, key: str) -> str:
+        """Upload the HTML report to S3 and return the s3:// URI."""
         html = self.as_html()
         boto3.client("s3").put_object(
             Bucket=bucket,

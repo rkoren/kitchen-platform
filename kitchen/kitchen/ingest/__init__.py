@@ -23,6 +23,7 @@ class KaggleSource(IngestSource):
         self.competition = competition
 
     def download(self, out_dir: Path) -> list[str]:
+        """Download competition files, extract zips, and return filenames written."""
         import kaggle
 
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -46,6 +47,7 @@ class S3Source(IngestSource):
         self.prefix = prefix
 
     def download(self, out_dir: Path) -> list[str]:
+        """Page through the prefix, download each object, and return filenames written."""
         out_dir.mkdir(parents=True, exist_ok=True)
         s3 = boto3.client("s3")
         paginator = s3.get_paginator("list_objects_v2")
@@ -65,6 +67,7 @@ class LocalSource(IngestSource):
         self.src_dir = Path(src_dir)
 
     def download(self, out_dir: Path) -> list[str]:
+        """Copy all files from src_dir into out_dir and return filenames written."""
         out_dir.mkdir(parents=True, exist_ok=True)
         copied: list[str] = []
         for f in sorted(self.src_dir.iterdir()):

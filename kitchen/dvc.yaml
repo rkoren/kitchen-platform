@@ -2,8 +2,6 @@ stages:
   # Framework-provided: downloads raw data based on params.yaml[data.source]
   ingest:
     cmd: python -m kitchen.ingest.run
-    deps:
-      - kitchen/ingest/run.py
     params:
       - params.yaml:
           - data.source

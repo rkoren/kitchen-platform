@@ -38,6 +38,7 @@ def _flatten(d: dict, prefix: str = "") -> dict[str, Any]:
 
 class Tracker:
     def __init__(self, experiment: str, tracking_uri: str | None = None) -> None:
+        """Set the MLflow experiment, optionally pointing at a remote tracking server."""
         if tracking_uri:
             mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
@@ -48,6 +49,7 @@ class Tracker:
         run_name: str | None = None,
         params: dict | None = None,
     ) -> Generator[mlflow.ActiveRun, None, None]:
+        """Context manager that starts an MLflow run and logs flattened params on entry."""
         with mlflow.start_run(run_name=run_name) as active_run:
             if params:
                 mlflow.log_params(_flatten(params))
@@ -55,10 +57,12 @@ class Tracker:
 
     @staticmethod
     def log_metrics(metrics: dict[str, float], step: int | None = None) -> None:
+        """Log a dict of scalar metrics to the active MLflow run."""
         mlflow.log_metrics(metrics, step=step)
 
     @staticmethod
     def log_model(model: Any, artifact_path: str, flavour: str = "sklearn") -> None:
+        """Persist a model artifact using the named MLflow flavour (sklearn, xgboost, pyfunc)."""
         mod = _FLAVOURS.get(flavour)
         if mod is None:
             raise ValueError(f"Unknown flavour: {flavour!r}. Choose from: {list(_FLAVOURS)}")

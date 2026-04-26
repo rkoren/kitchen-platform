@@ -13,4 +13,5 @@ _env.filters["tf_id"] = lambda s: s.replace("-", "_")
 
 
 def generate(spec: S3Spec) -> str:
+    """Render s3.tf.j2 for the given spec and return the Terraform HCL string."""
     return _env.get_template("s3.tf.j2").render(spec.model_dump())

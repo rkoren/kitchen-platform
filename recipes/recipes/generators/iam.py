@@ -13,4 +13,5 @@ _env.filters["tf_id"] = lambda s: s.replace("-", "_")
 
 
 def generate(spec: IAMRoleSpec) -> str:
+    """Render iam_role.tf.j2 for the given spec and return the Terraform HCL string."""
     return _env.get_template("iam_role.tf.j2").render(spec.model_dump())

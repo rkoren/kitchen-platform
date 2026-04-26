@@ -13,6 +13,7 @@ _env.filters["tf_id"] = lambda s: s.replace("-", "_")
 
 
 def generate(spec: LambdaSpec, all_resources: list = None) -> str:
+    """Render lambda.tf.j2, injecting the policy_count needed for depends_on IAM propagation."""
     role_spec = next(
         (r for r in (all_resources or []) if isinstance(r, IAMRoleSpec) and r.name == spec.role),
         None,
