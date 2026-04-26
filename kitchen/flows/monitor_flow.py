@@ -1,4 +1,5 @@
 import boto3
+import pandas as pd
 import yaml
 from evidently import ColumnMapping
 from evidently.metric_preset import DataDriftPreset
@@ -9,19 +10,19 @@ from kitchen.store import DataStore
 
 
 @task(name="load-reference")
-def load_reference_data(store: DataStore, filename: str) -> "pd.DataFrame":
+def load_reference_data(store: DataStore, filename: str) -> pd.DataFrame:
     return store.load_parquet(filename, stage="processed")
 
 
 @task(name="load-current")
-def load_current_data(store: DataStore, filename: str) -> "pd.DataFrame":
+def load_current_data(store: DataStore, filename: str) -> pd.DataFrame:
     return store.load_parquet(filename, stage="processed")
 
 
 @task(name="drift-report")
 def run_drift_report(
-    reference: "pd.DataFrame",
-    current: "pd.DataFrame",
+    reference: pd.DataFrame,
+    current: pd.DataFrame,
     column_mapping: ColumnMapping | None = None,
 ) -> Report:
     report = Report(metrics=[DataDriftPreset()])
