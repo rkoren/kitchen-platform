@@ -1,41 +1,28 @@
-import boto3
-import pandas as pd
 import yaml
-from evidently.legacy.pipeline.column_mapping import ColumnMapping
-from evidently.legacy.metric_preset import DataDriftPreset
-from evidently.legacy.report import Report
 from prefect import flow, task
 
+from kitchen.monitoring import DriftReport
 from kitchen.store import DataStore
 
 
 @task(name="load-reference")
-def load_reference_data(store: DataStore, filename: str) -> pd.DataFrame:
+def load_reference_data(store: DataStore, filename: str) -> object:
     return store.load_parquet(filename, stage="processed")
 
 
 @task(name="load-current")
-def load_current_data(store: DataStore, filename: str) -> pd.DataFrame:
+def load_current_data(store: DataStore, filename: str) -> object:
     return store.load_parquet(filename, stage="processed")
 
 
 @task(name="drift-report")
-def run_drift_report(
-    reference: pd.DataFrame,
-    current: pd.DataFrame,
-    column_mapping: ColumnMapping | None = None,
-) -> Report:
-    report = Report(metrics=[DataDriftPreset()])
-    report.run(reference_data=reference, current_data=current, column_mapping=column_mapping)
-    return report
+def run_drift_report(reference: object, current: object) -> DriftReport:
+    return DriftReport(reference, current).run()
 
 
 @task(name="upload-report")
-def upload_report(report: Report, bucket: str, key: str) -> str:
-    html = report.get_html()
-    s3 = boto3.client("s3")
-    s3.put_object(Bucket=bucket, Key=key, Body=html.encode(), ContentType="text/html")
-    return f"s3://{bucket}/{key}"
+def upload_report(report: DriftReport, bucket: str, key: str) -> str:
+    return report.upload(bucket, key)
 
 
 @flow(name="monitor")
