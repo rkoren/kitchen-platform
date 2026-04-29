@@ -193,7 +193,7 @@ def test_lambda_zip_runtime_and_handler():
 
 
 def test_lambda_memory_and_timeout():
-    spec = LambdaSpec(type="lambda", name="my-fn", role="my-role", memory_mb=512, timeout_s=30)
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-role", memory=512, timeout=30)
     out = lambda_generate(spec)
     assert "memory_size = 512" in out
     assert "timeout     = 30" in out

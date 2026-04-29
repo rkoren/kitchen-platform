@@ -31,8 +31,8 @@ class LambdaSpec(BaseModel):
     role: str
     runtime: str | None = None
     handler: str | None = None
-    memory_mb: int = 128
-    timeout_s: int = 3
+    memory: int = 128
+    timeout: int = 3
     image_uri: str | None = None
     ecr_repo: str | None = None  # logical name of an ecr resource; generates a TF reference
     environment: dict[str, str] = {}

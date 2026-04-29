@@ -11,8 +11,8 @@ resource "aws_lambda_function" "{{ name | tf_id }}" {
   runtime = "{{ runtime }}"
   handler = "{{ handler }}"
 {% endif %}
-  memory_size = {{ memory_mb }}
-  timeout     = {{ timeout_s }}
+  memory_size = {{ memory }}
+  timeout     = {{ timeout }}
 {% if environment %}
   environment {
     variables = {

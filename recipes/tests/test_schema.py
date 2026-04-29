@@ -21,8 +21,8 @@ FULL_SPEC = {
             "name": "my-function",
             "role": "my-exec",
             "ecr_repo": "my-repo",
-            "memory_mb": 512,
-            "timeout_s": 30,
+            "memory": 512,
+            "timeout": 30,
         },
     ],
 }
@@ -84,8 +84,8 @@ def test_ecr_invalid_mutability_raises():
 
 def test_lambda_defaults():
     spec = LambdaSpec.model_validate({"type": "lambda", "name": "fn", "role": "my-role"})
-    assert spec.memory_mb == 128
-    assert spec.timeout_s == 3
+    assert spec.memory == 128
+    assert spec.timeout == 3
     assert spec.environment == {}
     assert spec.image_uri is None
     assert spec.ecr_repo is None
