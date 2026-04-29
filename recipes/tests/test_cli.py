@@ -1,6 +1,4 @@
 """Tests for the recipes CLI."""
-import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
@@ -182,7 +180,7 @@ def test_apply_streams_terraform_output(tmp_path):
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
     ):
-        result = runner.invoke(
+        runner.invoke(
             app,
             ["apply", str(spec), "--state-bucket", "my-bucket", "--yes"],
         )

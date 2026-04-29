@@ -1,7 +1,6 @@
 """recipes CLI entry point."""
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import typer
@@ -157,7 +156,7 @@ def apply(
     if not _tf_init(spec, workspace, state_bucket):
         raise typer.Exit(1)
 
-    console.print(f"\n[bold]→ terraform apply[/bold]\n")
+    console.print("\n[bold]→ terraform apply[/bold]\n")
     rc = _run_tf(["apply", "-auto-approve"], workspace)
     if rc != 0:
         console.print("\n[red]apply failed[/red]")
@@ -197,7 +196,7 @@ def destroy(
     if not _tf_init(spec, workspace, state_bucket):
         raise typer.Exit(1)
 
-    console.print(f"\n[bold]→ terraform destroy[/bold]\n")
+    console.print("\n[bold]→ terraform destroy[/bold]\n")
     rc = _run_tf(["destroy", "-auto-approve"], workspace)
     if rc != 0:
         console.print("\n[red]destroy failed[/red]")
