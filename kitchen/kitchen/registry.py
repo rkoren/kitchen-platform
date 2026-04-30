@@ -82,7 +82,10 @@ def get_production_uri(name: str) -> str | None:
     The URI is suitable for mlflow.sklearn.load_model() or similar loaders.
     """
     client = mlflow.tracking.MlflowClient()
-    versions = client.get_latest_versions(name, stages=["Production"])
+    try:
+        versions = client.get_latest_versions(name, stages=["Production"])
+    except mlflow.exceptions.MlflowException:
+        return None
     if not versions:
         return None
     v = versions[0]
