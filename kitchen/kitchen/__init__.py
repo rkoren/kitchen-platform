@@ -1,4 +1,4 @@
-from kitchen import evaluate, experiment, tracking
+from kitchen import evaluate, experiment, registry, tracking
 from kitchen.monitoring import DriftReport
 from kitchen.steps import Evaluator, FeatureBuilder, Trainer
 from kitchen.store import DataStore
@@ -13,5 +13,6 @@ __all__ = [
     "Trainer",
     "evaluate",
     "experiment",
+    "registry",
     "tracking",
 ]
