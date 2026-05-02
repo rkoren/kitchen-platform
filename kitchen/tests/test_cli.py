@@ -144,7 +144,7 @@ def test_feature_builder_raises_not_implemented(scaffold, monkeypatch):
     if features_cls is None:
         pytest.skip(f"Class {cls_name} not found — name derivation may differ")
     with pytest.raises(NotImplementedError):
-        features_cls().build(pd.DataFrame())
+        features_cls().build(pd.DataFrame(), params={})
 
 
 def test_init_here_flag(tmp_path, monkeypatch):
