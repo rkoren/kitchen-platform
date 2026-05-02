@@ -341,9 +341,16 @@ def raw_row() -> pd.DataFrame:
     return pd.DataFrame([{}])
 
 
-def test_feature_builder_returns_expected_columns(raw_row):
-    out = ${class_name}Features().build(raw_row)
-    assert set(FEATURES).issubset(out.columns)
+def test_feature_builder_raises_not_implemented(raw_row):
+    # build() raises NotImplementedError until you implement it.
+    # Remove this test and add real assertions once build() is done.
+    with pytest.raises(NotImplementedError):
+        ${class_name}Features().build(raw_row, params={})
+
+
+def test_features_list_is_defined():
+    # Populate FEATURES once build() is implemented.
+    assert isinstance(FEATURES, list)
 """
 
 _BASELINE_PY = """\
@@ -653,6 +660,19 @@ if __name__ == "__main__":
 # Helpers
 # ---------------------------------------------------------------------------
 
+_SLUG_RE = re.compile(r'^[a-z][a-z0-9]*(-[a-z0-9]+)*$')
+
+
+def _validate_name(name: str) -> str | None:
+    """Return an error message if name is not a valid Kaggle-style slug, else None."""
+    if not _SLUG_RE.match(name):
+        return (
+            "name must be a lowercase slug: letters, digits, and hyphens only, "
+            "starting with a letter (e.g. spaceship-titanic)"
+        )
+    return None
+
+
 def _resolve_experiment(experiment: str | None, params_file: str) -> str:
     if experiment:
         return experiment
@@ -882,6 +902,11 @@ def init(
     overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing files"),
 ) -> None:
     """Scaffold a new kitchen competition project."""
+    err = _validate_name(name)
+    if err:
+        typer.echo(f"error: {err}", err=True)
+        raise typer.Exit(1)
+
     class_name = _to_class_name(name)
     root = Path.cwd() if here else Path.cwd() / name
 

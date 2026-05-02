@@ -1,10 +1,8 @@
 """Tests for `kitchen experiments` and `kitchen promote` CLI commands."""
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from kitchen.cli import app

@@ -131,6 +131,15 @@ def test_generate_submission_imports_cleanly(scaffold, monkeypatch):
             sys.modules.pop(key, None)
 
 
+def test_train_flow_imports_cleanly(scaffold):
+    spec = importlib.util.spec_from_file_location(
+        "flows.train_flow",
+        scaffold / "flows/train_flow.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # must not raise on import
+
+
 def test_feature_builder_raises_not_implemented(scaffold, monkeypatch):
     monkeypatch.syspath_prepend(str(scaffold))
     spec = importlib.util.spec_from_file_location(
@@ -172,6 +181,45 @@ def test_init_overwrite_flag(tmp_path, monkeypatch):
     sentinel.write_text("# modified")
     runner.invoke(app, ["init", "my-competition", "--overwrite"], catch_exceptions=False)
     assert sentinel.read_text() != "# modified", "--overwrite should replace existing files"
+
+
+# --- kitchen init name validation ---
+
+@pytest.mark.parametrize("name", [
+    "titanic",
+    "spaceship-titanic",
+    "house-prices-2024",
+    "a",
+    "abc123",
+])
+def test_init_valid_names(name, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", name], catch_exceptions=False)
+    assert result.exit_code == 0, f"Expected valid name {name!r} to be accepted"
+
+
+@pytest.mark.parametrize("name", [
+    "My-Competition",   # uppercase
+    "my competition",   # space
+    "-leading",         # leading hyphen
+    "trailing-",        # trailing hyphen
+    "a--b",             # consecutive hyphens
+    "1competition",     # starts with digit
+    "../escape",        # path traversal
+    "",                 # empty
+])
+def test_init_invalid_names(name, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", name])
+    assert result.exit_code != 0, f"Expected invalid name {name!r} to be rejected"
+
+
+# --- generated test file ---
+
+def test_generated_test_asserts_not_implemented(scaffold):
+    raw = (scaffold / "src/tests/test_features.py").read_text()
+    assert "NotImplementedError" in raw, "Generated test should assert the TODO boundary"
+    assert "params={}" in raw, "Generated test should call build with params"
 
 
 # --- kitchen validate ---
