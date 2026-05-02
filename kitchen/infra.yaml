@@ -2,6 +2,13 @@ name: kitchen
 region: us-east-1
 
 resources:
+  - type: s3
+    name: kitchen-dvc-store
+    versioning: true
+
+  - type: s3
+    name: kitchen-mlflow-artifacts
+
   - type: ecr
     name: kitchen-serve
     scan_on_push: true
@@ -20,3 +27,6 @@ resources:
     ecr_repo: kitchen-serve
     memory: 1024
     timeout: 30
+    environment:
+      DVC_BUCKET: kitchen-dvc-store
+      MLFLOW_BUCKET: kitchen-mlflow-artifacts
