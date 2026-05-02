@@ -59,6 +59,12 @@ class DriftReport:
             raise RuntimeError("Call run() before as_html()")
         return self._report.get_html()
 
+    def save_html(self, path: str) -> None:
+        """Write the HTML report to a local file. Requires run() first."""
+        import pathlib
+        pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(path).write_text(self.as_html(), encoding="utf-8")
+
     def upload(self, bucket: str, key: str) -> str:
         """Upload the HTML report to S3 and return the s3:// URI."""
         html = self.as_html()

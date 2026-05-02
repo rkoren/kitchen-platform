@@ -67,3 +67,24 @@ def test_upload_requires_run(frames):
     with patch("boto3.client", return_value=mock_s3):
         with pytest.raises(RuntimeError, match="run()"):
             DriftReport(ref, cur).upload(bucket="b", key="k")
+
+
+def test_save_html_writes_file(frames, tmp_path):
+    ref, cur = frames
+    out = tmp_path / "report.html"
+    DriftReport(ref, cur).run().save_html(str(out))
+    assert out.exists()
+    assert len(out.read_text()) > 0
+
+
+def test_save_html_creates_parent_dirs(frames, tmp_path):
+    ref, cur = frames
+    out = tmp_path / "nested" / "dir" / "report.html"
+    DriftReport(ref, cur).run().save_html(str(out))
+    assert out.exists()
+
+
+def test_save_html_requires_run(frames, tmp_path):
+    ref, cur = frames
+    with pytest.raises(RuntimeError, match="run()"):
+        DriftReport(ref, cur).save_html(str(tmp_path / "report.html"))
