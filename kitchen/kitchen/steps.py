@@ -65,20 +65,26 @@ class FeatureBuilder(ABC):
 def _log_feature_importances(model: object) -> None:
     """Best-effort: log feature importances to the active MLflow run.
 
+    Logs raw values as feature_importances.json (Artifacts tab) and normalized
+    values as fi.<name> metrics so they appear in the run comparison view.
+
     Supports XGBoost Booster (get_score) and sklearn estimators that expose
     feature_importances_ alongside feature_names_in_.
     """
     try:
         import mlflow as _mlflow
         if hasattr(model, "get_score"):
-            # XGBoost Booster — feature names are embedded in the model
             importances = model.get_score(importance_type="gain")
         elif hasattr(model, "feature_importances_") and hasattr(model, "feature_names_in_"):
-            # sklearn estimators trained on a DataFrame (feature names auto-captured)
             importances = dict(zip(model.feature_names_in_, model.feature_importances_.tolist()))
         else:
             return
+        if not importances:
+            return
         _mlflow.log_dict(importances, "feature_importances.json")
+        total = sum(importances.values())
+        normalized = {k: v / total for k, v in importances.items()} if total > 0 else importances
+        _mlflow.log_metrics({f"fi.{k}": v for k, v in normalized.items()})
     except Exception:
         pass  # importance logging is always best-effort
 

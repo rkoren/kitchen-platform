@@ -1,8 +1,12 @@
-"""kitchen CLI — scaffold new competition projects.
+"""kitchen CLI — scaffold, validate, and manage competition projects.
 
 Usage:
-    kitchen init <name>          # create ./<name>/ with full project scaffold
-    kitchen init <name> --here   # scaffold into current directory using <name> as template key
+    kitchen init <name>                 # create ./<name>/ with full project scaffold
+    kitchen init <name> --here          # scaffold into current directory
+    kitchen validate [params.yaml]      # validate a params.yaml against KitchenConfig
+    kitchen experiments list            # list recent runs in an experiment
+    kitchen experiments compare METRIC  # rank runs by a metric
+    kitchen promote METRIC              # promote best run to the model registry
 """
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ import re
 import string
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -20,6 +25,42 @@ app = typer.Typer(help="kitchen ML platform CLI", add_completion=False, no_args_
 def version() -> None:
     """Print the kitchen version."""
     typer.echo(f"kitchen {_pkg_version('kitchen')}")
+
+
+@app.command()
+def validate(
+    params_file: Annotated[str, typer.Argument(help="Path to params.yaml")] = "params.yaml",
+) -> None:
+    """Validate a params.yaml file against the KitchenConfig schema."""
+    from pydantic import ValidationError
+
+    from kitchen.config import KitchenConfig
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        cfg = KitchenConfig.from_yaml(str(path))
+    except ValidationError as exc:
+        typer.echo(f"validation failed: {params_file}", err=True)
+        for error in exc.errors():
+            loc = ".".join(str(p) for p in error["loc"])
+            typer.echo(f"  {loc}: {error['msg']}", err=True)
+        raise typer.Exit(1)
+    except Exception as exc:
+        typer.echo(f"error reading {params_file}: {exc}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"✓ {params_file}")
+    typer.echo(f"  experiment : {cfg.experiment}")
+    typer.echo(f"  mlflow     : {cfg.mlflow.tracking_uri}")
+    if cfg.data:
+        typer.echo(f"  data       : source={cfg.data.source}")
+    if cfg.monitor:
+        output = cfg.monitor.report_bucket or cfg.monitor.local_path
+        typer.echo(f"  monitor    : output={output}")
 
 
 # ---------------------------------------------------------------------------
@@ -612,6 +653,36 @@ if __name__ == "__main__":
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _resolve_experiment(experiment: str | None, params_file: str) -> str:
+    if experiment:
+        return experiment
+    from kitchen.config import KitchenConfig
+    p = Path(params_file)
+    if p.exists():
+        cfg = KitchenConfig.from_yaml(str(p))
+        return cfg.experiment
+    raise typer.BadParameter(
+        f"No experiment name given and {params_file!r} not found. "
+        "Pass --experiment or run from a project directory."
+    )
+
+
+def _time_ago(ms: int) -> str:
+    import time
+    diff = int(time.time()) - (ms // 1000)
+    if diff < 60:
+        return f"{diff}s ago"
+    if diff < 3600:
+        return f"{diff // 60}m ago"
+    if diff < 86400:
+        return f"{diff // 3600}h ago"
+    return f"{diff // 86400}d ago"
+
+
+def _fmt_metric(value: float | None) -> str:
+    return "-" if value is None else f"{value:.4f}"
+
+
 def _to_class_name(name: str) -> str:
     return "".join(w.capitalize() for w in re.split(r"[-_\s]+", name))
 
@@ -627,6 +698,177 @@ def _write(path: Path, content: str, overwrite: bool) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
     typer.echo(f"  create {path}")
+
+
+# ---------------------------------------------------------------------------
+# Experiments sub-commands
+# ---------------------------------------------------------------------------
+
+experiments_app = typer.Typer(help="List and compare MLflow experiment runs.", no_args_is_help=True)
+app.add_typer(experiments_app, name="experiments")
+
+
+@experiments_app.command("list")
+def experiments_list(
+    experiment: Annotated[str | None, typer.Option("--experiment", "-e", help="Experiment name")] = None,
+    params_file: Annotated[str, typer.Option("--params", help="params.yaml to read experiment from")] = "params.yaml",
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Max runs to show")] = 10,
+) -> None:
+    """List recent runs in an MLflow experiment."""
+    import mlflow.tracking
+
+    exp_name = _resolve_experiment(experiment, params_file)
+    client = mlflow.tracking.MlflowClient()
+    exp = client.get_experiment_by_name(exp_name)
+    if exp is None:
+        typer.echo(f"Experiment {exp_name!r} not found.", err=True)
+        raise typer.Exit(1)
+
+    runs = client.search_runs(
+        experiment_ids=[exp.experiment_id],
+        order_by=["start_time DESC"],
+        max_results=limit,
+    )
+    if not runs:
+        typer.echo(f"No runs found in experiment {exp_name!r}.")
+        return
+
+    # Collect metric keys for display (priority columns, then any others, skip fi.*)
+    priority = ["val_accuracy", "val_brier", "val_log_loss"]
+    seen: set[str] = set()
+    metric_keys: list[str] = []
+    for key in priority:
+        if any(key in r.data.metrics for r in runs):
+            metric_keys.append(key)
+            seen.add(key)
+    for run in runs:
+        for key in run.data.metrics:
+            if not key.startswith("fi.") and key not in seen:
+                metric_keys.append(key)
+                seen.add(key)
+    metric_keys = metric_keys[:4]
+
+    col_w = max(12, *(len(k) for k in metric_keys), 0) if metric_keys else 12
+    header = f"{'RUN ID':<10}  {'NAME':<20}  {'STATUS':<10}  {'STARTED':<12}"
+    for k in metric_keys:
+        header += f"  {k:>{col_w}}"
+    typer.echo(f"\nExperiment: {exp_name}\n")
+    typer.echo(header)
+    typer.echo("-" * len(header))
+
+    for run in runs:
+        run_id = run.info.run_id[:8]
+        name = (run.info.run_name or "")[:20]
+        status = (run.info.status or "")[:10]
+        started = _time_ago(run.info.start_time) if run.info.start_time else "-"
+        row = f"{run_id:<10}  {name:<20}  {status:<10}  {started:<12}"
+        for k in metric_keys:
+            row += f"  {_fmt_metric(run.data.metrics.get(k)):>{col_w}}"
+        typer.echo(row)
+
+    typer.echo()
+
+
+@experiments_app.command("compare")
+def experiments_compare(
+    metric: str = typer.Argument(..., help="Metric to rank by"),
+    experiment: Annotated[str | None, typer.Option("--experiment", "-e", help="Experiment name")] = None,
+    params_file: Annotated[str, typer.Option("--params", help="params.yaml to read experiment from")] = "params.yaml",
+    lower_is_better: Annotated[bool, typer.Option("--lower-is-better/--higher-is-better")] = False,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Max runs to show")] = 20,
+) -> None:
+    """Rank runs by a metric."""
+    import mlflow.tracking
+
+    exp_name = _resolve_experiment(experiment, params_file)
+    client = mlflow.tracking.MlflowClient()
+    exp = client.get_experiment_by_name(exp_name)
+    if exp is None:
+        typer.echo(f"Experiment {exp_name!r} not found.", err=True)
+        raise typer.Exit(1)
+
+    order = "ASC" if lower_is_better else "DESC"
+    runs = client.search_runs(
+        experiment_ids=[exp.experiment_id],
+        filter_string=f"metrics.{metric} > -99999",
+        order_by=[f"metrics.{metric} {order}"],
+        max_results=limit,
+    )
+    if not runs:
+        typer.echo(f"No runs with metric {metric!r} found in {exp_name!r}.")
+        return
+
+    direction = "lower=better" if lower_is_better else "higher=better"
+    typer.echo(f"\nExperiment: {exp_name}  |  {metric} ({direction})\n")
+    typer.echo(f"{'#':<4}  {'RUN ID':<10}  {'NAME':<20}  {'VARIANT':<12}  {metric}")
+    typer.echo("-" * 65)
+
+    for i, run in enumerate(runs):
+        rank = "★" if i == 0 else str(i + 1)
+        run_id = run.info.run_id[:8]
+        name = (run.info.run_name or "")[:20]
+        variant = run.data.tags.get("model_variant", "")[:12]
+        val = _fmt_metric(run.data.metrics.get(metric))
+        typer.echo(f"{rank:<4}  {run_id:<10}  {name:<20}  {variant:<12}  {val}")
+
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
+# Promote command
+# ---------------------------------------------------------------------------
+
+@app.command()
+def promote(
+    metric: str = typer.Argument(..., help="Metric to rank runs by"),
+    experiment: Annotated[str | None, typer.Option("--experiment", "-e", help="Experiment name")] = None,
+    params_file: Annotated[str, typer.Option("--params", help="params.yaml to read experiment from")] = "params.yaml",
+    model_name: Annotated[str | None, typer.Option("--model-name", help="Registered model name")] = None,
+    alias: Annotated[str, typer.Option("--alias", help="Model alias to set")] = "champion",
+    lower_is_better: Annotated[bool, typer.Option("--lower-is-better/--higher-is-better")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show winner without registering")] = False,
+) -> None:
+    """Promote the best-performing run to the model registry."""
+    import os
+
+    from kitchen.registry import get_best_run, get_production_uri, promote_model, register_model
+    from kitchen.tracking import configure_from_env
+
+    configure_from_env()
+    exp_name = _resolve_experiment(experiment, params_file)
+
+    if model_name is None:
+        model_name = os.environ.get("MLFLOW_MODEL_NAME", f"{exp_name}-model")
+
+    try:
+        run = get_best_run(exp_name, metric, lower_is_better=lower_is_better)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    run_id = run.info.run_id
+    score = run.data.metrics.get(metric, float("nan"))
+    variant = run.data.tags.get("model_variant", "")
+    variant_str = f" ({variant})" if variant else ""
+    direction = "lower=better" if lower_is_better else "higher=better"
+
+    typer.echo(f"\nExperiment : {exp_name}")
+    typer.echo(f"Best run   : {run_id[:8]}  {metric}={score:.6f}{variant_str}  ({direction})")
+
+    current = get_production_uri(model_name, alias)
+    if current:
+        typer.echo(f"Current    : {current}")
+
+    if dry_run:
+        typer.echo("\nDry run — skipping registration and promotion.")
+        return
+
+    version = register_model(run_id, "model", model_name)
+    typer.echo(f"\nRegistered : {model_name} v{version}")
+    promote_model(model_name, version, alias=alias)
+    typer.echo(f"Promoted   : {model_name} v{version} → {alias}")
+    typer.echo(f"Load with  : mlflow.sklearn.load_model('models:/{model_name}@{alias}')")
+    typer.echo()
 
 
 # ---------------------------------------------------------------------------

@@ -172,3 +172,60 @@ def test_init_overwrite_flag(tmp_path, monkeypatch):
     sentinel.write_text("# modified")
     runner.invoke(app, ["init", "my-competition", "--overwrite"], catch_exceptions=False)
     assert sentinel.read_text() != "# modified", "--overwrite should replace existing files"
+
+
+# --- kitchen validate ---
+
+def test_validate_valid_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / "params.yaml"
+    p.write_text("experiment: my-exp\n")
+    result = runner.invoke(app, ["validate", str(p)])
+    assert result.exit_code == 0
+    assert "my-exp" in result.output
+
+
+def test_validate_shows_mlflow_uri(tmp_path):
+    p = tmp_path / "params.yaml"
+    p.write_text("experiment: x\nmlflow:\n  tracking_uri: sqlite:///runs.db\n")
+    result = runner.invoke(app, ["validate", str(p)])
+    assert result.exit_code == 0
+    assert "sqlite:///runs.db" in result.output
+
+
+def test_validate_shows_data_source(tmp_path):
+    p = tmp_path / "params.yaml"
+    p.write_text("experiment: x\ndata:\n  source: kaggle\n  competition: titanic\n")
+    result = runner.invoke(app, ["validate", str(p)])
+    assert result.exit_code == 0
+    assert "kaggle" in result.output
+
+
+def test_validate_fails_on_bad_data(tmp_path):
+    p = tmp_path / "params.yaml"
+    p.write_text("experiment: x\ndata:\n  source: kaggle\n")  # missing competition
+    result = runner.invoke(app, ["validate", str(p)])
+    assert result.exit_code != 0
+    assert "competition" in result.output
+
+
+def test_validate_fails_on_missing_experiment(tmp_path):
+    p = tmp_path / "params.yaml"
+    p.write_text("mlflow:\n  tracking_uri: sqlite:///x.db\n")
+    result = runner.invoke(app, ["validate", str(p)])
+    assert result.exit_code != 0
+
+
+def test_validate_file_not_found(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["validate", "nonexistent.yaml"])
+    assert result.exit_code != 0
+    assert "not found" in result.output
+
+
+def test_validate_default_filename(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: default-test\n")
+    result = runner.invoke(app, ["validate"])
+    assert result.exit_code == 0
+    assert "default-test" in result.output
