@@ -14,7 +14,7 @@ Usage::
         tracker.log_model(model, "model", flavour="xgboost")
 
 Environment variables:
-    MLFLOW_TRACKING_URI    — tracking store (default: ./mlruns for local file store)
+    MLFLOW_TRACKING_URI    — tracking store (default: sqlite:///mlruns.db)
     MLFLOW_ARTIFACT_BUCKET — S3 bucket name; when set, new experiments store artifacts
                              at s3://<bucket>/mlflow-artifacts/<experiment-name>
 """
@@ -96,10 +96,10 @@ def configure(tracking_uri: str, artifact_bucket: str | None = None) -> None:
 def configure_from_env() -> None:
     """Configure MLflow from standard environment variables.
 
-    Falls back to a local file store (./mlruns) when MLFLOW_TRACKING_URI is
-    not set, so local dev works without a running server.
+    Falls back to a local SQLite store (sqlite:///mlruns.db) when
+    MLFLOW_TRACKING_URI is not set, so local dev works without a running server.
     """
-    tracking_uri = os.environ.get(_TRACKING_URI_ENV, "./mlruns")
+    tracking_uri = os.environ.get(_TRACKING_URI_ENV, "sqlite:///mlruns.db")
     artifact_bucket = os.environ.get(_ARTIFACT_BUCKET_ENV)
     configure(tracking_uri=tracking_uri, artifact_bucket=artifact_bucket)
 

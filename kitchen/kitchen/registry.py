@@ -64,29 +64,30 @@ def get_best_run(
     return runs[0]
 
 
-def promote_model(name: str, version: str, stage: str = "Production") -> None:
-    """Transition a registered model version to the given stage.
+def promote_model(name: str, version: str, alias: str = "champion") -> None:
+    """Set a named alias on a registered model version.
+
+    Aliases replace the deprecated stage system. The default alias "champion"
+    identifies the current production model; load it with
+    mlflow.sklearn.load_model('models:/<name>@champion').
 
     Args:
         name: Registered model name.
         version: Model version string (returned by register_model).
-        stage: Target stage — "Production", "Staging", or "Archived".
+        alias: Alias to assign (default: "champion").
     """
     client = mlflow.tracking.MlflowClient()
-    client.transition_model_version_stage(name, version, stage)
+    client.set_registered_model_alias(name, alias, version)
 
 
-def get_production_uri(name: str) -> str | None:
-    """Return the model URI for the current Production version, or None if none exists.
+def get_production_uri(name: str, alias: str = "champion") -> str | None:
+    """Return the model URI for the current champion version, or None if none exists.
 
     The URI is suitable for mlflow.sklearn.load_model() or similar loaders.
     """
     client = mlflow.tracking.MlflowClient()
     try:
-        versions = client.get_latest_versions(name, stages=["Production"])
+        client.get_model_version_by_alias(name, alias)
     except mlflow.exceptions.MlflowException:
         return None
-    if not versions:
-        return None
-    v = versions[0]
-    return f"models:/{name}/{v.version}"
+    return f"models:/{name}@{alias}"

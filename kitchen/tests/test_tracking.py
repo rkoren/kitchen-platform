@@ -83,10 +83,10 @@ def test_configure_from_env_reads_tracking_uri(monkeypatch):
         mock_mlflow.set_tracking_uri.assert_called_once_with("http://remote:5000")
 
 
-def test_configure_from_env_defaults_to_local_file_store():
+def test_configure_from_env_defaults_to_sqlite():
     with patch("kitchen.tracking.mlflow") as mock_mlflow:
         configure_from_env()
-        mock_mlflow.set_tracking_uri.assert_called_once_with("./mlruns")
+        mock_mlflow.set_tracking_uri.assert_called_once_with("sqlite:///mlruns.db")
 
 
 def test_configure_from_env_passes_artifact_bucket(monkeypatch):

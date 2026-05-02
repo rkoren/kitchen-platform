@@ -30,6 +30,23 @@ if TYPE_CHECKING:
     from kitchen.store import DataStore
     from kitchen.tracking import Tracker
 
+# Standard top-level sections that may contain file keys in nested param dicts.
+_SECTIONS = ("features", "model", "evaluate")
+
+
+def _resolve(params: dict, key: str, default: str) -> str:
+    """Look up a file-path key in params, checking nested sections before top-level.
+
+    Projects may store file keys either flat (``{"processed_file": "f.parquet"}``)
+    or nested under a section (``{"features": {"processed_file": "f.parquet"}}``).
+    Both conventions work without any subclass changes.
+    """
+    for section in _SECTIONS:
+        val = params.get(section, {}).get(key)
+        if val is not None:
+            return val
+    return params.get(key, default)
+
 
 class FeatureBuilder(ABC):
     """Transforms raw data into model-ready features."""
@@ -40,13 +57,15 @@ class FeatureBuilder(ABC):
 
     def run(self, store: DataStore, params: dict) -> None:
         """Load raw data, build features, persist to processed stage."""
-        raw = store.load_csv(params.get("raw_file", "data.csv"))
+        raw = store.load_csv(_resolve(params, "raw_file", "data.csv"))
         processed = self.build(raw)
-        store.save_parquet(processed, params.get("processed_file", "features.parquet"))
+        store.save_parquet(processed, _resolve(params, "processed_file", "features.parquet"))
 
 
 class Trainer(ABC):
     """Fits a model and persists it."""
+
+    model_flavour: str = "sklearn"
 
     @abstractmethod
     def fit(self, df: pd.DataFrame, params: dict) -> object:
@@ -54,10 +73,10 @@ class Trainer(ABC):
 
     def run(self, store: DataStore, tracker: Tracker, params: dict) -> object:
         """Load features, fit model, log to MLflow, save artifact."""
-        df = store.load_parquet(params.get("processed_file", "features.parquet"))
+        df = store.load_parquet(_resolve(params, "processed_file", "features.parquet"))
         with tracker.run(run_name=params.get("run_name"), params=params):
             model = self.fit(df, params)
-            tracker.log_model(model, artifact_path="model")
+            tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
             store.models_dir.mkdir(parents=True, exist_ok=True)
             return model
 
@@ -71,8 +90,8 @@ class Evaluator(ABC):
 
     def run(self, model: object, store: DataStore, params: dict) -> dict[str, float]:
         """Load eval data, compute metrics, write metrics.json."""
-        df = store.load_parquet(params.get("processed_file", "features.parquet"))
+        df = store.load_parquet(_resolve(params, "processed_file", "features.parquet"))
         metrics = self.evaluate(model, df)
-        metrics_path = Path(params.get("metrics_file", "metrics.json"))
+        metrics_path = Path(_resolve(params, "metrics_file", "metrics.json"))
         metrics_path.write_text(json.dumps(metrics, indent=2))
         return metrics

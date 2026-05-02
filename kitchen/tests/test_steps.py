@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from kitchen.steps import Evaluator, FeatureBuilder, Trainer
+from kitchen.steps import Evaluator, FeatureBuilder, Trainer, _resolve
 
 
 # --- Concrete implementations for testing ---
@@ -62,7 +62,27 @@ def test_trainer_run_logs_and_saves(tmp_path):
 
     ConstantTrainer().run(store, tracker, params={"processed_file": "features.parquet"})
     tracker.run.assert_called_once()
-    tracker.log_model.assert_called_once()
+    tracker.log_model.assert_called_once_with(
+        {"weights": [1, 2, 3]}, artifact_path="model", flavour="sklearn"
+    )
+
+
+def test_trainer_model_flavour_override(tmp_path):
+    class XGBTrainer(Trainer):
+        model_flavour = "xgboost"
+        def fit(self, df, params):
+            return object()
+
+    store = MagicMock()
+    store.load_parquet.return_value = pd.DataFrame({"x": [1]})
+    store.models_dir = tmp_path
+    tracker = MagicMock()
+    tracker.run.return_value.__enter__ = MagicMock(return_value=MagicMock())
+    tracker.run.return_value.__exit__ = MagicMock(return_value=False)
+
+    XGBTrainer().run(store, tracker, params={})
+    _, kwargs = tracker.log_model.call_args
+    assert kwargs["flavour"] == "xgboost"
 
 
 # --- Evaluator ---
@@ -98,3 +118,36 @@ def test_evaluator_run_returns_metrics():
         result = AccuracyEvaluator().run(object(), store, params={})
 
     assert "accuracy" in result
+
+
+# --- _resolve: flat vs nested params ---
+
+def test_resolve_flat_params():
+    params = {"processed_file": "flat.parquet"}
+    assert _resolve(params, "processed_file", "default.parquet") == "flat.parquet"
+
+
+def test_resolve_nested_features_section():
+    params = {"features": {"processed_file": "nested.parquet"}}
+    assert _resolve(params, "processed_file", "default.parquet") == "nested.parquet"
+
+
+def test_resolve_nested_takes_priority_over_flat():
+    params = {"processed_file": "flat.parquet", "features": {"processed_file": "nested.parquet"}}
+    assert _resolve(params, "processed_file", "default.parquet") == "nested.parquet"
+
+
+def test_resolve_falls_back_to_default():
+    assert _resolve({}, "processed_file", "default.parquet") == "default.parquet"
+
+
+def test_feature_builder_run_nested_params():
+    store = MagicMock()
+    store.load_csv.return_value = pd.DataFrame({"x": [1, 2]})
+    params = {
+        "features": {"raw_file": "train.csv", "processed_file": "features.parquet"},
+        "model": {"target": "y"},
+    }
+    DoubleFeatures().run(store, params=params)
+    store.load_csv.assert_called_once_with("train.csv")
+    store.save_parquet.assert_called_once()
