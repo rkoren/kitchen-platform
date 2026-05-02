@@ -1,0 +1,22 @@
+name: kitchen
+region: us-east-1
+
+resources:
+  - type: ecr
+    name: kitchen-serve
+    scan_on_push: true
+    lambda_access: true
+
+  - type: iam_role
+    name: kitchen-exec
+    service: lambda.amazonaws.com
+    policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+  - type: lambda
+    name: kitchen-serve
+    role: kitchen-exec
+    ecr_repo: kitchen-serve
+    memory: 1024
+    timeout: 30
