@@ -1,6 +1,6 @@
-# pipeline
+# kitchen
 
-`pipeline` is an end-to-end MLOps pipeline for healthcare tabular data (Kaggle competitions). It covers the full model lifecycle: data versioning, experiment tracking, model serving, drift monitoring, and orchestration.
+`kitchen` is a reusable MLOps framework for Kaggle and modeling projects. It covers the full model lifecycle: data versioning, experiment tracking, model serving, drift monitoring, and orchestration.
 
 ## Architecture
 
@@ -33,6 +33,6 @@ Kaggle data
 
 ## Dataset
 
-The pipeline targets healthcare tabular datasets from Kaggle competitions.
+kitchen supports any tabular Kaggle competition — the showcase projects use healthcare and sci-fi datasets.
 
 <!-- TODO: document the specific dataset(s) used -->

@@ -2,6 +2,8 @@
 
 A reusable MLOps platform to work on Kaggle projects. Two modules work together: **recipes** let you spin up resources from YAML specs and **kitchen** is a framework repos install to build ML pipelines.
 
+See [`docs/backlog.md`](docs/backlog.md) for the current roadmap, priorities, and milestone plan.
+
 ---
 
 ## Modules
@@ -42,8 +44,8 @@ resources:
     name: my-project-serve
     role: my-project-exec
     ecr_repo: my-project-serve   # resolves to the ECR URL at apply time
-    memory_mb: 1024
-    timeout_s: 30
+    memory: 1024
+    timeout: 30
 ```
 
 | Resource type | Terraform resources generated |
@@ -156,12 +158,12 @@ monitor:
 
 ## CI/CD
 
-A reusable GitHub Actions workflow handles the full pipeline for any project repo that calls it.
+A reusable GitHub Actions workflow handles CI/CD for any project repo that calls it.
 
 ```yaml
 # .github/workflows/ci.yml (in your project repo)
 jobs:
-  pipeline:
+  kitchen-deploy:
     uses: rkoren/light-ml-platform/.github/workflows/ml-pipeline.yml@main
     with:
       ecr-repository: my-project-serve

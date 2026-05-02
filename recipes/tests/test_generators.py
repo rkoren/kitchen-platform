@@ -193,7 +193,11 @@ def test_lambda_zip_runtime_and_handler():
 
 
 def test_lambda_memory_and_timeout():
-    spec = LambdaSpec(type="lambda", name="my-fn", role="my-role", memory=512, timeout=30)
+    spec = LambdaSpec(
+        type="lambda", name="my-fn", role="my-role",
+        image_uri="123456789.dkr.ecr.us-east-1.amazonaws.com/my-fn:latest",
+        memory=512, timeout=30,
+    )
     out = lambda_generate(spec)
     assert "memory_size = 512" in out
     assert "timeout     = 30" in out
@@ -201,7 +205,9 @@ def test_lambda_memory_and_timeout():
 
 def test_lambda_environment_variables():
     spec = LambdaSpec(
-        type="lambda", name="my-fn", role="my-role", environment={"TABLE_NAME": "my-table"}
+        type="lambda", name="my-fn", role="my-role",
+        image_uri="123456789.dkr.ecr.us-east-1.amazonaws.com/my-fn:latest",
+        environment={"TABLE_NAME": "my-table"},
     )
     out = lambda_generate(spec)
     assert "environment" in out
@@ -209,14 +215,17 @@ def test_lambda_environment_variables():
     assert "my-table" in out
 
 
+_IMAGE_LAMBDA = dict(ecr_repo="my-repo")  # minimal valid image Lambda for fixture reuse
+
+
 def test_lambda_no_environment_block_when_empty():
-    spec = LambdaSpec(type="lambda", name="my-fn", role="my-role")
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-role", **_IMAGE_LAMBDA)
     out = lambda_generate(spec)
     assert "environment" not in out
 
 
 def test_lambda_role_reference_normalised():
-    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role")
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role", **_IMAGE_LAMBDA)
     out = lambda_generate(spec)
     assert "aws_iam_role.my_exec_role.arn" in out
 
@@ -231,7 +240,7 @@ def test_lambda_depends_on_generated_for_iam_role_policies():
             "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
         ],
     )
-    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role")
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role", **_IMAGE_LAMBDA)
     out = lambda_generate(spec, all_resources=[role])
     assert "depends_on" in out
     assert "aws_iam_role_policy_attachment.my_exec_role_1" in out
@@ -239,14 +248,14 @@ def test_lambda_depends_on_generated_for_iam_role_policies():
 
 
 def test_lambda_no_depends_on_without_all_resources():
-    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role")
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role", **_IMAGE_LAMBDA)
     out = lambda_generate(spec)
     assert "depends_on" not in out
 
 
 def test_lambda_no_depends_on_for_role_with_no_policies():
     role = IAMRoleSpec(type="iam_role", name="my-exec-role", service="lambda.amazonaws.com")
-    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role")
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-exec-role", **_IMAGE_LAMBDA)
     out = lambda_generate(spec, all_resources=[role])
     assert "depends_on" not in out
 
@@ -269,5 +278,5 @@ def test_generate_resource_dispatches_ecr():
 
 
 def test_generate_resource_dispatches_lambda():
-    spec = LambdaSpec(type="lambda", name="fn", role="r")
+    spec = LambdaSpec(type="lambda", name="fn", role="r", ecr_repo="my-repo")
     assert "aws_lambda_function" in generate_resource(spec)

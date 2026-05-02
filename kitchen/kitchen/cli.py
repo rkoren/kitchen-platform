@@ -195,7 +195,7 @@ name: $name
 region: us-east-1
 resources:
   - type: s3
-    name: reilly-$name-data
+    name: $name-data
     versioning: true
 
   - type: ecr
@@ -213,8 +213,8 @@ resources:
     name: $name-serve
     role: $name-lambda-role
     ecr_repo: $name-serve
-    memory_mb: 1024
-    timeout_s: 30
+    memory: 1024
+    timeout: 30
 """
 
 _FEATURES_RUN = """\
@@ -333,10 +333,9 @@ VARIANT = "baseline"
 
 
 @task
-def run_variant(params: dict, variant: str) -> dict:
+def run_variant(params: dict, variant: str) -> None:
     from src.features.run import build
     from src.train.run import train
-    from src.evaluate.run import evaluate
 
     log = get_run_logger()
     configure_from_env()
@@ -348,12 +347,8 @@ def run_variant(params: dict, variant: str) -> dict:
     with tracker.run(run_name=variant, params=params) as _run:
         mlflow.set_tag("model_variant", variant)
         build(params, store)
-        model = train(params, store, tracker)   # uses active run — no nested run
-        metrics = evaluate(model, params, store)
-        mlflow.log_metrics(metrics)
-        log.info("%s — %s", variant, metrics)
-
-    return metrics
+        train(params, store, tracker)   # logs val_* metrics to the active run
+        log.info("%s run complete — see MLflow for val metrics", variant)
 
 
 @flow(name="$name-baseline")
@@ -537,6 +532,82 @@ if __name__ == "__main__":
 """
 
 
+_GENERATE_SUBMISSION_PY = """\
+\"\"\"Generate a Kaggle submission CSV from the champion model.
+
+TODO: set ID_COL and TARGET_COL for this competition, then uncomment
+the prediction block that matches your task type.
+\"\"\"
+from __future__ import annotations
+
+import os
+import yaml
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
+
+import mlflow
+import pandas as pd
+
+from kitchen.registry import get_production_uri
+from kitchen.store import DataStore
+from kitchen.tracking import configure_from_env
+from src.features.run import FEATURES
+
+ID_COL = "Id"          # TODO: change to this competition's ID column
+TARGET_COL = "target"  # TODO: change to the submission target column name
+
+MODEL_NAME = os.environ.get("MLFLOW_MODEL_NAME", "$name-model")
+
+
+def generate(params_file: str = "params.yaml") -> None:
+    with open(params_file) as f:
+        params = yaml.safe_load(f)
+
+    configure_from_env()
+    store = DataStore()
+
+    test_raw = store.load_csv(params["features"]["test_file"])
+
+    # TODO: apply your feature engineering to the test set, e.g.:
+    #   from src.features.run import _engineer
+    #   test_df = _engineer(test_raw)[FEATURES]
+    raise NotImplementedError(
+        "Apply feature engineering to test_raw, then remove this line."
+    )
+
+    uri = get_production_uri(MODEL_NAME)
+    if uri is None:
+        raise RuntimeError(
+            f"No champion model found for {MODEL_NAME!r}. "
+            "Run flows/promote.py first."
+        )
+    model = mlflow.pyfunc.load_model(uri)
+
+    # TODO: uncomment and adapt one of these prediction styles:
+    #
+    # Binary classification — hard label (e.g. True/False, 0/1):
+    # pred = model.predict(test_df)
+    #
+    # Binary classification — probability (e.g. for log-loss competitions):
+    # pred = model.predict(test_df)  # returns probabilities for pyfunc models
+    #
+    # Regression:
+    # pred = model.predict(test_df)
+
+    sub = pd.DataFrame({ID_COL: test_raw[ID_COL], TARGET_COL: pred})
+    out = Path("submissions/submission.csv")
+    out.parent.mkdir(exist_ok=True)
+    sub.to_csv(out, index=False)
+    print(f"Saved {len(sub)} rows → {out}")
+
+
+if __name__ == "__main__":
+    generate()
+"""
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -595,8 +666,9 @@ def init(
         (root / "experiments" / "__init__.py",      ""),
         (root / "experiments" / "baseline.py",     r(_BASELINE_PY, name, class_name)),
         (root / "experiments" / "challenger.py",   r(_CHALLENGER_PY, name, class_name)),
-        (root / "flows" / "train_flow.py",         r(_TRAIN_FLOW_PY, name, class_name)),
-        (root / "flows" / "promote.py",            r(_PROMOTE_PY, name, class_name)),
+        (root / "flows" / "train_flow.py",              r(_TRAIN_FLOW_PY, name, class_name)),
+        (root / "flows" / "promote.py",               r(_PROMOTE_PY, name, class_name)),
+        (root / "flows" / "generate_submission.py",   r(_GENERATE_SUBMISSION_PY, name, class_name)),
         (root / "data" / "raw" / ".gitkeep",       ""),
         (root / "data" / "processed" / ".gitkeep", ""),
         (root / "submissions" / ".gitkeep",         ""),
@@ -616,6 +688,8 @@ Done. Next steps:
   python experiments/baseline.py
   python experiments/challenger.py
   python flows/promote.py --dry-run
+  python flows/promote.py
+  python flows/generate_submission.py
 """)
 
 

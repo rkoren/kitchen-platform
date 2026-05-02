@@ -1,6 +1,6 @@
 # Monitoring
 
-Model and data health are monitored with [Evidently AI](https://www.evidentlyai.com). Reports are generated on a schedule and stored in `pipeline/monitoring/`.
+Model and data health are monitored with [Evidently AI](https://www.evidentlyai.com). Reports are generated on a schedule and stored in `monitoring/`.
 
 ## What gets monitored
 
@@ -24,14 +24,14 @@ The `monitor_flow.py` Prefect flow:
 ## Running manually
 
 ```bash
-python pipeline/flows/monitor_flow.py
+python -m kitchen.flows.monitor_flow
 ```
 
 ## Report output
 
 <!-- TODO: add screenshot of an Evidently report once generated -->
 
-Reports are saved to `pipeline/monitoring/` as HTML files:
+Reports are saved to `monitoring/` as HTML files:
 
 ```
 monitoring/

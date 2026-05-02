@@ -16,13 +16,13 @@ A two-module portfolio project bridging platform engineering with ML infrastruct
 
     [:octicons-arrow-right-24: Get started](recipes/quickstart.md)
 
--   :material-pipe: **pipeline**
+-   :material-pipe: **kitchen**
 
     ---
 
-    An end-to-end MLOps pipeline for healthcare tabular data — data versioning, experiment tracking, model serving, drift monitoring, and orchestration.
+    A reusable MLOps framework for Kaggle and modeling projects — data I/O, experiment tracking, model serving, drift monitoring, and orchestration.
 
-    [:octicons-arrow-right-24: Get started](pipeline/quickstart.md)
+    [:octicons-arrow-right-24: Get started](kitchen/quickstart.md)
 
 </div>
 

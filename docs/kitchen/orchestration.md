@@ -6,7 +6,7 @@ Pipeline runs are orchestrated with [Prefect](https://www.prefect.io). Each comp
 
 ### `experiments/baseline.py`
 
-Runs the full pipeline tagged as the baseline approach:
+Runs the full training flow tagged as the baseline approach:
 
 ```
 build_features → train_model → evaluate_model

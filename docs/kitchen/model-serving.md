@@ -49,15 +49,15 @@ Run inference on a single observation.
 ## Local development
 
 ```bash
-cd pipeline/src/serve
+cd src/serve
 uvicorn app:app --reload
 ```
 
 ## Docker build
 
 ```bash
-docker build -t pipeline-serve ./pipeline/src/serve
-docker run -p 9000:8080 pipeline-serve
+docker build -t my-project-serve ./src/serve
+docker run -p 9000:8080 my-project-serve
 ```
 
 ## Deploy to Lambda

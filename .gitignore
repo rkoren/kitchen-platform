@@ -17,8 +17,6 @@ venv/
 site/
 
 # DVC — ignore data directories, but commit .dvc pointer files
-/pipeline/data/
-/pipeline/mlruns/
 .dvcignore
 
 # MLflow
@@ -26,16 +24,14 @@ mlruns/
 mlartifacts/
 
 # Terraform — generated output and state (never commit state)
-pipeline/tf/
 **/.terraform/
 *.tfstate
 *.tfstate.backup
 *.tfplan
 .terraform.lock.hcl
 
-# Evidently reports (generated artifacts)
-/pipeline/monitoring/*.html
-/pipeline/monitoring/*.json
+# Evidently reports
+
 
 # IDEs
 .idea/
@@ -55,6 +51,10 @@ secrets/
 # Claude
 .claude
 CLAUDE.md
+Agents.md
+backlog.md
+secondary-backlog.md
 
 # Scripts
 scripts
+

@@ -59,8 +59,8 @@ Provisions a Lambda function. Supports both image-based (ECR) and zip-based depl
   name: my-function
   role: my-exec-role
   image_uri: "123456789.dkr.ecr.us-east-1.amazonaws.com/my-fn:latest"
-  memory_mb: 512
-  timeout_s: 30
+  memory: 512
+  timeout: 30
   environment:
     TABLE_NAME: my-table
 
@@ -70,8 +70,8 @@ Provisions a Lambda function. Supports both image-based (ECR) and zip-based depl
   role: my-exec-role
   runtime: python3.11
   handler: src.main.handler
-  memory_mb: 128
-  timeout_s: 3
+  memory: 128
+  timeout: 3
 ```
 
 | Field | Type | Required | Default |
@@ -81,8 +81,8 @@ Provisions a Lambda function. Supports both image-based (ECR) and zip-based depl
 | `image_uri` | string | no | `null` |
 | `runtime` | string | no | `null` |
 | `handler` | string | no | `null` |
-| `memory_mb` | int | no | `128` |
-| `timeout_s` | int | no | `3` |
+| `memory` | int | no | `128` |
+| `timeout` | int | no | `3` |
 | `environment` | dict | no | `{}` |
 
 !!! note

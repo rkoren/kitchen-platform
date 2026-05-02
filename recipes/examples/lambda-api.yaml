@@ -1,4 +1,4 @@
-# Example spec: Lambda function with an S3 bucket and IAM role
+# Example spec: image-based Lambda with an S3 bucket and IAM role
 name: my-api
 region: us-east-1
 
@@ -15,9 +15,7 @@ resources:
 
   - type: lambda
     name: my-api
-    runtime: python3.11
-    handler: src.serve.app.handler
-    memory_mb: 512
-    timeout_s: 30
     role: my-api-exec
     image_uri: "123456789.dkr.ecr.us-east-1.amazonaws.com/my-api:latest"
+    memory: 512
+    timeout: 30

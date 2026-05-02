@@ -13,6 +13,11 @@ on:
       - "recipes/**"
       - ".github/workflows/kitchen-ci.yml"
   workflow_dispatch:
+    inputs:
+      bootstrap_deploy:
+        description: "First-time bootstrap (allows partial Terraform apply before ECR image exists)"
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -155,12 +160,13 @@ jobs:
             -backend-config="region=us-east-1"
 
       # Lambda requires an image to exist in ECR at creation time.
-      # On first bootstrap the image doesn't exist yet — that's expected.
-      # docker-build pushes the image, then lambda-deploy finishes the apply.
+      # On first bootstrap the image doesn't exist yet; docker-build pushes it
+      # and lambda-deploy completes the apply. This job uses workflow_dispatch
+      # only — set BOOTSTRAP_DEPLOY=true in dispatch inputs for first deploy.
       - name: Terraform Apply
         working-directory: kitchen/tf
         run: terraform apply -auto-approve
-        continue-on-error: true
+        continue-on-error: ${{ github.event.inputs.bootstrap_deploy == 'true' }}
 
   lambda-deploy:
     runs-on: ubuntu-latest

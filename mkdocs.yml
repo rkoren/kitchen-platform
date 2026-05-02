@@ -1,5 +1,5 @@
 site_name: light-ml-platform
-site_description: IaC CLI and end-to-end MLOps pipeline for healthcare tabular data
+site_description: IaC CLI (recipes) and reusable MLOps framework (kitchen) for Kaggle and modeling projects
 site_url: https://rkoren.github.io/light-ml-platform
 repo_url: https://github.com/rkoren/light-ml-platform
 repo_name: rkoren/light-ml-platform
@@ -44,16 +44,17 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Backlog: backlog.md
   - recipes:
     - Overview: recipes/index.md
     - Quickstart: recipes/quickstart.md
     - YAML Spec Reference: recipes/yaml-spec.md
     - CI/CD Integration: recipes/ci-cd.md
-  - pipeline:
-    - Overview: pipeline/index.md
-    - Quickstart: pipeline/quickstart.md
-    - Data Versioning: pipeline/data-versioning.md
-    - Experiment Tracking: pipeline/experiment-tracking.md
-    - Model Serving: pipeline/model-serving.md
-    - Monitoring: pipeline/monitoring.md
-    - Orchestration: pipeline/orchestration.md
+  - kitchen:
+    - Overview: kitchen/index.md
+    - Quickstart: kitchen/quickstart.md
+    - Data Versioning: kitchen/data-versioning.md
+    - Experiment Tracking: kitchen/experiment-tracking.md
+    - Model Serving: kitchen/model-serving.md
+    - Monitoring: kitchen/monitoring.md
+    - Orchestration: kitchen/orchestration.md

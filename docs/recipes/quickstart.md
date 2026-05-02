@@ -31,8 +31,8 @@ resources:
     name: my-api
     role: my-api-exec
     image_uri: "123456789.dkr.ecr.us-east-1.amazonaws.com/my-api:latest"
-    memory_mb: 512
-    timeout_s: 30
+    memory: 512
+    timeout: 30
 ```
 
 ## Generate

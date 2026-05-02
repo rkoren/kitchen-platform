@@ -62,14 +62,49 @@ class FeatureBuilder(ABC):
         store.save_parquet(processed, _resolve(params, "processed_file", "features.parquet"))
 
 
+def _log_feature_importances(model: object) -> None:
+    """Best-effort: log feature importances to the active MLflow run.
+
+    Supports XGBoost Booster (get_score) and sklearn estimators that expose
+    feature_importances_ alongside feature_names_in_.
+    """
+    try:
+        import mlflow as _mlflow
+        if hasattr(model, "get_score"):
+            # XGBoost Booster — feature names are embedded in the model
+            importances = model.get_score(importance_type="gain")
+        elif hasattr(model, "feature_importances_") and hasattr(model, "feature_names_in_"):
+            # sklearn estimators trained on a DataFrame (feature names auto-captured)
+            importances = dict(zip(model.feature_names_in_, model.feature_importances_.tolist()))
+        else:
+            return
+        _mlflow.log_dict(importances, "feature_importances.json")
+    except Exception:
+        pass  # importance logging is always best-effort
+
+
 class Trainer(ABC):
-    """Fits a model and persists it."""
+    """Fits a model and persists it.
+
+    Contract for subclasses
+    -----------------------
+    ``fit()`` **must** log at least one validation metric to the active MLflow
+    run so that ``flows/promote.py`` can rank and compare runs.  The metric
+    name should match ``MLFLOW_PROMOTE_METRIC`` in ``.env`` (default:
+    ``val_accuracy``).  Use ``Tracker.log_metrics({"val_accuracy": ...})``
+    or ``mlflow.log_metric(...)`` directly — either works because
+    ``Trainer.run()`` ensures an active run exists before calling ``fit()``.
+    """
 
     model_flavour: str = "sklearn"
 
     @abstractmethod
     def fit(self, df: pd.DataFrame, params: dict) -> object:
-        """Train and return a model object."""
+        """Train and return a model object.
+
+        Log at least one validation metric (e.g. ``val_accuracy``) to the
+        active MLflow run before returning.
+        """
 
     def run(self, store: DataStore, tracker: Tracker, params: dict) -> object:
         """Load features, fit model, log to MLflow, save artifact.
@@ -83,10 +118,12 @@ class Trainer(ABC):
         if _mlflow.active_run() is not None:
             model = self.fit(df, params)
             tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
+            _log_feature_importances(model)
             return model
         with tracker.run(run_name=params.get("run_name"), params=params):
             model = self.fit(df, params)
             tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
+            _log_feature_importances(model)
             return model
 
 

@@ -151,3 +151,61 @@ def test_feature_builder_run_nested_params():
     DoubleFeatures().run(store, params=params)
     store.load_csv.assert_called_once_with("train.csv")
     store.save_parquet.assert_called_once()
+
+
+# --- Trainer metric contract (P0-008) ---
+
+def test_trainer_run_logs_feature_importances_for_xgboost(tmp_path):
+    """Trainer.run() calls _log_feature_importances after fit."""
+    import mlflow
+
+    class XGBLikeModel:
+        """Minimal stand-in for an XGBoost Booster."""
+        def get_score(self, importance_type="gain"):
+            return {"feature_a": 1.5, "feature_b": 0.8}
+
+    class XGBLikeTrainer(Trainer):
+        model_flavour = "xgboost"
+        def fit(self, df, params):
+            return XGBLikeModel()
+
+    store = MagicMock()
+    store.load_parquet.return_value = pd.DataFrame({"feature_a": [1], "feature_b": [2]})
+    store.models_dir = tmp_path
+    tracker = MagicMock()
+    tracker.run.return_value.__enter__ = MagicMock(return_value=MagicMock())
+    tracker.run.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch("mlflow.log_dict") as mock_log_dict:
+        XGBLikeTrainer().run(store, tracker, params={})
+
+    mock_log_dict.assert_called_once()
+    logged = mock_log_dict.call_args[0][0]
+    assert "feature_a" in logged
+
+
+def test_trainer_run_logs_feature_importances_for_sklearn(tmp_path):
+    """Trainer.run() logs importances for sklearn models with feature_names_in_."""
+    import numpy as np
+
+    class SklearnLikeModel:
+        feature_importances_ = np.array([0.6, 0.4])
+        feature_names_in_ = np.array(["col_a", "col_b"])
+
+    class SklearnLikeTrainer(Trainer):
+        def fit(self, df, params):
+            return SklearnLikeModel()
+
+    store = MagicMock()
+    store.load_parquet.return_value = pd.DataFrame({"col_a": [1], "col_b": [2]})
+    store.models_dir = tmp_path
+    tracker = MagicMock()
+    tracker.run.return_value.__enter__ = MagicMock(return_value=MagicMock())
+    tracker.run.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch("mlflow.log_dict") as mock_log_dict:
+        SklearnLikeTrainer().run(store, tracker, params={})
+
+    mock_log_dict.assert_called_once()
+    logged = mock_log_dict.call_args[0][0]
+    assert "col_a" in logged
