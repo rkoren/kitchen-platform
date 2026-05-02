@@ -11,7 +11,7 @@ from kitchen.steps import Evaluator, FeatureBuilder, Trainer, _resolve
 # --- Concrete implementations for testing ---
 
 class DoubleFeatures(FeatureBuilder):
-    def build(self, raw: pd.DataFrame) -> pd.DataFrame:
+    def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame:
         return raw * 2
 
 
@@ -29,8 +29,22 @@ class AccuracyEvaluator(Evaluator):
 
 def test_feature_builder_build():
     raw = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
-    result = DoubleFeatures().build(raw)
+    result = DoubleFeatures().build(raw, params={})
     assert list(result["a"]) == [2, 4]
+
+
+def test_feature_builder_run_passes_params_to_build():
+    received = {}
+
+    class ParamCapture(FeatureBuilder):
+        def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame:
+            received.update(params)
+            return raw
+
+    store = MagicMock()
+    store.load_csv.return_value = pd.DataFrame({"x": [1]})
+    ParamCapture().run(store, params={"raw_file": "d.csv", "custom_key": "custom_val"})
+    assert received.get("custom_key") == "custom_val"
 
 
 def test_feature_builder_run_calls_store(tmp_path):

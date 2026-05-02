@@ -236,7 +236,7 @@ FEATURES: list[str] = []  # TODO: fill in after feature engineering
 
 
 class ${class_name}Features(FeatureBuilder):
-    def build(self, raw: pd.DataFrame) -> pd.DataFrame:
+    def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame:
         \"\"\"Transform raw CSV data into model-ready features + target column.\"\"\"
         raise NotImplementedError
 

@@ -1,4 +1,5 @@
 from kitchen import evaluate, experiment, registry, tracking
+from kitchen.config import KitchenConfig
 from kitchen.monitoring import DriftReport
 from kitchen.steps import Evaluator, FeatureBuilder, Trainer
 from kitchen.store import DataStore
@@ -9,6 +10,7 @@ __all__ = [
     "DriftReport",
     "Evaluator",
     "FeatureBuilder",
+    "KitchenConfig",
     "Tracker",
     "Trainer",
     "evaluate",

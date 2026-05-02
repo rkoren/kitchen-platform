@@ -5,7 +5,7 @@ Project repos implement these and wire them into dvc.yaml stages:
     # src/features/run.py
     from kitchen.steps import FeatureBuilder
     class MyFeatures(FeatureBuilder):
-        def build(self, raw: pd.DataFrame) -> pd.DataFrame: ...
+        def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame: ...
 
     # src/train/run.py
     from kitchen.steps import Trainer
@@ -52,13 +52,13 @@ class FeatureBuilder(ABC):
     """Transforms raw data into model-ready features."""
 
     @abstractmethod
-    def build(self, raw: pd.DataFrame) -> pd.DataFrame:
+    def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame:
         """Return a processed DataFrame from raw input."""
 
     def run(self, store: DataStore, params: dict) -> None:
         """Load raw data, build features, persist to processed stage."""
         raw = store.load_csv(_resolve(params, "raw_file", "data.csv"))
-        processed = self.build(raw)
+        processed = self.build(raw, params)
         store.save_parquet(processed, _resolve(params, "processed_file", "features.parquet"))
 
 
