@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "Reusable MLOps framework: data ingestion, experiment tracking, serving"
 requires-python = ">=3.11"
 dependencies = [
+    # CLI
+    "typer>=0.9",
     # Data
     "dvc[s3]>=3.0",
     "pandas>=2.0",
@@ -44,6 +46,9 @@ dev = [
     "httpx",
     "ruff",
 ]
+
+[project.scripts]
+kitchen = "kitchen.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["kitchen"]

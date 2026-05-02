@@ -72,12 +72,21 @@ class Trainer(ABC):
         """Train and return a model object."""
 
     def run(self, store: DataStore, tracker: Tracker, params: dict) -> object:
-        """Load features, fit model, log to MLflow, save artifact."""
+        """Load features, fit model, log to MLflow, save artifact.
+
+        If an MLflow run is already active (opened by an experiment script),
+        fits and logs inside it instead of starting a new nested run.
+        """
+        import mlflow as _mlflow  # noqa: PLC0415 — lazy to keep steps.py lightweight
         df = store.load_parquet(_resolve(params, "processed_file", "features.parquet"))
+        store.models_dir.mkdir(parents=True, exist_ok=True)
+        if _mlflow.active_run() is not None:
+            model = self.fit(df, params)
+            tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
+            return model
         with tracker.run(run_name=params.get("run_name"), params=params):
             model = self.fit(df, params)
             tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
-            store.models_dir.mkdir(parents=True, exist_ok=True)
             return model
 
 

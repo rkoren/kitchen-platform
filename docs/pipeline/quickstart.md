@@ -4,56 +4,54 @@
 
 - Python 3.11+
 - AWS CLI configured (`aws configure`)
-- DVC with S3 remote access
 - Docker (for model serving)
 
-## Installation
+## Start a new competition project
 
 ```bash
-cd light-ml-platform/pipeline
-pip install -e .
+pip install -e path/to/light-ml-platform/kitchen
+kitchen init my-competition
+cd my-competition
+pip install -e ../light-ml-platform/kitchen -e .
+cp .env.example .env
 ```
 
-## Configure DVC remote
+## Download competition data
 
 ```bash
-dvc remote add -d myremote s3://your-bucket/dvc-store
-dvc remote modify myremote region us-east-1
+# Kaggle competitions
+kaggle competitions download -c <competition-slug> -p data/raw/
+unzip data/raw/<competition-slug>.zip -d data/raw/
 ```
 
-## Run the pipeline
+## Implement the three required files
+
+| File | What to implement |
+|---|---|
+| `src/features/run.py` | `build(raw_df) -> df` — feature engineering |
+| `src/train/run.py` | `fit(df, params) -> model` — model training |
+| `src/evaluate/run.py` | `evaluate(model, df) -> dict` — metrics |
+
+## Run experiments
 
 ```bash
-# Run all stages
-dvc repro
+# Baseline approach
+python experiments/baseline.py
 
-# Run a specific stage
-dvc repro train
+# Challenger (after editing experiments/challenger.py)
+python experiments/challenger.py
+
+# Compare and promote best model
+python flows/promote.py --dry-run
+python flows/promote.py
+
+# View MLflow UI
+mlflow ui --backend-store-uri sqlite:///mlruns.db
+# Open http://localhost:5000
 ```
 
-## Track experiments with MLflow
+## Generate a Kaggle submission
 
 ```bash
-# Start the MLflow tracking server (local)
-mlflow ui
-
-# Or point to a remote server
-export MLFLOW_TRACKING_URI=http://your-mlflow-server:5000
+python flows/generate_submission.py
 ```
-
-<!-- TODO: add MLflow server setup instructions for AWS -->
-
-## Serve the model locally
-
-```bash
-cd src/serve
-uvicorn app:app --reload
-# POST http://localhost:8000/predict
-```
-
-## Deploy to Lambda
-
-<!-- TODO: document the ECR push + Lambda update steps -->
-
-!!! note "Coming soon"
-    Deployment instructions will be added once the serving module is complete.

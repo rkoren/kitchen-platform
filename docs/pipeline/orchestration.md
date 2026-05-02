@@ -1,49 +1,67 @@
 # Orchestration
 
-Pipeline runs are orchestrated with [Prefect](https://www.prefect.io). Both the training pipeline and the monitoring pipeline are defined as Prefect flows.
+Pipeline runs are orchestrated with [Prefect](https://www.prefect.io). Each competition project gets two experiment flows plus a generic single-run flow, all scaffolded by `kitchen init`.
 
 ## Flows
 
-### `train_flow.py`
+### `experiments/baseline.py`
 
-Runs the full training pipeline end-to-end:
+Runs the full pipeline tagged as the baseline approach:
 
 ```
-ingest → build_features → train_model → evaluate_model
+build_features → train_model → evaluate_model
 ```
+
+Tags the MLflow run with `model_variant=baseline`.
 
 ```bash
-python pipeline/flows/train_flow.py
+python experiments/baseline.py
 ```
 
-### `monitor_flow.py`
+### `experiments/challenger.py`
 
-Runs drift detection and generates Evidently reports:
+Same structure as baseline but tagged `model_variant=challenger`. Edit this file to override params or add features before calling `run_variant`.
+
+```bash
+python experiments/challenger.py
+```
+
+### `flows/train_flow.py`
+
+Generic single-run training pipeline from `kitchen.flows.train_flow`. Useful for quick iteration without experiment tagging.
+
+```bash
+python flows/train_flow.py
+```
+
+### `flows/promote.py`
+
+Compares baseline vs challenger by metric and promotes the winner to the `champion` alias in the MLflow Model Registry.
+
+```bash
+python flows/promote.py --dry-run   # compare without promoting
+python flows/promote.py             # promote best model
+```
+
+### `kitchen/flows/monitor_flow.py`
+
+Drift detection flow — generates Evidently reports and uploads to S3:
 
 ```
 load_reference_data → load_current_data → run_drift_report → upload_report
 ```
 
 ```bash
-python pipeline/flows/monitor_flow.py
-```
-
-## Scheduling
-
-<!-- TODO: document deployment to Prefect Cloud or self-hosted Prefect server -->
-
-To schedule flows on Prefect Cloud:
-
-```bash
-prefect cloud login
-prefect deploy
+python -m kitchen.flows.monitor_flow
 ```
 
 ## Relationship to DVC
 
-DVC manages **data pipeline stages** (ingest → features → train → evaluate) with caching and artifact tracking. Prefect manages **execution scheduling and observability** — when and how the pipeline runs, retries, and notifications. They complement each other rather than overlap.
+DVC and Prefect serve different purposes and complement each other:
 
 | Concern | Tool |
 |---|---|
 | Stage caching and data lineage | DVC |
-| Scheduling, retries, observability | Prefect |
+| Experiment scheduling, retries, observability | Prefect |
+
+Projects that want DVC-tracked pipelines can add a `dvc.yaml` alongside the Prefect flows — the kitchen `DataStore` paths (`data/raw/`, `data/processed/`) align with DVC stage conventions.
