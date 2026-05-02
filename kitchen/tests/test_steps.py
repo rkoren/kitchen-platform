@@ -157,8 +157,6 @@ def test_feature_builder_run_nested_params():
 
 def test_trainer_run_logs_feature_importances_for_xgboost(tmp_path):
     """Trainer.run() calls _log_feature_importances after fit."""
-    import mlflow
-
     class XGBLikeModel:
         """Minimal stand-in for an XGBoost Booster."""
         def get_score(self, importance_type="gain"):

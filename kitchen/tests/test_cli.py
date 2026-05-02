@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from pathlib import Path
 
 import pytest
 import yaml
@@ -28,7 +27,7 @@ EXPECTED_FILES = [
     ".gitignore",
     "params.yaml",
     "pyproject.toml",
-    f"infra/my-competition.yaml",
+    "infra/my-competition.yaml",
     "src/__init__.py",
     "src/features/__init__.py",
     "src/features/run.py",
@@ -161,7 +160,6 @@ def test_init_skips_existing_files(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)
     sentinel = tmp_path / "my-competition" / "params.yaml"
-    original = sentinel.read_text()
     sentinel.write_text("# modified")
     runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)
     assert sentinel.read_text() == "# modified", "Re-init without --overwrite should skip existing files"

@@ -14,13 +14,12 @@ import os
 
 import yaml
 from dotenv import load_dotenv
-
-load_dotenv()
-
-from prefect import flow, task, get_run_logger
+from prefect import flow, get_run_logger, task
 
 from kitchen.store import DataStore
 from kitchen.tracking import Tracker, configure_from_env, init_experiment
+
+load_dotenv()
 
 EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT", "default")
 
