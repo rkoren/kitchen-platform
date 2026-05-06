@@ -277,3 +277,99 @@ def test_validate_default_filename(tmp_path, monkeypatch):
     result = runner.invoke(app, ["validate"])
     assert result.exit_code == 0
     assert "default-test" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen run train
+# ---------------------------------------------------------------------------
+
+def test_run_train_missing_params(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["run", "train", "--params", "missing.yaml"])
+    assert result.exit_code != 0
+    assert "not found" in result.output
+
+
+def test_run_train_invokes_pipeline(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+
+    calls = []
+
+    def fake_pipeline(params_file="params.yaml"):
+        calls.append(params_file)
+
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
+    result = runner.invoke(app, ["run", "train"])
+    assert result.exit_code == 0
+    assert calls == ["params.yaml"]
+
+
+def test_run_train_custom_params(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    custom = tmp_path / "custom.yaml"
+    custom.write_text("experiment: custom\n")
+
+    calls = []
+
+    def fake_pipeline(params_file="params.yaml"):
+        calls.append(params_file)
+
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
+    result = runner.invoke(app, ["run", "train", "--params", "custom.yaml"])
+    assert result.exit_code == 0
+    assert calls == ["custom.yaml"]
+
+
+def test_run_train_missing_src_module(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+
+    def fake_pipeline(params_file="params.yaml"):
+        raise ModuleNotFoundError("No module named 'src.features.run'")
+
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
+    result = runner.invoke(app, ["run", "train"])
+    assert result.exit_code != 0
+    assert "src/" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen run monitor
+# ---------------------------------------------------------------------------
+
+def test_run_monitor_missing_params(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["run", "monitor", "--params", "missing.yaml"])
+    assert result.exit_code != 0
+    assert "not found" in result.output
+
+
+def test_run_monitor_invokes_pipeline(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+
+    calls = []
+
+    def fake_pipeline(params_file="params.yaml"):
+        calls.append(params_file)
+        return "monitoring/drift.html"
+
+    monkeypatch.setattr("kitchen.flows.monitor_flow.monitor_pipeline", fake_pipeline)
+    result = runner.invoke(app, ["run", "monitor"])
+    assert result.exit_code == 0
+    assert calls == ["params.yaml"]
+    assert "monitoring/drift.html" in result.output
+
+
+def test_run_monitor_missing_output_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+
+    def fake_pipeline(params_file="params.yaml"):
+        raise ValueError("monitor config must specify at least one of: report_bucket or local_path")
+
+    monkeypatch.setattr("kitchen.flows.monitor_flow.monitor_pipeline", fake_pipeline)
+    result = runner.invoke(app, ["run", "monitor"])
+    assert result.exit_code != 0
+    assert "error" in result.output

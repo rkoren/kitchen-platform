@@ -835,6 +835,198 @@ def experiments_compare(
 
 
 # ---------------------------------------------------------------------------
+# Run sub-commands
+# ---------------------------------------------------------------------------
+
+run_app = typer.Typer(help="Run pipeline stages.", no_args_is_help=True)
+app.add_typer(run_app, name="run")
+
+
+@run_app.command("train")
+def run_train(
+    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+) -> None:
+    """Run the full train pipeline: features → train → log to MLflow."""
+    import sys
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    try:
+        from kitchen.flows.train_flow import train_pipeline
+    except ImportError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        train_pipeline(params_file=params_file)
+    except ModuleNotFoundError as exc:
+        typer.echo(
+            f"error: {exc}\n"
+            "Run from the project root and make sure src/ is implemented.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+
+@run_app.command("monitor")
+def run_monitor(
+    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+) -> None:
+    """Run drift monitoring and generate an Evidently report."""
+    import sys
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    from kitchen.flows.monitor_flow import monitor_pipeline
+
+    try:
+        result = monitor_pipeline(params_file=params_file)
+        if result:
+            typer.echo(f"Report saved to: {result}")
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Check command
+# ---------------------------------------------------------------------------
+
+@app.command()
+def check(
+    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+) -> None:
+    """Check that all tools, credentials, and project files are ready."""
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    issues = 0
+
+    def _ok(label: str, detail: str = "") -> None:
+        suffix = f"  {detail}" if detail else ""
+        typer.echo(f"  ✓ {label:<26}{suffix}")
+
+    def _fail(label: str, hint: str = "") -> None:
+        nonlocal issues
+        issues += 1
+        suffix = f"  → {hint}" if hint else ""
+        typer.echo(f"  ✗ {label:<26}{suffix}")
+
+    def _bin_version(name: str) -> str:
+        try:
+            out = subprocess.check_output([name, "--version"], stderr=subprocess.STDOUT, text=True)
+            return out.strip().splitlines()[0]
+        except Exception:
+            return ""
+
+    typer.echo()
+
+    # --- Pantry: external tools ---
+    typer.echo("Pantry (tools)")
+    v = sys.version_info
+    if v >= (3, 11):
+        _ok("python", f"{v.major}.{v.minor}.{v.micro}")
+    else:
+        _fail("python", f"found {v.major}.{v.minor} — requires >=3.11")
+
+    for name, hint in [
+        ("terraform", "needed for `recipes generate`"),
+        ("dvc",       "needed for data versioning"),
+        ("docker",    "needed for `kitchen serve`"),
+    ]:
+        if shutil.which(name):
+            _ok(name, _bin_version(name))
+        else:
+            _fail(name, hint)
+
+    # --- Burners: environment / services ---
+    typer.echo("\nBurners (environment)")
+
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "")
+    if tracking_uri:
+        _ok("MLFLOW_TRACKING_URI", tracking_uri)
+    else:
+        _fail("MLFLOW_TRACKING_URI", "set in .env or environment")
+
+    try:
+        import boto3
+        creds = boto3.Session().get_credentials()
+        if creds is not None:
+            creds.get_frozen_credentials()
+            _ok("AWS credentials", "present")
+        else:
+            raise RuntimeError("no credentials found")
+    except Exception:
+        _fail("AWS credentials", "run `aws configure` or set AWS_ACCESS_KEY_ID / AWS_PROFILE")
+
+    kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
+    if os.environ.get("KAGGLE_USERNAME") or kaggle_json.exists():
+        _ok("Kaggle credentials", "present")
+    else:
+        _fail("Kaggle credentials", "create ~/.kaggle/kaggle.json or set KAGGLE_USERNAME + KAGGLE_KEY")
+
+    # --- Recipe: params.yaml ---
+    typer.echo("\nRecipe (config)")
+
+    params_path = Path(params_file)
+    if params_path.exists():
+        try:
+            from pydantic import ValidationError
+
+            from kitchen.config import KitchenConfig
+            cfg = KitchenConfig.from_yaml(str(params_path))
+            _ok(params_file, f"experiment={cfg.experiment!r}")
+        except ValidationError:
+            _fail(params_file, f"invalid — run `kitchen validate {params_file}`")
+        except Exception as exc:
+            _fail(params_file, str(exc))
+    else:
+        typer.echo(f"  - {params_file:<26}  not found (run from a project directory)")
+
+    # --- Prep: project src modules ---
+    src_candidates = [
+        Path("src/features/run.py"),
+        Path("src/train/run.py"),
+        Path("src/evaluate/run.py"),
+    ]
+    if any(p.exists() for p in src_candidates):
+        typer.echo("\nPrep (project)")
+        for p in src_candidates:
+            if p.exists():
+                _ok(str(p))
+            else:
+                _fail(str(p), "implement to run the pipeline")
+
+    # --- Summary ---
+    typer.echo()
+    if issues == 0:
+        typer.echo("All checks passed — your kitchen is ready.")
+    else:
+        noun = "issue" if issues == 1 else "issues"
+        typer.echo(f"{issues} {noun} found — see above.")
+    typer.echo()
+
+    if issues > 0:
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # Promote command
 # ---------------------------------------------------------------------------
 
