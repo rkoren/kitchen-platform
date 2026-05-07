@@ -373,3 +373,160 @@ def test_run_monitor_missing_output_config(tmp_path, monkeypatch):
     result = runner.invoke(app, ["run", "monitor"])
     assert result.exit_code != 0
     assert "error" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen run evaluate
+# ---------------------------------------------------------------------------
+
+EVAL_PARAMS = "experiment: test-project\n"
+
+
+def _make_evaluate_mocks(monkeypatch, model=None, metrics=None, load_raises=None):
+    """Wire up the three external boundaries for run evaluate tests."""
+    fake_model = model or object()
+
+    def fake_load(uri):
+        if load_raises:
+            raise load_raises
+        return fake_model
+
+    fake_loader = type("Loader", (), {"load_model": staticmethod(fake_load)})()
+    monkeypatch.setattr("importlib.import_module", lambda name: fake_loader)
+    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+
+    returned_metrics = metrics if metrics is not None else {"val_brier": 0.18, "val_accuracy": 0.72}
+    calls = []
+
+    def fake_evaluate(m, p, s):
+        calls.append((m, p, s))
+        return returned_metrics
+
+    return fake_evaluate, calls, fake_model
+
+
+def test_run_evaluate_missing_params(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["run", "evaluate", "--params", "missing.yaml"])
+    assert result.exit_code != 0
+    assert "not found" in result.output
+
+
+def test_run_evaluate_default_uri_from_experiment(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    fake_evaluate, calls, fake_model = _make_evaluate_mocks(monkeypatch)
+
+    src = tmp_path / "src" / "evaluate"
+    src.mkdir(parents=True)
+    (src / "__init__.py").write_text("")
+    (src / "run.py").write_text(
+        "def evaluate(model, params, store):\n    return {'val_brier': 0.18}\n"
+    )
+
+    # Bypass actual import with a direct monkeypatch on the CLI's lazy import path
+    import sys
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = fake_evaluate
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 0
+    assert "test-project-model@champion" in result.output
+
+
+def test_run_evaluate_custom_model_uri(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    fake_evaluate, calls, _ = _make_evaluate_mocks(monkeypatch)
+
+    import sys
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = fake_evaluate
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate", "--model-uri", "runs:/abc123/model"])
+    assert result.exit_code == 0
+    assert "runs:/abc123/model" in result.output
+
+
+def test_run_evaluate_custom_alias(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    fake_evaluate, _, _ = _make_evaluate_mocks(monkeypatch)
+
+    import sys
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = fake_evaluate
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate", "--alias", "staging"])
+    assert result.exit_code == 0
+    assert "@staging" in result.output
+
+
+def test_run_evaluate_prints_metrics(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    fake_evaluate, _, _ = _make_evaluate_mocks(monkeypatch, metrics={"val_brier": 0.18, "val_accuracy": 0.72})
+
+    import sys
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = fake_evaluate
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 0
+    assert "val_brier" in result.output
+    assert "val_accuracy" in result.output
+
+
+def test_run_evaluate_model_load_failure(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    _make_evaluate_mocks(monkeypatch, load_raises=Exception("registry not found"))
+
+    import sys
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = lambda m, p, s: {}
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code != 0
+    assert "error loading model" in result.output
+
+
+def test_run_evaluate_invalid_flavor(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+    result = runner.invoke(app, ["run", "evaluate", "--flavor", "torchscript"])
+    assert result.exit_code != 0
+    assert "unknown flavor" in result.output
+
+
+def test_run_evaluate_missing_src_module(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    _make_evaluate_mocks(monkeypatch)
+
+    # `from src.evaluate.run import evaluate` uses builtins.__import__, not
+    # importlib.import_module, so we must intercept at the builtin level.
+    import builtins
+    real_import = builtins.__import__
+
+    def blocking_import(name, *args, **kwargs):
+        if name == "src.evaluate.run":
+            raise ModuleNotFoundError(f"No module named '{name}'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocking_import)
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code != 0
+    assert "src/" in result.output

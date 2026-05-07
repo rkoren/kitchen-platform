@@ -875,6 +875,76 @@ def run_train(
         raise typer.Exit(1)
 
 
+@run_app.command("evaluate")
+def run_evaluate(
+    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    model_uri: Annotated[str | None, typer.Option("--model-uri", help="MLflow model URI (runs:/… or models:/name@alias)")] = None,
+    alias: Annotated[str, typer.Option("--alias", help="Registry alias when model-uri is not set")] = "champion",
+    flavor: Annotated[str, typer.Option("--flavor", help="MLflow loader flavor: sklearn, xgboost, pyfunc")] = "sklearn",
+) -> None:
+    """Load a model from MLflow and run the project's evaluator."""
+    import os
+    import sys
+
+    import yaml
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    with open(path) as f:
+        params = yaml.safe_load(f)
+
+    if model_uri is None:
+        from kitchen.config import KitchenConfig
+        cfg = KitchenConfig.from_yaml(str(path))
+        model_name = os.environ.get("MLFLOW_MODEL_NAME", f"{cfg.experiment}-model")
+        model_uri = f"models:/{model_name}@{alias}"
+
+    from kitchen.tracking import configure_from_env
+    configure_from_env()
+
+    _LOADERS = {"sklearn": "mlflow.sklearn", "xgboost": "mlflow.xgboost", "pyfunc": "mlflow.pyfunc"}
+    if flavor not in _LOADERS:
+        typer.echo(f"error: unknown flavor {flavor!r} — choose from: {', '.join(_LOADERS)}", err=True)
+        raise typer.Exit(1)
+
+    import importlib
+    loader = importlib.import_module(_LOADERS[flavor])
+    try:
+        model = loader.load_model(model_uri)
+    except Exception as exc:
+        typer.echo(f"error loading model from {model_uri!r}: {exc}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        from src.evaluate.run import evaluate  # project-provided  # noqa: PLC0415
+    except ModuleNotFoundError as exc:
+        typer.echo(
+            f"error: {exc}\n"
+            "Run from the project root and make sure src/ is implemented.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    from kitchen.store import DataStore
+    try:
+        metrics = evaluate(model, params, DataStore())
+    except Exception as exc:
+        typer.echo(f"error during evaluation: {exc}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"\nEvaluation results ({model_uri}):")
+    for k, v in metrics.items():
+        typer.echo(f"  {k}: {v:.6f}" if isinstance(v, float) else f"  {k}: {v}")
+    typer.echo()
+
+
 @run_app.command("monitor")
 def run_monitor(
     params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
