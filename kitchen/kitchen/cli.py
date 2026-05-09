@@ -835,6 +835,63 @@ def experiments_compare(
 
 
 # ---------------------------------------------------------------------------
+# Ingest command
+# ---------------------------------------------------------------------------
+
+@app.command()
+def ingest(
+    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    out_dir: Annotated[str | None, typer.Option("--out", help="Override output directory")] = None,
+) -> None:
+    """Download raw competition data as configured in params.yaml."""
+    import os
+
+    from kitchen.config import KitchenConfig
+    from kitchen.ingest import source_from_params
+    from kitchen.store import DataStore
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        cfg = KitchenConfig.from_yaml(str(path))
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    if cfg.data is None:
+        typer.echo("error: no 'data' section in params.yaml — add source, competition/bucket/path", err=True)
+        raise typer.Exit(1)
+
+    if cfg.data.source == "kaggle":
+        has_env = os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY")
+        has_json = (Path.home() / ".kaggle" / "kaggle.json").exists()
+        if not has_env and not has_json:
+            typer.echo(
+                "error: Kaggle credentials not found.\n"
+                "  Create ~/.kaggle/kaggle.json  or  set KAGGLE_USERNAME + KAGGLE_KEY.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+    dest = Path(out_dir) if out_dir else DataStore().raw_dir
+
+    try:
+        source = source_from_params(cfg.data.model_dump())
+        files = source.download(dest)
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"\nIngested {len(files)} file(s) → {dest}")
+    for f in files:
+        typer.echo(f"  {f}")
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
 # Run sub-commands
 # ---------------------------------------------------------------------------
 
@@ -1214,11 +1271,12 @@ Done. Next steps:
   cp .env.example .env
   # Download competition data to data/raw/
   # Implement src/features/run.py, src/train/run.py, src/evaluate/run.py
-  python experiments/baseline.py
-  python experiments/challenger.py
-  python flows/promote.py --dry-run
-  python flows/promote.py
-  python flows/generate_submission.py
+  kitchen check                       # verify tools, credentials, and config
+  kitchen run train                   # features → train → log to MLflow
+  kitchen run evaluate                # load champion model, compute metrics
+  kitchen experiments compare METRIC  # rank runs by metric
+  kitchen promote METRIC              # promote best run to the registry
+  python flows/generate_submission.py # generate submission CSV
 """)
 
 

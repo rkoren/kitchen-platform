@@ -1,0 +1,68 @@
+name: publish
+
+# Publish rkoren-kitchen and/or rkoren-recipes to TestPyPI.
+#
+# Setup required (one-time, per package):
+#   1. Go to https://test.pypi.org and create a project named rkoren-kitchen / rkoren-recipes.
+#   2. Under each project's Publishing settings, add a Trusted Publisher:
+#        Owner: rkoren  Repo: light-ml-platform  Workflow: publish.yml
+#   3. Create a GitHub environment named "testpypi" (repo Settings → Environments).
+#      No secrets needed — OIDC handles auth.
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package to publish"
+        type: choice
+        options: [both, kitchen, recipes]
+        default: both
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build kitchen
+        if: ${{ inputs.package == 'kitchen' || inputs.package == 'both' }}
+        run: python -m build kitchen/ --outdir dist/
+
+      - name: Build recipes
+        if: ${{ inputs.package == 'recipes' || inputs.package == 'both' }}
+        run: python -m build recipes/ --outdir dist/
+
+      - name: Validate distributions
+        run: twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: testpypi
+
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/

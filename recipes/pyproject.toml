@@ -3,10 +3,24 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "recipes"
+name = "rkoren-recipes"
 version = "0.1.0"
 description = "YAML spec → Terraform config generator for AWS resources"
 requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "rkoren", email = "167029178+rkoren@users.noreply.github.com"},
+]
+keywords = ["terraform", "iac", "aws", "infrastructure-as-code", "mlops"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+]
 dependencies = [
     "typer>=0.12",
     "pydantic>=2.0",
@@ -15,15 +29,23 @@ dependencies = [
     "rich>=13.0",
 ]
 
-[project.scripts]
-recipes = "recipes.cli:app"
-
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-cov",
     "ruff",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rkoren/light-ml-platform"
+Repository = "https://github.com/rkoren/light-ml-platform"
+Issues = "https://github.com/rkoren/light-ml-platform/issues"
+
+[project.scripts]
+recipes = "recipes.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["recipes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
