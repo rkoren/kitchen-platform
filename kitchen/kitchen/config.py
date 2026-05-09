@@ -68,6 +68,18 @@ class MonitorConfig(BaseModel):
         return self
 
 
+class SubmissionConfig(BaseModel):
+    """``submission:`` section — Kaggle submission configuration."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id_col: str = "Id"
+    target_col: str = "target"
+    competition: str | None = None
+    message: str = "kitchen submit"
+    sample_submission: str = "sample_submission.csv"
+
+
 class KitchenConfig(BaseModel):
     """Top-level model for params.yaml.
 
@@ -82,6 +94,7 @@ class KitchenConfig(BaseModel):
     data: DataConfig | None = None
     mlflow: MLflowConfig = Field(default_factory=MLflowConfig)
     monitor: MonitorConfig | None = None
+    submission: SubmissionConfig | None = None
     run_name: str | None = None
     metrics_file: str = "metrics.json"
 

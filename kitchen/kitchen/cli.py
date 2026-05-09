@@ -892,6 +892,98 @@ def ingest(
 
 
 # ---------------------------------------------------------------------------
+# Submit command
+# ---------------------------------------------------------------------------
+
+@app.command()
+def submit(
+    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    file: Annotated[str, typer.Option("--file", help="Submission CSV to upload")] = "submissions/submission.csv",
+    message: Annotated[str | None, typer.Option("--message", help="Submission message")] = None,
+) -> None:
+    """Validate and upload a submission CSV to Kaggle."""
+    import os
+
+    import pandas as pd
+
+    from kitchen.config import KitchenConfig
+    from kitchen.store import DataStore
+    from kitchen.submit import upload, validate_submission
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        cfg = KitchenConfig.from_yaml(str(path))
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    sub_cfg = cfg.submission
+    id_col = sub_cfg.id_col if sub_cfg else "Id"
+    target_col = sub_cfg.target_col if sub_cfg else "target"
+    submit_msg = message or (sub_cfg.message if sub_cfg else "kitchen submit")
+    sample_filename = sub_cfg.sample_submission if sub_cfg else "sample_submission.csv"
+
+    # Resolve competition: submission.competition → data.competition → error
+    competition = (sub_cfg.competition if sub_cfg else None) or (
+        cfg.data.competition if cfg.data else None
+    )
+    if not competition:
+        typer.echo(
+            "error: no competition specified — add 'submission.competition' or 'data.competition' to params.yaml",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Kaggle credential check
+    has_env = os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY")
+    has_json = (Path.home() / ".kaggle" / "kaggle.json").exists()
+    if not has_env and not has_json:
+        typer.echo(
+            "error: Kaggle credentials not found.\n"
+            "  Create ~/.kaggle/kaggle.json  or  set KAGGLE_USERNAME + KAGGLE_KEY.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    sub_path = Path(file)
+    if not sub_path.exists():
+        typer.echo(f"error: submission file not found: {file}", err=True)
+        raise typer.Exit(1)
+
+    sample_path = DataStore().raw_dir / sample_filename
+    if not sample_path.exists():
+        typer.echo(f"error: sample submission not found: {sample_path}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        sub_df = pd.read_csv(sub_path)
+        sample_df = pd.read_csv(sample_path)
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    errors = validate_submission(sub_df, sample_df, id_col, target_col)
+    if errors:
+        typer.echo("Submission validation failed:", err=True)
+        for e in errors:
+            typer.echo(f"  • {e}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Validated {len(sub_df)} rows — uploading to '{competition}' …")
+    try:
+        upload(sub_path, submit_msg, competition)
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Submitted {sub_path} → {competition}")
+
+
+# ---------------------------------------------------------------------------
 # Run sub-commands
 # ---------------------------------------------------------------------------
 
