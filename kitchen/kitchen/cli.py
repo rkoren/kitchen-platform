@@ -231,6 +231,47 @@ packages = ["src"]
 testpaths = ["src/tests"]
 """
 
+_PARAMS_YAML_KAGGLE = """\
+experiment: $name
+
+data:
+  source: kaggle
+  competition: $competition
+
+submission:
+  id_col: Id            # TODO: change to this competition's ID column
+  target_col: target    # TODO: change to this competition's target column
+  message: $name v1
+  sample_submission: sample_submission.csv
+
+features:
+  raw_file: train.csv
+  processed_file: features.parquet
+  test_file: test.csv
+
+model:
+  target: target        # TODO: match submission.target_col
+  test_size: 0.2
+  random_state: 42
+  # XGBoost — uncomment if using --template baseline-xgb:
+  # xgb:
+  #   n_estimators: 300
+  #   max_depth: 6
+  #   learning_rate: 0.05
+  #   subsample: 0.8
+  #   colsample_bytree: 0.8
+  # Logistic Regression — uncomment if using --template baseline-lr:
+  # lr:
+  #   C: 1.0
+  #   max_iter: 1000
+
+mlflow:
+  tracking_uri: sqlite:///mlruns.db
+
+run_name: baseline
+metrics_file: metrics.json
+"""
+
 _INFRA_YAML = """\
 name: $name
 region: us-east-1
@@ -302,6 +343,81 @@ class ${class_name}Trainer(Trainer):
     def fit(self, df: pd.DataFrame, params: dict) -> object:
         \"\"\"Train and return a model. Log metrics to the active MLflow run.\"\"\"
         raise NotImplementedError
+
+
+def train(params: dict, store: DataStore, tracker: Tracker) -> object:
+    return ${class_name}Trainer().run(store, tracker, params)
+"""
+
+_TRAIN_RUN_XGB = """\
+\"\"\"Model training for $name — XGBoost baseline.
+
+Defaults to binary classification (XGBClassifier, eval_metric=logloss).
+For regression: swap XGBClassifier → XGBRegressor and eval_metric → rmse.
+For multiclass: set objective="multi:softprob" and num_class=<N>.
+\"\"\"
+from __future__ import annotations
+
+import pandas as pd
+import xgboost as xgb
+from kitchen.steps import Trainer
+from kitchen.store import DataStore
+from kitchen.tracking import Tracker
+
+
+class ${class_name}Trainer(Trainer):
+    model_flavour = "xgboost"
+
+    def fit(self, df: pd.DataFrame, params: dict) -> xgb.XGBClassifier:
+        target = params["model"]["target"]
+        features = [c for c in df.columns if c != target]
+        X, y = df[features], df[target]
+
+        p = params["model"].get("xgb", {})
+        model = xgb.XGBClassifier(
+            n_estimators=p.get("n_estimators", 300),
+            max_depth=p.get("max_depth", 6),
+            learning_rate=p.get("learning_rate", 0.05),
+            subsample=p.get("subsample", 0.8),
+            colsample_bytree=p.get("colsample_bytree", 0.8),
+            random_state=params["model"].get("random_state", 42),
+            eval_metric="logloss",
+        )
+        model.fit(X, y)
+        return model
+
+
+def train(params: dict, store: DataStore, tracker: Tracker) -> object:
+    return ${class_name}Trainer().run(store, tracker, params)
+"""
+
+_TRAIN_RUN_LR = """\
+\"\"\"Model training for $name — Logistic Regression baseline.\"\"\"
+from __future__ import annotations
+
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from kitchen.steps import Trainer
+from kitchen.store import DataStore
+from kitchen.tracking import Tracker
+
+
+class ${class_name}Trainer(Trainer):
+    model_flavour = "sklearn"
+
+    def fit(self, df: pd.DataFrame, params: dict) -> LogisticRegression:
+        target = params["model"]["target"]
+        features = [c for c in df.columns if c != target]
+        X, y = df[features], df[target]
+
+        p = params["model"].get("lr", {})
+        model = LogisticRegression(
+            C=p.get("C", 1.0),
+            max_iter=p.get("max_iter", 1000),
+            random_state=params["model"].get("random_state", 42),
+        )
+        model.fit(X, y)
+        return model
 
 
 def train(params: dict, store: DataStore, tracker: Tracker) -> object:
@@ -707,8 +823,8 @@ def _to_class_name(name: str) -> str:
     return "".join(w.capitalize() for w in re.split(r"[-_\s]+", name))
 
 
-def _render(tmpl: str, name: str, class_name: str) -> str:
-    return string.Template(tmpl).substitute(name=name, class_name=class_name)
+def _render(tmpl: str, name: str, class_name: str, **extra) -> str:
+    return string.Template(tmpl).substitute(name=name, class_name=class_name, **extra)
 
 
 def _write(path: Path, content: str, overwrite: bool) -> None:
@@ -1311,11 +1427,28 @@ def init(
     name: str = typer.Argument(..., help="Project / competition name (e.g. spaceship-titanic)"),
     here: bool = typer.Option(False, "--here", help="Scaffold into cwd, not a new subdirectory"),
     overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing files"),
+    source: str = typer.Option("local", "--source", help="Data source: local, kaggle, s3"),
+    competition: str | None = typer.Option(None, "--competition", help="Kaggle competition slug (required when --source kaggle)"),
+    template: str = typer.Option("none", "--template", help="Starter template for src/train/run.py: none, baseline-xgb, baseline-lr"),
 ) -> None:
     """Scaffold a new kitchen competition project."""
     err = _validate_name(name)
     if err:
         typer.echo(f"error: {err}", err=True)
+        raise typer.Exit(1)
+
+    valid_sources = {"local", "kaggle", "s3"}
+    if source not in valid_sources:
+        typer.echo(f"error: invalid source {source!r} — choose from: {', '.join(sorted(valid_sources))}", err=True)
+        raise typer.Exit(1)
+
+    if source == "kaggle" and not competition:
+        typer.echo("error: --competition is required when --source kaggle", err=True)
+        raise typer.Exit(1)
+
+    valid_templates = {"none", "baseline-xgb", "baseline-lr"}
+    if template not in valid_templates:
+        typer.echo(f"error: invalid template {template!r} — choose from: {', '.join(sorted(valid_templates))}", err=True)
         raise typer.Exit(1)
 
     class_name = _to_class_name(name)
@@ -1325,18 +1458,23 @@ def init(
 
     r = _render  # shorthand
 
+    params_tmpl = _PARAMS_YAML_KAGGLE if source == "kaggle" else _PARAMS_YAML
+    params_extra = {"competition": competition} if source == "kaggle" else {}
+
+    train_tmpl = {"baseline-xgb": _TRAIN_RUN_XGB, "baseline-lr": _TRAIN_RUN_LR}.get(template, _TRAIN_RUN)
+
     files: list[tuple[Path, str]] = [
         (root / "CLAUDE.md",                        r(_CLAUDE_MD, name, class_name)),
         (root / ".env.example",                     r(_ENV_EXAMPLE, name, class_name)),
         (root / ".gitignore",                       r(_GITIGNORE, name, class_name)),
-        (root / "params.yaml",                      r(_PARAMS_YAML, name, class_name)),
+        (root / "params.yaml",                      r(params_tmpl, name, class_name, **params_extra)),
         (root / "pyproject.toml",                   r(_PYPROJECT_TOML, name, class_name)),
         (root / "infra" / f"{name}.yaml",           r(_INFRA_YAML, name, class_name)),
         (root / "src" / "__init__.py",              ""),
         (root / "src" / "features" / "__init__.py", ""),
         (root / "src" / "features" / "run.py",     r(_FEATURES_RUN, name, class_name)),
         (root / "src" / "train" / "__init__.py",   ""),
-        (root / "src" / "train" / "run.py",        r(_TRAIN_RUN, name, class_name)),
+        (root / "src" / "train" / "run.py",        r(train_tmpl, name, class_name)),
         (root / "src" / "evaluate" / "__init__.py", ""),
         (root / "src" / "evaluate" / "run.py",     r(_EVALUATE_RUN, name, class_name)),
         (root / "src" / "tests" / "__init__.py",   ""),
@@ -1355,20 +1493,28 @@ def init(
     for path, content in files:
         _write(path, content, overwrite)
 
+    cd_target = root.name if not here else '.'
+    if source == "kaggle":
+        data_step = "  kitchen ingest                      # download competition data → data/raw/"
+        submit_step = "  kitchen submit                      # validate and upload to Kaggle"
+    else:
+        data_step = "  # Download data to data/raw/"
+        submit_step = "  python flows/generate_submission.py # generate submission CSV"
+
     typer.echo(f"""
 Done. Next steps:
 
-  cd {root.name if not here else '.'}
+  cd {cd_target}
   pip install -e ../light-ml-platform/kitchen -e .
   cp .env.example .env
-  # Download competition data to data/raw/
-  # Implement src/features/run.py, src/train/run.py, src/evaluate/run.py
   kitchen check                       # verify tools, credentials, and config
+{data_step}
+  # Implement src/features/run.py, src/train/run.py, src/evaluate/run.py
   kitchen run train                   # features → train → log to MLflow
   kitchen run evaluate                # load champion model, compute metrics
   kitchen experiments compare METRIC  # rank runs by metric
   kitchen promote METRIC              # promote best run to the registry
-  python flows/generate_submission.py # generate submission CSV
+{submit_step}
 """)
 
 
