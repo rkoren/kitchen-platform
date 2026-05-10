@@ -530,3 +530,103 @@ def test_run_evaluate_missing_src_module(tmp_path, monkeypatch):
     result = runner.invoke(app, ["run", "evaluate"])
     assert result.exit_code != 0
     assert "src/" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen init --source / --competition / --template
+# ---------------------------------------------------------------------------
+
+def test_init_kaggle_source_params_yaml(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["init", "march-mania", "--source", "kaggle", "--competition", "march-ml-mania-2026"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    params = yaml.safe_load((tmp_path / "march-mania" / "params.yaml").read_text())
+    assert params["data"]["source"] == "kaggle"
+    assert params["data"]["competition"] == "march-ml-mania-2026"
+    assert "submission" in params
+    assert params["submission"]["id_col"] == "Id"
+    assert params["submission"]["target_col"] == "target"
+
+
+def test_init_kaggle_next_steps_mentions_ingest_and_submit(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["init", "my-comp", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    assert "kitchen ingest" in result.output
+    assert "kitchen submit" in result.output
+
+
+def test_init_local_next_steps_no_kaggle_commands(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    assert "kitchen ingest" not in result.output
+    assert "kitchen submit" not in result.output
+
+
+def test_init_kaggle_requires_competition(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp", "--source", "kaggle"])
+    assert result.exit_code != 0
+    assert "competition" in result.output
+
+
+def test_init_invalid_source(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp", "--source", "ftp"])
+    assert result.exit_code != 0
+    assert "invalid source" in result.output
+
+
+def test_init_baseline_xgb_template(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["init", "my-comp", "--template", "baseline-xgb"], catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    assert "XGBClassifier" in train_src
+    assert "xgboost" in train_src
+
+
+def test_init_baseline_lr_template(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["init", "my-comp", "--template", "baseline-lr"], catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    assert "LogisticRegression" in train_src
+
+
+def test_init_invalid_template(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp", "--template", "random-forest"])
+    assert result.exit_code != 0
+    assert "invalid template" in result.output
+
+
+def test_init_default_train_template_unchanged(scaffold):
+    train_src = (scaffold / "src" / "train" / "run.py").read_text()
+    assert "NotImplementedError" in train_src
+    assert "XGBClassifier" not in train_src
+
+
+def test_init_kaggle_with_template(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, [
+            "init", "mania", "--source", "kaggle",
+            "--competition", "march-ml-mania-2026", "--template", "baseline-xgb",
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    params = yaml.safe_load((tmp_path / "mania" / "params.yaml").read_text())
+    assert params["data"]["source"] == "kaggle"
+    train_src = (tmp_path / "mania" / "src" / "train" / "run.py").read_text()
+    assert "XGBClassifier" in train_src
