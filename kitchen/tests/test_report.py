@@ -102,7 +102,7 @@ def test_report_metrics_sorted(tmp_path, monkeypatch):
     result = _invoke(tmp_path, monkeypatch)
     assert result.exit_code == 0
     lines = result.output.splitlines()
-    metric_lines = [l for l in lines if "`a_metric`" in l or "`z_metric`" in l]
+    metric_lines = [ln for ln in lines if "`a_metric`" in ln or "`z_metric`" in ln]
     assert len(metric_lines) == 2
     assert "a_metric" in metric_lines[0]
     assert "z_metric" in metric_lines[1]
