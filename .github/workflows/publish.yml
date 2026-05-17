@@ -5,7 +5,7 @@ name: publish
 # Setup required (one-time, per package):
 #   1. Go to https://test.pypi.org and create a project named rkoren-kitchen / rkoren-recipes.
 #   2. Under each project's Publishing settings, add a Trusted Publisher:
-#        Owner: rkoren  Repo: light-ml-platform  Workflow: publish.yml
+#        Owner: rkoren  Repo: kitchen-platform  Workflow: publish.yml
 #   3. Create a GitHub environment named "testpypi" (repo Settings → Environments).
 #      No secrets needed — OIDC handles auth.
 

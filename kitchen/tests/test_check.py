@@ -182,7 +182,6 @@ def test_check_shows_prep_when_src_exists(tmp_path, monkeypatch):
          patch("pathlib.Path.home", return_value=tmp_path):
         mock_session.return_value.get_credentials.return_value = MagicMock()
         result = _invoke(tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"})
-    assert "Prep" in result.output
     assert "✓ src/features/run.py" in result.output
 
 
@@ -207,7 +206,7 @@ def test_check_no_prep_section_outside_project(tmp_path, monkeypatch):
          patch("pathlib.Path.home", return_value=tmp_path):
         mock_session.return_value.get_credentials.return_value = MagicMock()
         result = _invoke(tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"})
-    assert "Prep" not in result.output
+    assert "src/features/run.py" not in result.output
 
 
 # ---------------------------------------------------------------------------

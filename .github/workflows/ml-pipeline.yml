@@ -3,7 +3,7 @@ name: ML Pipeline CI/CD
 #
 #   jobs:
 #     pipeline:
-#       uses: rkoren/light-ml-platform/.github/workflows/ml-pipeline.yml@main
+#       uses: rkoren/kitchen-platform/.github/workflows/ml-pipeline.yml@main
 #       with:
 #         ecr-repository: my-project-serve
 #         tf-state-key: my-project/terraform.tfstate
@@ -129,7 +129,7 @@ jobs:
           cache: pip
 
       - name: Install recipes
-        run: pip install "recipes @ git+https://github.com/rkoren/light-ml-platform#subdirectory=recipes"
+        run: pip install "recipes @ git+https://github.com/rkoren/kitchen-platform#subdirectory=recipes"
 
       - name: Generate Terraform
         run: recipes generate ${{ inputs.infra-spec }} --out tf
@@ -174,7 +174,7 @@ jobs:
           cache: pip
 
       - name: Install recipes
-        run: pip install "recipes @ git+https://github.com/rkoren/light-ml-platform#subdirectory=recipes"
+        run: pip install "recipes @ git+https://github.com/rkoren/kitchen-platform#subdirectory=recipes"
 
       - name: Generate Terraform
         run: recipes generate ${{ inputs.infra-spec }} --out tf
@@ -225,7 +225,7 @@ jobs:
           cache: pip
 
       - name: Install recipes
-        run: pip install "recipes @ git+https://github.com/rkoren/light-ml-platform#subdirectory=recipes"
+        run: pip install "recipes @ git+https://github.com/rkoren/kitchen-platform#subdirectory=recipes"
 
       - name: Generate Terraform
         run: recipes generate ${{ inputs.infra-spec }} --out tf

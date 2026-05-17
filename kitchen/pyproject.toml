@@ -63,9 +63,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rkoren/light-ml-platform"
-Repository = "https://github.com/rkoren/light-ml-platform"
-Issues = "https://github.com/rkoren/light-ml-platform/issues"
+Homepage = "https://github.com/rkoren/kitchen-platform"
+Repository = "https://github.com/rkoren/kitchen-platform"
+Issues = "https://github.com/rkoren/kitchen-platform/issues"
 
 [project.scripts]
 kitchen = "kitchen.cli:app"

@@ -1,4 +1,4 @@
-# light-ml-platform
+# kitchen-platform
 
 A two-module portfolio project bridging platform engineering with ML infrastructure.
 

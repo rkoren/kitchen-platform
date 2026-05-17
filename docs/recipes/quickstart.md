@@ -3,8 +3,8 @@
 ## Installation
 
 ```bash
-git clone https://github.com/rkoren/light-ml-platform.git
-cd light-ml-platform/recipes
+git clone https://github.com/rkoren/kitchen-platform.git
+cd kitchen-platform/recipes
 pip install -e .
 ```
 
