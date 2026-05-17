@@ -78,7 +78,7 @@ def test_pipeline_wiring(frames, tmp_path):
         "local_path": str(report_path),
     })
     fake_report = _run_drift_report.fn(ref, cur)
-    with patch("kitchen.flows.monitor_flow.DataStore") as MockStore, \
+    with patch("kitchen.flows.monitor_flow.DataStore"), \
          patch("kitchen.flows.monitor_flow._load_reference", return_value=ref), \
          patch("kitchen.flows.monitor_flow._load_current", return_value=cur), \
          patch("kitchen.flows.monitor_flow._run_drift_report", return_value=fake_report), \
