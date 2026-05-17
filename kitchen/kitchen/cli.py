@@ -72,12 +72,12 @@ def validate(
 _CLAUDE_MD = """\
 # $name
 
-Kaggle competition project on the [kitchen platform](../light-ml-platform/kitchen).
+Kaggle competition project on the [kitchen platform](../kitchen-platform/kitchen).
 
 ## Setup
 
 ```bash
-pip install -e ../light-ml-platform/kitchen -e .
+pip install -e ../kitchen-platform/kitchen -e .
 cp .env.example .env
 # Download competition data to data/raw/
 ```
@@ -129,12 +129,12 @@ Load the champion with `mlflow.sklearn.load_model('models:/$name-model@champion'
 """
 
 _ENV_EXAMPLE = """\
-MLFLOW_TRACKING_URI=sqlite:///mlruns.db
-MLFLOW_EXPERIMENT=$name
-MLFLOW_MODEL_NAME=$name-model
-MLFLOW_PROMOTE_METRIC=val_accuracy
-MLFLOW_PROMOTE_LOWER_IS_BETTER=false
-AWS_PROFILE=default
+export MLFLOW_TRACKING_URI=sqlite:///mlruns.db
+export MLFLOW_EXPERIMENT=$name
+export MLFLOW_MODEL_NAME=$name-model
+export MLFLOW_PROMOTE_METRIC=val_accuracy
+export MLFLOW_PROMOTE_LOWER_IS_BETTER=false
+export AWS_PROFILE=default
 """
 
 _GITIGNORE = """\
@@ -213,7 +213,7 @@ version = "0.1.0"
 description = "Kaggle $name — built on kitchen"
 requires-python = ">=3.11"
 dependencies = [
-    "kitchen",           # pip install -e ../light-ml-platform/kitchen
+    "kitchen",           # pip install -e ../kitchen-platform/kitchen
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
 ]
@@ -1272,8 +1272,6 @@ def check(
 
     typer.echo()
 
-    # --- Pantry: external tools ---
-    typer.echo("Pantry (tools)")
     v = sys.version_info
     if v >= (3, 11):
         _ok("python", f"{v.major}.{v.minor}.{v.micro}")
@@ -1289,9 +1287,6 @@ def check(
             _ok(name, _bin_version(name))
         else:
             _fail(name, hint)
-
-    # --- Burners: environment / services ---
-    typer.echo("\nBurners (environment)")
 
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "")
     if tracking_uri:
@@ -1316,9 +1311,6 @@ def check(
     else:
         _fail("Kaggle credentials", "create ~/.kaggle/kaggle.json or set KAGGLE_USERNAME + KAGGLE_KEY")
 
-    # --- Recipe: params.yaml ---
-    typer.echo("\nRecipe (config)")
-
     params_path = Path(params_file)
     if params_path.exists():
         try:
@@ -1341,7 +1333,6 @@ def check(
         Path("src/evaluate/run.py"),
     ]
     if any(p.exists() for p in src_candidates):
-        typer.echo("\nPrep (project)")
         for p in src_candidates:
             if p.exists():
                 _ok(str(p))
@@ -1359,6 +1350,69 @@ def check(
 
     if issues > 0:
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Report command
+# ---------------------------------------------------------------------------
+
+@app.command()
+def report(
+    metrics_file: Annotated[str, typer.Option("--metrics", help="Path to metrics.json")] = "metrics.json",
+    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    format: Annotated[str, typer.Option("--format", help="Output format: github, plain")] = "github",
+) -> None:
+    """Write a metrics summary to stdout (pipe to $GITHUB_STEP_SUMMARY in CI)."""
+    import json
+
+    metrics_path = Path(metrics_file)
+    if not metrics_path.exists():
+        typer.echo(f"error: {metrics_file} not found — run `kitchen run evaluate` first", err=True)
+        raise typer.Exit(1)
+
+    try:
+        metrics = json.loads(metrics_path.read_text())
+    except json.JSONDecodeError as exc:
+        typer.echo(f"error: could not parse {metrics_file}: {exc}", err=True)
+        raise typer.Exit(1)
+
+    experiment = "unknown"
+    run_name = None
+    params_path = Path(params_file)
+    if params_path.exists():
+        try:
+            from kitchen.config import KitchenConfig
+            cfg = KitchenConfig.from_yaml(str(params_path))
+            experiment = cfg.experiment
+        except Exception:
+            pass
+
+    run_meta = metrics.pop("_run", {}) if isinstance(metrics.get("_run"), dict) else {}
+    run_name = run_meta.get("run_name") or run_meta.get("run_id", "")
+
+    if format == "github":
+        typer.echo(f"## Kitchen Report — `{experiment}`")
+        if run_name:
+            typer.echo(f"\n**Run:** `{run_name}`\n")
+        else:
+            typer.echo()
+        typer.echo("| Metric | Value |")
+        typer.echo("| --- | --- |")
+        for key, value in sorted(metrics.items()):
+            if isinstance(value, float):
+                typer.echo(f"| `{key}` | {value:.6f} |")
+            else:
+                typer.echo(f"| `{key}` | {value} |")
+    else:
+        typer.echo(f"Experiment: {experiment}")
+        if run_name:
+            typer.echo(f"Run:        {run_name}")
+        typer.echo()
+        for key, value in sorted(metrics.items()):
+            if isinstance(value, float):
+                typer.echo(f"  {key}: {value:.6f}")
+            else:
+                typer.echo(f"  {key}: {value}")
 
 
 # ---------------------------------------------------------------------------
@@ -1505,7 +1559,7 @@ def init(
 Done. Next steps:
 
   cd {cd_target}
-  pip install -e ../light-ml-platform/kitchen -e .
+  pip install -e ../kitchen-platform/kitchen -e .
   cp .env.example .env
   kitchen check                       # verify tools, credentials, and config
 {data_step}

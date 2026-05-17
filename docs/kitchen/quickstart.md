@@ -9,10 +9,10 @@
 ## Start a new competition project
 
 ```bash
-pip install -e path/to/light-ml-platform/kitchen
+pip install -e path/to/kitchen-platform/kitchen
 kitchen init my-competition
 cd my-competition
-pip install -e ../light-ml-platform/kitchen -e .
+pip install -e ../kitchen-platform/kitchen -e .
 cp .env.example .env
 ```
 

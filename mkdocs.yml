@@ -1,8 +1,8 @@
-site_name: light-ml-platform
+site_name: kitchen-platform
 site_description: IaC CLI (recipes) and reusable MLOps framework (kitchen) for Kaggle and modeling projects
-site_url: https://rkoren.github.io/light-ml-platform
-repo_url: https://github.com/rkoren/light-ml-platform
-repo_name: rkoren/light-ml-platform
+site_url: https://rkoren.github.io/kitchen-platform
+repo_url: https://github.com/rkoren/kitchen-platform
+repo_name: rkoren/kitchen-platform
 edit_uri: edit/main/docs/
 
 theme:

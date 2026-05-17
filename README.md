@@ -1,4 +1,4 @@
-# light-ml-platform
+# kitchen-platform
 
 A reusable MLOps platform to work on Kaggle projects. Two modules work together: **recipes** let you spin up resources from YAML specs and **kitchen** is a framework repos install to build ML pipelines.
 
@@ -62,7 +62,7 @@ resources:
 A reusable Python library that handles the platform concerns (data I/O, experiment tracking, serving, orchestration)
 
 ```bash
-pip install "kitchen @ git+https://github.com/rkoren/light-ml-platform#subdirectory=kitchen"
+pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
 ```
 
 #### Components
@@ -164,7 +164,7 @@ A reusable GitHub Actions workflow handles CI/CD for any project repo that calls
 # .github/workflows/ci.yml (in your project repo)
 jobs:
   kitchen-deploy:
-    uses: rkoren/light-ml-platform/.github/workflows/ml-pipeline.yml@main
+    uses: rkoren/kitchen-platform/.github/workflows/ml-pipeline.yml@main
     with:
       ecr-repository: my-project-serve
       tf-state-key: my-project/terraform.tfstate
