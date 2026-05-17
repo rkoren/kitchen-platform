@@ -63,6 +63,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
+          audience: sts.amazonaws.com
 
       - name: Login to ECR
         id: ecr-login
@@ -108,6 +109,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
+          audience: sts.amazonaws.com
 
       - name: Terraform Init
         working-directory: kitchen/tf
@@ -153,6 +155,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
+          audience: sts.amazonaws.com
 
       - name: Terraform Init
         working-directory: kitchen/tf
@@ -203,6 +206,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
+          audience: sts.amazonaws.com
 
       - name: Terraform Init
         working-directory: kitchen/tf
