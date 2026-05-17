@@ -16,11 +16,15 @@ At least one of ``local_path`` or ``report_bucket`` must be provided.
 """
 from __future__ import annotations
 
+import logging
+
 import yaml
-from prefect import flow, task, get_run_logger
+from prefect import flow, task
 
 from kitchen.monitoring import DriftReport
 from kitchen.store import DataStore
+
+_log = logging.getLogger(__name__)
 
 
 @task(name="load-reference")
@@ -40,7 +44,6 @@ def _run_drift_report(reference: object, current: object) -> DriftReport:
 
 @task(name="save-report")
 def _save_report(report: DriftReport, monitor_cfg: dict) -> str:
-    log = get_run_logger()
     bucket = monitor_cfg.get("report_bucket", "")
     key = monitor_cfg.get("report_key", "monitoring/drift_report.html")
     local_path = monitor_cfg.get("local_path", "")
@@ -55,11 +58,11 @@ def _save_report(report: DriftReport, monitor_cfg: dict) -> str:
     result = ""
     if local_path:
         report.save_html(local_path)
-        log.info("Drift report saved to %s", local_path)
+        _log.info("Drift report saved to %s", local_path)
         result = local_path
     if bucket:
         url = report.upload(bucket, key)
-        log.info("Drift report uploaded to %s", url)
+        _log.info("Drift report uploaded to %s", url)
         result = url
     return result
 
