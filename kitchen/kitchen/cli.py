@@ -773,6 +773,194 @@ if __name__ == "__main__":
 
 
 # ---------------------------------------------------------------------------
+# CI workflow templates
+# $${{ }} and $$VAR escape the $ so string.Template passes them through as
+# ${{ }} and $VAR in the rendered YAML (GitHub Actions / shell syntax).
+# ---------------------------------------------------------------------------
+
+_CI_WORKFLOW = """\
+name: Train and Evaluate — $name
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  train-evaluate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    env:
+      MLFLOW_TRACKING_URI: sqlite:///mlruns.db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install kitchen
+        run: pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      - name: Train
+        run: kitchen run train
+
+      - name: Evaluate
+        run: kitchen run evaluate
+
+      - name: Download base metrics
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: $${{ github.token }}
+        run: |
+          RUN_ID=$$(gh run list --branch main --workflow train-evaluate.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)
+          if [ -n "$$RUN_ID" ]; then
+            gh run download "$$RUN_ID" --name metrics --dir base-metrics || true
+          fi
+
+      - name: Report
+        id: report
+        run: |
+          BASE=base-metrics/metrics.json
+          COMPARE_ARG=""
+          if [ -f "$$BASE" ]; then COMPARE_ARG="--compare $$BASE"; fi
+          REPORT=$$(kitchen report $$COMPARE_ARG)
+          echo "$$REPORT" >> $$GITHUB_STEP_SUMMARY
+          echo "KITCHEN_REPORT<<EOF" >> $$GITHUB_ENV
+          echo "$$REPORT" >> $$GITHUB_ENV
+          echo "EOF" >> $$GITHUB_ENV
+
+      - name: Upload metrics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metrics
+          path: metrics.json
+
+      - name: Find PR comment
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        if: github.event_name == 'pull_request'
+        with:
+          issue-number: $${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: Kitchen Report
+
+      - name: Post PR comment
+        uses: peter-evans/create-or-update-comment@v4
+        if: github.event_name == 'pull_request'
+        with:
+          comment-id: $${{ steps.find-comment.outputs.comment-id }}
+          issue-number: $${{ github.event.pull_request.number }}
+          body: $${{ env.KITCHEN_REPORT }}
+          edit-mode: replace
+"""
+
+_CI_WORKFLOW_KAGGLE = """\
+name: Train and Evaluate — $name
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  train-evaluate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    env:
+      MLFLOW_TRACKING_URI: sqlite:///mlruns.db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install kitchen
+        run: pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      - name: Ingest data
+        env:
+          KAGGLE_USERNAME: $${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: $${{ secrets.KAGGLE_KEY }}
+        run: kitchen ingest
+
+      - name: Train
+        run: kitchen run train
+
+      - name: Evaluate
+        run: kitchen run evaluate
+
+      - name: Download base metrics
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: $${{ github.token }}
+        run: |
+          RUN_ID=$$(gh run list --branch main --workflow train-evaluate.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)
+          if [ -n "$$RUN_ID" ]; then
+            gh run download "$$RUN_ID" --name metrics --dir base-metrics || true
+          fi
+
+      - name: Report
+        id: report
+        run: |
+          BASE=base-metrics/metrics.json
+          COMPARE_ARG=""
+          if [ -f "$$BASE" ]; then COMPARE_ARG="--compare $$BASE"; fi
+          REPORT=$$(kitchen report $$COMPARE_ARG)
+          echo "$$REPORT" >> $$GITHUB_STEP_SUMMARY
+          echo "KITCHEN_REPORT<<EOF" >> $$GITHUB_ENV
+          echo "$$REPORT" >> $$GITHUB_ENV
+          echo "EOF" >> $$GITHUB_ENV
+
+      - name: Upload metrics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metrics
+          path: metrics.json
+
+      - name: Find PR comment
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        if: github.event_name == 'pull_request'
+        with:
+          issue-number: $${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: Kitchen Report
+
+      - name: Post PR comment
+        uses: peter-evans/create-or-update-comment@v4
+        if: github.event_name == 'pull_request'
+        with:
+          comment-id: $${{ steps.find-comment.outputs.comment-id }}
+          issue-number: $${{ github.event.pull_request.number }}
+          body: $${{ env.KITCHEN_REPORT }}
+          edit-mode: replace
+"""
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -1361,6 +1549,7 @@ def report(
     metrics_file: Annotated[str, typer.Option("--metrics", help="Path to metrics.json")] = "metrics.json",
     params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
     format: Annotated[str, typer.Option("--format", help="Output format: github, plain")] = "github",
+    compare: Annotated[str | None, typer.Option("--compare", help="Path to base metrics.json for delta comparison")] = None,
 ) -> None:
     """Write a metrics summary to stdout (pipe to $GITHUB_STEP_SUMMARY in CI)."""
     import json
@@ -1375,6 +1564,19 @@ def report(
     except json.JSONDecodeError as exc:
         typer.echo(f"error: could not parse {metrics_file}: {exc}", err=True)
         raise typer.Exit(1)
+
+    base_metrics: dict | None = None
+    if compare is not None:
+        compare_path = Path(compare)
+        if not compare_path.exists():
+            typer.echo(f"error: compare file {compare} not found", err=True)
+            raise typer.Exit(1)
+        try:
+            base_metrics = json.loads(compare_path.read_text())
+        except json.JSONDecodeError as exc:
+            typer.echo(f"error: could not parse {compare}: {exc}", err=True)
+            raise typer.Exit(1)
+        base_metrics.pop("_run", None)
 
     experiment = "unknown"
     run_name = None
@@ -1396,23 +1598,51 @@ def report(
             typer.echo(f"\n**Run:** `{run_name}`\n")
         else:
             typer.echo()
-        typer.echo("| Metric | Value |")
-        typer.echo("| --- | --- |")
-        for key, value in sorted(metrics.items()):
-            if isinstance(value, float):
-                typer.echo(f"| `{key}` | {value:.6f} |")
-            else:
-                typer.echo(f"| `{key}` | {value} |")
+        if base_metrics is not None:
+            typer.echo("| Metric | Base | PR | Delta |")
+            typer.echo("| --- | --- | --- | --- |")
+            for key in sorted(set(metrics) | set(base_metrics)):
+                pr_val = metrics.get(key)
+                base_val = base_metrics.get(key)
+                pr_str = f"{pr_val:.6f}" if isinstance(pr_val, float) else str(pr_val) if pr_val is not None else "(new)"
+                base_str = f"{base_val:.6f}" if isinstance(base_val, float) else str(base_val) if base_val is not None else "(new)"
+                if isinstance(pr_val, (int, float)) and isinstance(base_val, (int, float)):
+                    delta = pr_val - base_val
+                    delta_str = f"{float(delta):+.6f}" if isinstance(pr_val, float) or isinstance(base_val, float) else f"{delta:+d}"
+                else:
+                    delta_str = "—"
+                typer.echo(f"| `{key}` | {base_str} | {pr_str} | {delta_str} |")
+        else:
+            typer.echo("| Metric | Value |")
+            typer.echo("| --- | --- |")
+            for key, value in sorted(metrics.items()):
+                if isinstance(value, float):
+                    typer.echo(f"| `{key}` | {value:.6f} |")
+                else:
+                    typer.echo(f"| `{key}` | {value} |")
     else:
         typer.echo(f"Experiment: {experiment}")
         if run_name:
             typer.echo(f"Run:        {run_name}")
         typer.echo()
-        for key, value in sorted(metrics.items()):
-            if isinstance(value, float):
-                typer.echo(f"  {key}: {value:.6f}")
-            else:
-                typer.echo(f"  {key}: {value}")
+        if base_metrics is not None:
+            for key in sorted(set(metrics) | set(base_metrics)):
+                pr_val = metrics.get(key)
+                base_val = base_metrics.get(key)
+                pr_str = f"{pr_val:.6f}" if isinstance(pr_val, float) else str(pr_val) if pr_val is not None else "(new)"
+                base_str = f"{base_val:.6f}" if isinstance(base_val, float) else str(base_val) if base_val is not None else "(new)"
+                if isinstance(pr_val, (int, float)) and isinstance(base_val, (int, float)):
+                    delta = pr_val - base_val
+                    delta_str = f"{float(delta):+.6f}" if isinstance(pr_val, float) or isinstance(base_val, float) else f"{delta:+d}"
+                else:
+                    delta_str = "—"
+                typer.echo(f"  {key}: {pr_str} (base: {base_str}, delta: {delta_str})")
+        else:
+            for key, value in sorted(metrics.items()):
+                if isinstance(value, float):
+                    typer.echo(f"  {key}: {value:.6f}")
+                else:
+                    typer.echo(f"  {key}: {value}")
 
 
 # ---------------------------------------------------------------------------
@@ -1484,6 +1714,7 @@ def init(
     source: str = typer.Option("local", "--source", help="Data source: local, kaggle, s3"),
     competition: str | None = typer.Option(None, "--competition", help="Kaggle competition slug (required when --source kaggle)"),
     template: str = typer.Option("none", "--template", help="Starter template for src/train/run.py: none, baseline-xgb, baseline-lr"),
+    ci: bool = typer.Option(False, "--ci", help="Scaffold a .github/workflows/train-evaluate.yml CI workflow"),
 ) -> None:
     """Scaffold a new kitchen competition project."""
     err = _validate_name(name)
@@ -1544,6 +1775,10 @@ def init(
         (root / "submissions" / ".gitkeep",         ""),
     ]
 
+    if ci:
+        ci_tmpl = _CI_WORKFLOW_KAGGLE if source == "kaggle" else _CI_WORKFLOW
+        files.append((root / ".github" / "workflows" / "train-evaluate.yml", r(ci_tmpl, name, class_name)))
+
     for path, content in files:
         _write(path, content, overwrite)
 
@@ -1554,6 +1789,12 @@ def init(
     else:
         data_step = "  # Download data to data/raw/"
         submit_step = "  python flows/generate_submission.py # generate submission CSV"
+
+    ci_note = ""
+    if ci:
+        if source == "kaggle":
+            ci_note = "\n  # CI: add KAGGLE_USERNAME and KAGGLE_KEY as GitHub Actions secrets"
+        ci_note += "\n  # CI workflow scaffolded → .github/workflows/train-evaluate.yml"
 
     typer.echo(f"""
 Done. Next steps:
@@ -1568,7 +1809,7 @@ Done. Next steps:
   kitchen run evaluate                # load champion model, compute metrics
   kitchen experiments compare METRIC  # rank runs by metric
   kitchen promote METRIC              # promote best run to the registry
-{submit_step}
+{submit_step}{ci_note}
 """)
 
 
