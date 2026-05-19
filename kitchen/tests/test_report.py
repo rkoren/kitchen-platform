@@ -145,3 +145,78 @@ def test_report_experiment_unknown_when_no_params(tmp_path, monkeypatch):
     result = _invoke(tmp_path, monkeypatch)
     assert result.exit_code == 0
     assert "unknown" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --compare flag (GH-006 / GH-003)
+# ---------------------------------------------------------------------------
+
+def test_report_compare_missing_file(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.9})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
+    assert result.exit_code != 0
+    assert "not found" in result.output
+
+
+def test_report_compare_invalid_json(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.9})
+    (tmp_path / "base.json").write_text("not json{")
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
+    assert result.exit_code != 0
+    assert "could not parse" in result.output
+
+
+def test_report_compare_shows_four_column_table(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.91})
+    _write_metrics(tmp_path / "base.json", {"accuracy": 0.88})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
+    assert result.exit_code == 0
+    assert "| Metric | Base | PR | Delta |" in result.output
+    assert "0.910000" in result.output
+    assert "0.880000" in result.output
+    assert "+0.030000" in result.output
+
+
+def test_report_compare_new_metric_shows_new_label(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.91, "f1": 0.85})
+    _write_metrics(tmp_path / "base.json", {"accuracy": 0.88})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
+    assert result.exit_code == 0
+    assert "(new)" in result.output
+
+
+def test_report_compare_run_metadata_excluded(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.91})
+    _write_metrics(tmp_path / "base.json", {"accuracy": 0.88, "_run": {"run_name": "old-run"}})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
+    assert result.exit_code == 0
+    assert "`_run`" not in result.output
+
+
+def test_report_compare_negative_delta(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"logloss": 0.45})
+    _write_metrics(tmp_path / "base.json", {"logloss": 0.38})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
+    assert result.exit_code == 0
+    assert "+0.070000" in result.output or "-" not in result.output.split("logloss")[0]
+    assert "0.450000" in result.output
+
+
+def test_report_compare_plain_format(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.91})
+    _write_metrics(tmp_path / "base.json", {"accuracy": 0.88})
+    result = _invoke(tmp_path, monkeypatch, extra_args=[
+        "--compare", str(tmp_path / "base.json"), "--format", "plain"
+    ])
+    assert result.exit_code == 0
+    assert "base:" in result.output
+    assert "delta:" in result.output
+    assert "| Metric |" not in result.output
+
+
+def test_report_compare_integer_delta(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"n_samples": 1200})
+    _write_metrics(tmp_path / "base.json", {"n_samples": 1000})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
+    assert result.exit_code == 0
+    assert "+200" in result.output

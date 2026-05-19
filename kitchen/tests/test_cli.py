@@ -630,3 +630,180 @@ def test_init_kaggle_with_template(tmp_path, monkeypatch):
     assert params["data"]["source"] == "kaggle"
     train_src = (tmp_path / "mania" / "src" / "train" / "run.py").read_text()
     assert "XGBClassifier" in train_src
+
+
+# ---------------------------------------------------------------------------
+# kitchen init --ci
+# ---------------------------------------------------------------------------
+
+_CI_WORKFLOW_PATH = ".github/workflows/train-evaluate.yml"
+
+
+def test_init_ci_creates_workflow(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).exists()
+
+
+def test_init_no_ci_no_workflow(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    assert not (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).exists()
+
+
+def test_init_ci_workflow_valid_yaml(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    content = yaml.safe_load(raw)
+    assert content is not None
+    assert "jobs" in content
+    assert "train-evaluate" in content["jobs"]
+
+
+def test_init_ci_workflow_contains_expected_steps(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert "Train" in step_names
+    assert "Evaluate" in step_names
+    assert "Report" in step_names
+    assert "Upload metrics" in step_names
+
+
+def test_init_ci_workflow_substitutes_project_name(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    assert "my-comp" in raw
+    assert "$name" not in raw
+
+
+def test_init_ci_workflow_has_workflow_dispatch(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    # `on:` parses as boolean True in YAML; check raw text instead
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    assert "workflow_dispatch" in raw
+
+
+def test_init_ci_kaggle_includes_ingest_step(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app, ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert "Ingest data" in step_names
+
+
+def test_init_ci_kaggle_ingest_uses_secrets(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app, ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    assert "secrets.KAGGLE_USERNAME" in raw
+    assert "secrets.KAGGLE_KEY" in raw
+
+
+def test_init_ci_local_no_ingest_step(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert "Ingest data" not in step_names
+
+
+def test_init_ci_note_in_output_for_kaggle(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    assert "KAGGLE_USERNAME" in result.output
+    assert "KAGGLE_KEY" in result.output
+
+
+def test_init_ci_note_in_output(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    assert "train-evaluate.yml" in result.output
+
+
+# ---------------------------------------------------------------------------
+# GH-003: PR comment steps in CI workflow
+# ---------------------------------------------------------------------------
+
+def test_init_ci_workflow_has_pr_comment_steps(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert "Find PR comment" in step_names
+    assert "Post PR comment" in step_names
+
+
+def test_init_ci_workflow_has_download_base_metrics_step(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert "Download base metrics" in step_names
+
+
+def test_init_ci_workflow_download_step_is_pr_only(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    dl_step = next(s for s in steps if s.get("name") == "Download base metrics")
+    assert "pull_request" in str(dl_step.get("if", ""))
+
+
+def test_init_ci_workflow_pr_comment_steps_are_pr_only(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    post_step = next(s for s in steps if s.get("name") == "Post PR comment")
+    assert "pull_request" in str(post_step.get("if", ""))
+
+
+def test_init_ci_workflow_has_pr_write_permission(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    perms = content["jobs"]["train-evaluate"].get("permissions", {})
+    assert perms.get("pull-requests") == "write"
+
+
+def test_init_ci_kaggle_workflow_has_pr_comment_steps(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app, ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert "Download base metrics" in step_names
+    assert "Find PR comment" in step_names
+    assert "Post PR comment" in step_names
+
+
+def test_init_ci_workflow_report_step_has_compare_logic(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    assert "--compare" in raw
+    assert "base-metrics/metrics.json" in raw
