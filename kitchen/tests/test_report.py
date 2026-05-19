@@ -220,3 +220,171 @@ def test_report_compare_integer_delta(tmp_path, monkeypatch):
     result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
     assert result.exit_code == 0
     assert "+200" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Thresholds (GH-008)
+# ---------------------------------------------------------------------------
+
+PARAMS_WITH_THRESHOLD = """\
+experiment: test-exp
+thresholds:
+  val_accuracy: 0.85
+"""
+
+
+def test_report_no_thresholds_exits_zero(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.5})
+    (tmp_path / "params.yaml").write_text(MINIMAL_PARAMS)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+
+
+def test_report_threshold_pass_exits_zero(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.90})
+    (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+
+
+def test_report_threshold_fail_exits_one(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.75})
+    (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 1
+
+
+def test_report_threshold_fail_shows_violation_table(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.75})
+    (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch)
+    assert "Threshold Violations" in result.output
+    assert "0.850000" in result.output   # threshold
+    assert "0.750000" in result.output   # actual
+
+
+def test_report_threshold_fail_still_shows_metrics(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.75})
+    (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch)
+    assert "| Metric | Value |" in result.output
+    assert "`val_accuracy`" in result.output
+
+
+def test_report_threshold_missing_metric_skipped(tmp_path, monkeypatch):
+    # threshold defined for a metric that isn't in metrics.json — should not fail
+    _write_metrics(tmp_path / "metrics.json", {"other_metric": 0.5})
+    (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+
+
+def test_report_threshold_fail_plain_format(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.75})
+    (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--format", "plain"])
+    assert result.exit_code == 1
+    assert "Threshold violations" in result.output
+    assert "FAIL" in result.output
+    assert "0.75" in result.output
+
+
+def test_report_threshold_multiple_only_fails_report_failing_ones(tmp_path, monkeypatch):
+    params = "experiment: test-exp\nthresholds:\n  val_accuracy: 0.80\n  f1: 0.70\n"
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.85, "f1": 0.60})
+    (tmp_path / "params.yaml").write_text(params)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 1
+    assert "`f1`" in result.output
+    # passing metric should not appear in violations table
+    assert result.output.count("Threshold Violations") == 1
+    violations_section = result.output.split("Threshold Violations")[1]
+    assert "`val_accuracy`" not in violations_section
+
+
+# ---------------------------------------------------------------------------
+# Lower-is-better thresholds (K-012)
+# ---------------------------------------------------------------------------
+
+PARAMS_MAX_THRESHOLD = """\
+experiment: test-exp
+thresholds:
+  val_logloss:
+    max: 0.40
+"""
+
+PARAMS_MIXED_THRESHOLDS = """\
+experiment: test-exp
+thresholds:
+  val_accuracy: 0.80
+  val_logloss:
+    max: 0.40
+"""
+
+
+def test_report_max_threshold_pass_exits_zero(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_logloss": 0.35})
+    (tmp_path / "params.yaml").write_text(PARAMS_MAX_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+
+
+def test_report_max_threshold_fail_exits_one(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_logloss": 0.52})
+    (tmp_path / "params.yaml").write_text(PARAMS_MAX_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 1
+
+
+def test_report_max_threshold_fail_shows_constraint(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_logloss": 0.52})
+    (tmp_path / "params.yaml").write_text(PARAMS_MAX_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch)
+    assert "Threshold Violations" in result.output
+    assert "<= 0.400000" in result.output
+    assert "0.520000" in result.output
+
+
+def test_report_max_threshold_fail_plain_format(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_logloss": 0.52})
+    (tmp_path / "params.yaml").write_text(PARAMS_MAX_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--format", "plain"])
+    assert result.exit_code == 1
+    assert "FAIL" in result.output
+    assert "<= 0.400000" in result.output
+
+
+def test_report_min_threshold_via_spec(tmp_path, monkeypatch):
+    params = "experiment: test-exp\nthresholds:\n  val_accuracy:\n    min: 0.85\n"
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.75})
+    (tmp_path / "params.yaml").write_text(params)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 1
+    assert ">= 0.850000" in result.output
+
+
+def test_report_range_threshold_both_pass(tmp_path, monkeypatch):
+    params = "experiment: test-exp\nthresholds:\n  score:\n    min: 0.60\n    max: 0.95\n"
+    _write_metrics(tmp_path / "metrics.json", {"score": 0.80})
+    (tmp_path / "params.yaml").write_text(params)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+
+
+def test_report_range_threshold_upper_violated(tmp_path, monkeypatch):
+    params = "experiment: test-exp\nthresholds:\n  score:\n    min: 0.60\n    max: 0.95\n"
+    _write_metrics(tmp_path / "metrics.json", {"score": 0.97})
+    (tmp_path / "params.yaml").write_text(params)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 1
+    assert "<= 0.950000" in result.output
+
+
+def test_report_mixed_min_max_thresholds(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.85, "val_logloss": 0.52})
+    (tmp_path / "params.yaml").write_text(PARAMS_MIXED_THRESHOLDS)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 1
+    assert "`val_logloss`" in result.output
+    violations_section = result.output.split("Threshold Violations")[1]
+    assert "`val_accuracy`" not in violations_section

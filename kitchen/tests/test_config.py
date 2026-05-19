@@ -3,7 +3,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from kitchen.config import DataConfig, KitchenConfig, MLflowConfig, MonitorConfig
+from kitchen.config import DataConfig, KitchenConfig, MLflowConfig, MonitorConfig, ThresholdSpec
 
 
 # --- KitchenConfig top-level ---
@@ -139,3 +139,75 @@ def test_full_config_with_all_sections():
 def test_invalid_data_section_propagates():
     with pytest.raises(ValidationError, match="competition"):
         KitchenConfig(experiment="x", data={"source": "kaggle"})
+
+
+# --- ThresholdSpec ---
+
+def test_threshold_spec_min_only():
+    spec = ThresholdSpec(min=0.80)
+    assert spec.min == 0.80
+    assert spec.max is None
+
+
+def test_threshold_spec_max_only():
+    spec = ThresholdSpec(max=0.40)
+    assert spec.max == 0.40
+    assert spec.min is None
+
+
+def test_threshold_spec_both():
+    spec = ThresholdSpec(min=0.60, max=0.95)
+    assert spec.min == 0.60
+    assert spec.max == 0.95
+
+
+def test_threshold_spec_neither_raises():
+    with pytest.raises(ValidationError, match="at least one"):
+        ThresholdSpec()
+
+
+def test_threshold_spec_extra_field_raises():
+    with pytest.raises(ValidationError):
+        ThresholdSpec(min=0.80, typo=0.5)
+
+
+# --- thresholds in KitchenConfig ---
+
+def test_config_plain_float_thresholds():
+    cfg = KitchenConfig(experiment="x", thresholds={"val_accuracy": 0.85})
+    assert cfg.thresholds["val_accuracy"] == 0.85
+
+
+def test_config_spec_threshold():
+    cfg = KitchenConfig(experiment="x", thresholds={"val_logloss": {"max": 0.40}})
+    assert isinstance(cfg.thresholds["val_logloss"], ThresholdSpec)
+    assert cfg.thresholds["val_logloss"].max == 0.40
+
+
+def test_config_mixed_thresholds():
+    cfg = KitchenConfig(
+        experiment="x",
+        thresholds={"val_accuracy": 0.80, "val_logloss": {"max": 0.40}},
+    )
+    assert cfg.thresholds["val_accuracy"] == 0.80
+    assert isinstance(cfg.thresholds["val_logloss"], ThresholdSpec)
+
+
+def test_config_thresholds_from_yaml(tmp_path):
+    params = tmp_path / "params.yaml"
+    params.write_text(
+        "experiment: titanic\n"
+        "thresholds:\n"
+        "  val_accuracy: 0.80\n"
+        "  val_logloss:\n"
+        "    max: 0.45\n"
+    )
+    cfg = KitchenConfig.from_yaml(str(params))
+    assert cfg.thresholds["val_accuracy"] == 0.80
+    assert isinstance(cfg.thresholds["val_logloss"], ThresholdSpec)
+    assert cfg.thresholds["val_logloss"].max == 0.45
+
+
+def test_config_empty_thresholds_default():
+    cfg = KitchenConfig(experiment="x")
+    assert cfg.thresholds == {}

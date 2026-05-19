@@ -119,14 +119,19 @@ class Trainer(ABC):
         fits and logs inside it instead of starting a new nested run.
         """
         import mlflow as _mlflow  # noqa: PLC0415 — lazy to keep steps.py lightweight
-        df = store.load_parquet(_resolve(params, "processed_file", "features.parquet"))
+        from kitchen.tracking import log_run_context  # noqa: PLC0415
+        processed_file = _resolve(params, "processed_file", "features.parquet")
+        df = store.load_parquet(processed_file)
         store.models_dir.mkdir(parents=True, exist_ok=True)
+        data_path = store.processed_dir / processed_file
         if _mlflow.active_run() is not None:
+            log_run_context(params=params, data_path=data_path)
             model = self.fit(df, params)
             tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
             _log_feature_importances(model)
             return model
         with tracker.run(run_name=params.get("run_name"), params=params):
+            log_run_context(params=params, data_path=data_path)
             model = self.fit(df, params)
             tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
             _log_feature_importances(model)
