@@ -200,6 +200,11 @@ mlflow:
 
 run_name: baseline
 metrics_file: metrics.json
+
+# thresholds:               # optional: fail CI if a metric violates its constraint
+#   val_accuracy: 0.80      # plain float = lower bound (>= 0.80)
+#   val_logloss:
+#     max: 0.45             # upper bound for lower-is-better metrics (<= 0.45)
 """
 
 _PYPROJECT_TOML = """\
@@ -270,6 +275,11 @@ mlflow:
 
 run_name: baseline
 metrics_file: metrics.json
+
+# thresholds:               # optional: fail CI if a metric violates its constraint
+#   val_accuracy: 0.80      # plain float = lower bound (>= 0.80)
+#   val_logloss:
+#     max: 0.45             # upper bound for lower-is-better metrics (<= 0.45)
 """
 
 _INFRA_YAML = """\
@@ -834,11 +844,15 @@ jobs:
           BASE=base-metrics/metrics.json
           COMPARE_ARG=""
           if [ -f "$$BASE" ]; then COMPARE_ARG="--compare $$BASE"; fi
+          set +e
           REPORT=$$(kitchen report $$COMPARE_ARG)
+          REPORT_EXIT=$$?
+          set -e
           echo "$$REPORT" >> $$GITHUB_STEP_SUMMARY
           echo "KITCHEN_REPORT<<EOF" >> $$GITHUB_ENV
           echo "$$REPORT" >> $$GITHUB_ENV
           echo "EOF" >> $$GITHUB_ENV
+          exit $$REPORT_EXIT
 
       - name: Upload metrics
         uses: actions/upload-artifact@v4
@@ -928,11 +942,15 @@ jobs:
           BASE=base-metrics/metrics.json
           COMPARE_ARG=""
           if [ -f "$$BASE" ]; then COMPARE_ARG="--compare $$BASE"; fi
+          set +e
           REPORT=$$(kitchen report $$COMPARE_ARG)
+          REPORT_EXIT=$$?
+          set -e
           echo "$$REPORT" >> $$GITHUB_STEP_SUMMARY
           echo "KITCHEN_REPORT<<EOF" >> $$GITHUB_ENV
           echo "$$REPORT" >> $$GITHUB_ENV
           echo "EOF" >> $$GITHUB_ENV
+          exit $$REPORT_EXIT
 
       - name: Upload metrics
         uses: actions/upload-artifact@v4
@@ -1579,7 +1597,7 @@ def report(
         base_metrics.pop("_run", None)
 
     experiment = "unknown"
-    run_name = None
+    cfg = None
     params_path = Path(params_file)
     if params_path.exists():
         try:
@@ -1643,6 +1661,43 @@ def report(
                     typer.echo(f"  {key}: {value:.6f}")
                 else:
                     typer.echo(f"  {key}: {value}")
+
+    thresholds = cfg.thresholds if cfg is not None else {}
+    if thresholds:
+        from kitchen.config import ThresholdSpec
+        failures: list[tuple[str, float | int, str]] = []
+        for name in sorted(thresholds):
+            if name not in metrics:
+                continue
+            actual = metrics[name]
+            if not isinstance(actual, (int, float)):
+                continue
+            spec = thresholds[name]
+            if isinstance(spec, (int, float)):
+                if actual < spec:
+                    bound = f"{spec:.6f}" if isinstance(spec, float) else str(spec)
+                    failures.append((name, actual, f">= {bound}"))
+            else:
+                if spec.min is not None and actual < spec.min:
+                    bound = f"{spec.min:.6f}"
+                    failures.append((name, actual, f">= {bound}"))
+                if spec.max is not None and actual > spec.max:
+                    bound = f"{spec.max:.6f}"
+                    failures.append((name, actual, f"<= {bound}"))
+        if failures:
+            if format == "github":
+                typer.echo("\n### Threshold Violations\n")
+                typer.echo("| Metric | Constraint | Actual |")
+                typer.echo("| --- | --- | --- |")
+                for name, actual, constraint in failures:
+                    actual_str = f"{actual:.6f}" if isinstance(actual, float) else str(actual)
+                    typer.echo(f"| `{name}` | {constraint} | {actual_str} |")
+            else:
+                typer.echo("\nThreshold violations:")
+                for name, actual, constraint in failures:
+                    actual_str = f"{actual:.6f}" if isinstance(actual, float) else str(actual)
+                    typer.echo(f"  FAIL  {name}: {actual_str} {constraint}")
+            raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------

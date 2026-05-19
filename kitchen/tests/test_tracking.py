@@ -4,7 +4,18 @@ from unittest.mock import MagicMock, patch
 import mlflow
 import pytest
 
-from kitchen.tracking import Tracker, _flatten, configure, configure_from_env, init_experiment
+from kitchen.tracking import (
+    Tracker,
+    _dict_hash,
+    _file_hash,
+    _flatten,
+    _git_sha,
+    _package_versions,
+    configure,
+    configure_from_env,
+    init_experiment,
+    log_run_context,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -134,3 +145,113 @@ def test_init_experiment_no_artifact_location_without_bucket():
         init_experiment("my-exp")
         _, kwargs = mock_mlflow.create_experiment.call_args
         assert kwargs["artifact_location"] is None
+
+
+# ── K-008: reproducibility helpers ───────────────────────────────────────────
+
+def test_git_sha_returns_string_or_none():
+    result = _git_sha()
+    assert result is None or (isinstance(result, str) and len(result) == 40)
+
+
+def test_git_sha_returns_none_on_failure():
+    with patch("subprocess.run", side_effect=Exception("no git")):
+        assert _git_sha() is None
+
+
+def test_git_sha_returns_none_on_nonzero_exit():
+    mock_result = MagicMock()
+    mock_result.returncode = 128
+    with patch("subprocess.run", return_value=mock_result):
+        assert _git_sha() is None
+
+
+def test_package_versions_returns_known_package():
+    versions = _package_versions(["mlflow"])
+    assert "mlflow" in versions
+    assert isinstance(versions["mlflow"], str)
+
+
+def test_package_versions_skips_missing_package():
+    versions = _package_versions(["mlflow", "no-such-pkg-xyz"])
+    assert "mlflow" in versions
+    assert "no-such-pkg-xyz" not in versions
+
+
+def test_dict_hash_is_deterministic():
+    d = {"b": 2, "a": 1}
+    assert _dict_hash(d) == _dict_hash(d)
+
+
+def test_dict_hash_order_independent():
+    assert _dict_hash({"a": 1, "b": 2}) == _dict_hash({"b": 2, "a": 1})
+
+
+def test_dict_hash_differs_on_different_content():
+    assert _dict_hash({"a": 1}) != _dict_hash({"a": 2})
+
+
+def test_file_hash_matches_sha256(tmp_path):
+    import hashlib
+    content = b"hello world"
+    f = tmp_path / "data.bin"
+    f.write_bytes(content)
+    expected = hashlib.sha256(content).hexdigest()
+    assert _file_hash(f) == expected
+
+
+def test_log_run_context_sets_tags(tmp_path):
+    uri = f"file://{tmp_path}"
+    mlflow.set_tracking_uri(uri)
+    mlflow.set_experiment("ctx-test")
+    with mlflow.start_run():
+        log_run_context(params={"lr": 0.1})
+
+    runs = mlflow.search_runs(experiment_names=["ctx-test"])
+    tags = runs.iloc[0]
+    assert tags["tags.kitchen.python"].count(".") == 2
+    assert len(tags["tags.kitchen.params_sha256"]) == 64
+
+
+def test_log_run_context_logs_data_hash(tmp_path):
+    data_file = tmp_path / "features.parquet"
+    data_file.write_bytes(b"fake parquet content")
+    uri = f"file://{tmp_path / 'mlruns'}"
+    mlflow.set_tracking_uri(uri)
+    mlflow.set_experiment("ctx-data-test")
+    with mlflow.start_run():
+        log_run_context(data_path=data_file)
+
+    runs = mlflow.search_runs(experiment_names=["ctx-data-test"])
+    assert len(runs.iloc[0]["tags.kitchen.data_sha256"]) == 64
+
+
+def test_log_run_context_skips_missing_data_file(tmp_path):
+    uri = f"file://{tmp_path}"
+    mlflow.set_tracking_uri(uri)
+    mlflow.set_experiment("ctx-missing-test")
+    with mlflow.start_run():
+        log_run_context(data_path=tmp_path / "does_not_exist.parquet")
+
+    runs = mlflow.search_runs(experiment_names=["ctx-missing-test"])
+    assert "tags.kitchen.data_sha256" not in runs.columns or runs.iloc[0].get("tags.kitchen.data_sha256") != runs.iloc[0].get("tags.kitchen.data_sha256")  # NaN
+
+
+def test_log_run_context_is_best_effort(tmp_path):
+    uri = f"file://{tmp_path}"
+    mlflow.set_tracking_uri(uri)
+    mlflow.set_experiment("ctx-err-test")
+    with mlflow.start_run():
+        with patch("kitchen.tracking.mlflow.set_tags", side_effect=Exception("boom")):
+            log_run_context(params={"x": 1})  # must not raise
+
+
+def test_tracker_run_sets_context_tags(tmp_path):
+    uri = f"file://{tmp_path}"
+    tracker = Tracker("ctx-tracker-test", tracking_uri=uri)
+    with tracker.run(params={"depth": 3}):
+        pass
+
+    mlflow.set_tracking_uri(uri)
+    runs = mlflow.search_runs(experiment_names=["ctx-tracker-test"])
+    assert "tags.kitchen.python" in runs.columns

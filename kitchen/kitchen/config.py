@@ -80,6 +80,26 @@ class SubmissionConfig(BaseModel):
     sample_submission: str = "sample_submission.csv"
 
 
+class ThresholdSpec(BaseModel):
+    """Explicit min/max threshold for a single metric.
+
+    Use ``min`` for higher-is-better metrics (accuracy, AUC).
+    Use ``max`` for lower-is-better metrics (logloss, RMSE).
+    Both can be set to define a valid range.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    min: float | None = None
+    max: float | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> "ThresholdSpec":
+        if self.min is None and self.max is None:
+            raise ValueError("ThresholdSpec must specify at least one of: min, max")
+        return self
+
+
 class KitchenConfig(BaseModel):
     """Top-level model for params.yaml.
 
@@ -97,6 +117,7 @@ class KitchenConfig(BaseModel):
     submission: SubmissionConfig | None = None
     run_name: str | None = None
     metrics_file: str = "metrics.json"
+    thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, path: str = "params.yaml") -> "KitchenConfig":

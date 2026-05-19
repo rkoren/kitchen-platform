@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import os
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 import mlflow
@@ -37,6 +38,82 @@ _FLAVOURS: dict[str, Any] = {
     "xgboost": mlflow.xgboost,
     "pyfunc": mlflow.pyfunc,
 }
+
+
+_TRACKED_PACKAGES = [
+    "kitchen",
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "xgboost",
+    "mlflow",
+]
+
+
+def _git_sha() -> str | None:
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def _package_versions(packages: list[str]) -> dict[str, str]:
+    from importlib.metadata import PackageNotFoundError, version
+    out: dict[str, str] = {}
+    for pkg in packages:
+        try:
+            out[pkg] = version(pkg)
+        except PackageNotFoundError:
+            pass
+    return out
+
+
+def _dict_hash(d: dict) -> str:
+    import hashlib
+    import json
+    canonical = json.dumps(d, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _file_hash(path: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def log_run_context(
+    params: dict | None = None,
+    data_path: Path | str | None = None,
+) -> None:
+    """Best-effort: tag the active MLflow run with git SHA, package versions, and data/params hashes."""
+    import sys
+    try:
+        tags: dict[str, str] = {}
+        sha = _git_sha()
+        if sha:
+            tags["kitchen.git_sha"] = sha
+        tags["kitchen.python"] = (
+            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        )
+        for pkg, ver in _package_versions(_TRACKED_PACKAGES).items():
+            tags[f"kitchen.pkg.{pkg}"] = ver
+        if params is not None:
+            tags["kitchen.params_sha256"] = _dict_hash(params)
+        if data_path is not None:
+            p = Path(data_path)
+            if p.exists():
+                tags["kitchen.data_sha256"] = _file_hash(p)
+        mlflow.set_tags(tags)
+    except Exception:
+        pass
 
 
 def _flatten(d: dict, prefix: str = "") -> dict[str, Any]:
@@ -68,6 +145,7 @@ class Tracker:
         with mlflow.start_run(run_name=run_name) as active_run:
             if params:
                 mlflow.log_params(_flatten(params))
+            log_run_context(params=params)
             yield active_run
 
     @staticmethod
