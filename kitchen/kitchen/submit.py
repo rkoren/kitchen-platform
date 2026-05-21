@@ -46,3 +46,40 @@ def upload(file_path: Path, message: str, competition: str) -> None:
 
     kaggle.api.authenticate()
     kaggle.api.competition_submit(str(file_path), message, competition, quiet=False)
+
+
+def fetch_score(competition: str, timeout: int = 120, interval: int = 10) -> float | None:
+    """Poll Kaggle for the most recent submission's public leaderboard score.
+
+    Returns the score as a float, or None if the timeout expires, the submission
+    errors, or the score cannot be parsed.
+    """
+    import time
+
+    import kaggle
+
+    try:
+        kaggle.api.authenticate()
+    except Exception:
+        return None
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            submissions = kaggle.api.competition_submissions(competition)
+        except Exception:
+            return None
+        if submissions:
+            latest = submissions[0]
+            status = getattr(latest, "status", None)
+            if status == "complete":
+                raw = getattr(latest, "publicScore", None)
+                if raw is None:
+                    return None
+                try:
+                    return float(raw)
+                except (TypeError, ValueError):
+                    return None
+            if status == "error":
+                return None
+        time.sleep(interval)
+    return None

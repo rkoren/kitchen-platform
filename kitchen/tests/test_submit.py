@@ -1,15 +1,19 @@
 """Tests for `kitchen submit`."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
+import kaggle as _kaggle
 import pandas as pd
+import pytest
 
 from typer.testing import CliRunner
 
 from kitchen.cli import app
-from kitchen.submit import validate_submission
+from kitchen.submit import fetch_score, validate_submission
 
 runner = CliRunner()
 
@@ -245,3 +249,155 @@ def test_submit_credentials_via_json(tmp_path, monkeypatch):
          patch("kitchen.submit.upload"):
         result = runner.invoke(app, ["submit"], env={})
     assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# fetch_score unit tests
+# ---------------------------------------------------------------------------
+
+def _make_submission(status: str, public_score=None):
+    return SimpleNamespace(status=status, publicScore=public_score)
+
+
+def test_fetch_score_complete():
+    sub = _make_submission("complete", "0.85432")
+    with patch.object(_kaggle.api, "authenticate"), \
+         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+        score = fetch_score("test-comp", timeout=5, interval=0)
+    assert score == pytest.approx(0.85432)
+
+
+def test_fetch_score_complete_float_value():
+    sub = _make_submission("complete", 0.72)
+    with patch.object(_kaggle.api, "authenticate"), \
+         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+        score = fetch_score("test-comp", timeout=5, interval=0)
+    assert score == pytest.approx(0.72)
+
+
+def test_fetch_score_error_status():
+    sub = _make_submission("error")
+    with patch.object(_kaggle.api, "authenticate"), \
+         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+        score = fetch_score("test-comp", timeout=5, interval=0)
+    assert score is None
+
+
+def test_fetch_score_timeout_on_pending():
+    sub = _make_submission("pending")
+    with patch.object(_kaggle.api, "authenticate"), \
+         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]), \
+         patch("time.sleep"):
+        score = fetch_score("test-comp", timeout=0, interval=0)
+    assert score is None
+
+
+def test_fetch_score_pending_then_complete():
+    pending = _make_submission("pending")
+    complete = _make_submission("complete", "0.91")
+    mock_submissions = MagicMock(side_effect=[[pending], [complete]])
+    with patch.object(_kaggle.api, "authenticate"), \
+         patch.object(_kaggle.api, "competition_submissions", mock_submissions), \
+         patch("time.sleep"):
+        score = fetch_score("test-comp", timeout=60, interval=0)
+    assert score == pytest.approx(0.91)
+
+
+def test_fetch_score_empty_submissions():
+    with patch.object(_kaggle.api, "authenticate"), \
+         patch.object(_kaggle.api, "competition_submissions", return_value=[]), \
+         patch("time.sleep"):
+        score = fetch_score("test-comp", timeout=0, interval=0)
+    assert score is None
+
+
+def test_fetch_score_api_exception():
+    with patch.object(_kaggle.api, "authenticate"), \
+         patch.object(_kaggle.api, "competition_submissions", side_effect=RuntimeError("api error")):
+        score = fetch_score("test-comp", timeout=5, interval=0)
+    assert score is None
+
+
+def test_fetch_score_unparseable_score():
+    sub = _make_submission("complete", "not-a-number")
+    with patch.object(_kaggle.api, "authenticate"), \
+         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+        score = fetch_score("test-comp", timeout=5, interval=0)
+    assert score is None
+
+
+def test_fetch_score_none_public_score():
+    sub = _make_submission("complete", None)
+    with patch.object(_kaggle.api, "authenticate"), \
+         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+        score = fetch_score("test-comp", timeout=5, interval=0)
+    assert score is None
+
+
+# ---------------------------------------------------------------------------
+# CLI submit + score integration tests
+# ---------------------------------------------------------------------------
+
+def test_submit_wait_writes_score_to_metrics_json(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
+    (tmp_path / "metrics.json").write_text('{"val_accuracy": 0.9}\n')
+
+    with patch("pathlib.Path.home", return_value=tmp_path), \
+         patch("kitchen.submit.upload"), \
+         patch("kitchen.submit.fetch_score", return_value=0.78) as mock_fetch:
+        result = runner.invoke(app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
+
+    assert result.exit_code == 0, result.output
+    assert "Leaderboard score: 0.780000" in result.output
+    assert "Score written to metrics.json" in result.output
+    metrics = json.loads((tmp_path / "metrics.json").read_text())
+    assert metrics["kaggle_public_score"] == pytest.approx(0.78)
+    assert metrics["val_accuracy"] == pytest.approx(0.9)
+    mock_fetch.assert_called_once_with("march-machine-learning-mania-2026")
+
+
+def test_submit_default_skips_fetch(tmp_path, monkeypatch):
+    """By default, submit does not poll for a leaderboard score."""
+    monkeypatch.chdir(tmp_path)
+    _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
+
+    with patch("pathlib.Path.home", return_value=tmp_path), \
+         patch("kitchen.submit.upload"), \
+         patch("kitchen.submit.fetch_score") as mock_fetch:
+        result = runner.invoke(
+            app, ["submit"],
+            env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"},
+        )
+
+    assert result.exit_code == 0
+    mock_fetch.assert_not_called()
+    assert "Leaderboard score" not in result.output
+
+
+def test_submit_wait_score_not_available_message(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
+
+    with patch("pathlib.Path.home", return_value=tmp_path), \
+         patch("kitchen.submit.upload"), \
+         patch("kitchen.submit.fetch_score", return_value=None):
+        result = runner.invoke(app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
+
+    assert result.exit_code == 0
+    assert "not yet available" in result.output
+    assert not (tmp_path / "metrics.json").exists()
+
+
+def test_submit_wait_creates_metrics_json_if_missing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
+
+    with patch("pathlib.Path.home", return_value=tmp_path), \
+         patch("kitchen.submit.upload"), \
+         patch("kitchen.submit.fetch_score", return_value=0.82):
+        result = runner.invoke(app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
+
+    assert result.exit_code == 0
+    metrics = json.loads((tmp_path / "metrics.json").read_text())
+    assert metrics["kaggle_public_score"] == pytest.approx(0.82)
