@@ -170,6 +170,89 @@ class TestExperimentsCompare:
 
 
 # ---------------------------------------------------------------------------
+# leaderboard
+# ---------------------------------------------------------------------------
+
+
+class TestLeaderboard:
+    def _invoke(self, runs, *extra_args, exp_found=True):
+        with patch("mlflow.tracking.MlflowClient") as mock_client_cls:
+            client = mock_client_cls.return_value
+            client.get_experiment_by_name.return_value = _make_exp() if exp_found else None
+            client.search_runs.return_value = runs
+            return runner.invoke(app, ["leaderboard", "--experiment", "cbb-tournament", *extra_args])
+
+    def test_experiment_not_found(self):
+        result = self._invoke([], exp_found=False)
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+    def test_no_runs_with_metric(self):
+        result = self._invoke([])
+        assert result.exit_code == 0
+        assert "No runs" in result.output
+
+    def test_ranks_runs_best_first_lower_is_better(self):
+        runs = [
+            _make_run("a" * 32, "winner", metrics={"loto_brier": 0.164}),
+            _make_run("b" * 32, "loser", metrics={"loto_brier": 0.172}),
+        ]
+        result = self._invoke(runs)
+        assert result.exit_code == 0
+        assert "★" in result.output
+        assert result.output.index("a" * 32) < result.output.index("b" * 32)
+        assert "lower=better" in result.output
+
+    def test_shows_full_run_id(self):
+        run_id = "abcdef1234567890abcdef1234567890"
+        runs = [_make_run(run_id, metrics={"loto_brier": 0.16})]
+        result = self._invoke(runs)
+        assert result.exit_code == 0
+        assert run_id in result.output
+
+    def test_shows_lb_score_column(self):
+        runs = [
+            _make_run("a" * 32, metrics={"loto_brier": 0.164, "lb_score": 0.183}),
+            _make_run("b" * 32, metrics={"loto_brier": 0.172}),
+        ]
+        result = self._invoke(runs)
+        assert result.exit_code == 0
+        assert "lb_score" in result.output
+        assert "0.183" in result.output
+
+    def test_shows_model_variant(self):
+        runs = [
+            _make_run("a" * 32, metrics={"loto_brier": 0.16}, tags={"model_variant": "challenger"}),
+        ]
+        result = self._invoke(runs)
+        assert result.exit_code == 0
+        assert "challenger" in result.output
+
+    def test_higher_is_better_flag(self):
+        runs = [_make_run("a" * 32, metrics={"val_auc": 0.92})]
+        result = self._invoke(runs, "--metric", "val_auc", "--higher-is-better")
+        assert result.exit_code == 0
+        assert "higher=better" in result.output
+
+    def test_custom_metric(self):
+        runs = [_make_run("a" * 32, metrics={"brier_2026": 0.15})]
+        result = self._invoke(runs, "--metric", "brier_2026")
+        assert result.exit_code == 0
+        assert "brier_2026" in result.output
+
+    def test_reads_experiment_from_params_yaml(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "params.yaml").write_text("experiment: from-yaml\n")
+        with patch("mlflow.tracking.MlflowClient") as mock_client_cls:
+            client = mock_client_cls.return_value
+            client.get_experiment_by_name.return_value = _make_exp()
+            client.search_runs.return_value = []
+            result = runner.invoke(app, ["leaderboard"])
+        assert result.exit_code == 0
+        assert "from-yaml" in result.output
+
+
+# ---------------------------------------------------------------------------
 # promote
 # ---------------------------------------------------------------------------
 
