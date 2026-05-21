@@ -388,3 +388,79 @@ def test_report_mixed_min_max_thresholds(tmp_path, monkeypatch):
     assert "`val_logloss`" in result.output
     violations_section = result.output.split("Threshold Violations")[1]
     assert "`val_accuracy`" not in violations_section
+
+
+# ---------------------------------------------------------------------------
+# Kaggle leaderboard score (GH-007)
+# ---------------------------------------------------------------------------
+
+def test_report_kaggle_score_appears_in_dedicated_section(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.77123})
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+    assert "Kaggle Public Leaderboard" in result.output
+    assert "0.771230" in result.output
+
+
+def test_report_kaggle_score_not_in_metrics_table(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.77123})
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+    # Score should not appear as a row in the main metrics table
+    assert "`kaggle_public_score`" not in result.output
+
+
+def test_report_no_kaggle_score_no_leaderboard_section(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.88})
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+    assert "Kaggle" not in result.output
+
+
+def test_report_kaggle_score_compare_shows_delta(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.91, "kaggle_public_score": 0.78})
+    _write_metrics(tmp_path / "base.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.75})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
+    assert result.exit_code == 0
+    assert "Kaggle Public Leaderboard" in result.output
+    assert "0.780000" in result.output
+    assert "0.750000" in result.output
+    assert "+0.030000" in result.output
+    # Score should not appear in compare table
+    assert "`kaggle_public_score`" not in result.output
+
+
+def test_report_kaggle_score_compare_no_base_score(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.91, "kaggle_public_score": 0.78})
+    _write_metrics(tmp_path / "base.json", {"val_accuracy": 0.88})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json")])
+    assert result.exit_code == 0
+    assert "Kaggle Public Leaderboard" in result.output
+    assert "0.780000" in result.output
+    assert "base:" not in result.output.split("Kaggle")[1].splitlines()[0]
+
+
+def test_report_kaggle_score_plain_format(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.77123})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--format", "plain"])
+    assert result.exit_code == 0
+    assert "Kaggle Public Leaderboard: 0.771230" in result.output
+    assert "kaggle_public_score" not in result.output.replace("Kaggle Public Leaderboard", "")
+
+
+def test_report_kaggle_score_plain_format_compare_delta(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"kaggle_public_score": 0.78})
+    _write_metrics(tmp_path / "base.json", {"kaggle_public_score": 0.75})
+    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json"), "--format", "plain"])
+    assert result.exit_code == 0
+    assert "Kaggle Public Leaderboard" in result.output
+    assert "delta: +0.030000" in result.output
+
+
+def test_report_kaggle_score_with_threshold_violation(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.70, "kaggle_public_score": 0.77})
+    (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 1
+    assert "Kaggle Public Leaderboard" in result.output
+    assert "Threshold Violations" in result.output
