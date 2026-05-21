@@ -113,7 +113,7 @@ class KitchenConfig(BaseModel):
 
     experiment: str
     data: DataConfig | None = None
-    mlflow: MLflowConfig = Field(default_factory=MLflowConfig)
+    mlflow: MLflowConfig = MLflowConfig()
     monitor: MonitorConfig | None = None
     submission: SubmissionConfig | None = None
     run_name: str | None = None
