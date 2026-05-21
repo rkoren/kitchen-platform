@@ -22,14 +22,65 @@ The workflow runs on every push to `main` and on every pull request:
 | PR comment | Posts (or updates) a comment with the metrics table and delta vs. `main` |
 | Artifacts | Uploads `metrics.json` and the Evidently HTML report as downloadable artifacts |
 
-## Required secrets
+## Secrets management
 
-Add these to your repository (or a GitHub Environment):
+### Required secrets
 
 | Secret | Where to get it |
 |---|---|
 | `KAGGLE_USERNAME` | Your Kaggle account username |
-| `KAGGLE_KEY` | API token from kaggle.com → Account → API |
+| `KAGGLE_KEY` | API token from [kaggle.com](https://www.kaggle.com/settings) → Account → API |
+
+### Repository secrets vs. GitHub Environments
+
+There are two places to store these secrets in GitHub:
+
+| | Repository secrets | GitHub Environments |
+|---|---|---|
+| Scope | Available to every workflow in the repo | Scoped to a named environment (`staging`, `production`) |
+| Approval gates | No | Yes — require a reviewer before the job runs |
+| Branch restriction | No | Yes — restrict which branches can deploy to an environment |
+| Audit trail | Basic | Full deployment log per environment |
+
+**Recommendation: use GitHub Environments.** Repository secrets are available to any workflow branch, including forks on public repos. Environment secrets are scoped: the `staging` environment runs on PRs, the `production` environment runs on `main`. A leaked branch can never access `production` credentials.
+
+### Setting up environments (recommended)
+
+**Step 1 — Create the environments**
+
+1. Go to **Settings → Environments**.
+2. Click **New environment**, name it `staging`, and click **Configure environment**.
+3. Leave the protection rules empty for `staging` (PRs run automatically).
+4. Repeat, creating a `production` environment.
+5. Under **Deployment branches and tags** for `production`, select **Selected branches** and add `main`.
+
+**Step 2 — Add secrets to each environment**
+
+For both `staging` and `production`:
+
+1. Open the environment (Settings → Environments → select the environment).
+2. Click **Add secret**.
+3. Add `KAGGLE_USERNAME` (your Kaggle username).
+4. Add `KAGGLE_KEY` (your Kaggle API token — download from kaggle.com → Account → API).
+
+**Step 3 — Wire the CI workflow to an environment**
+
+The scaffolded `.github/workflows/train-evaluate.yml` uses repository secrets by default. To switch to Environment secrets, add an `environment:` key to the job:
+
+```yaml
+jobs:
+  train-evaluate:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+      pull-requests: write
+```
+
+This expression picks `production` for pushes to `main` and `staging` for everything else (PRs, other branches). No other changes are needed — `secrets.KAGGLE_USERNAME` and `secrets.KAGGLE_KEY` resolve from the environment automatically.
+
+!!! tip "Optional: require approval for production"
+    In **Settings → Environments → production**, enable **Required reviewers** and add yourself. Every push to `main` will then pause and wait for your approval before the ingest and submit steps run — useful if you want to gate Kaggle submissions manually.
 
 ## Branch protection
 

@@ -1500,6 +1500,10 @@ def run_monitor(
     params_file: Annotated[
         str, typer.Option("--params", help="Path to params.yaml")
     ] = "params.yaml",
+    local: Annotated[
+        str | None,
+        typer.Option("--local", help="Write report to this local path (overrides params.yaml monitor config)"),
+    ] = None,
 ) -> None:
     """Run drift monitoring and generate an Evidently report."""
     import sys
@@ -1516,7 +1520,7 @@ def run_monitor(
     from kitchen.flows.monitor_flow import monitor_pipeline
 
     try:
-        result = monitor_pipeline(params_file=params_file)
+        result = monitor_pipeline(params_file=params_file, local_path_override=local)
         if result:
             typer.echo(f"Report saved to: {result}")
     except ValueError as exc:
@@ -1613,6 +1617,9 @@ def check(
 
             cfg = KitchenConfig.from_yaml(str(params_path))
             _ok(params_file, f"experiment={cfg.experiment!r}")
+            if cfg.monitor:
+                output = cfg.monitor.report_bucket or cfg.monitor.local_path
+                _ok("monitor config", f"output={output}")
         except ValidationError:
             _fail(params_file, f"invalid — run `kitchen validate {params_file}`")
         except Exception as exc:

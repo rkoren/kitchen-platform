@@ -312,3 +312,45 @@ def test_check_issues_summary(tmp_path, monkeypatch):
         result = _invoke(tmp_path, monkeypatch, env={})
     assert "found" in result.output
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# Monitor config section (MON-001 / MON-002)
+# ---------------------------------------------------------------------------
+
+
+def test_check_shows_monitor_config_when_present(tmp_path, monkeypatch):
+    params = (
+        "experiment: test-project\n"
+        "monitor:\n"
+        "  local_path: monitoring/drift.html\n"
+    )
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=params,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "monitor config" in result.output
+    assert "monitoring/drift.html" in result.output
+
+
+def test_check_no_monitor_section_shows_no_monitor_line(tmp_path, monkeypatch):
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "monitor config" not in result.output
