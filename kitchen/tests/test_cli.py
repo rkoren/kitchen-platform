@@ -366,14 +366,31 @@ def test_run_monitor_invokes_pipeline(tmp_path, monkeypatch):
 
     calls = []
 
-    def fake_pipeline(params_file="params.yaml"):
-        calls.append(params_file)
+    def fake_pipeline(params_file="params.yaml", local_path_override=None):
+        calls.append((params_file, local_path_override))
         return "monitoring/drift.html"
 
     monkeypatch.setattr("kitchen.flows.monitor_flow.monitor_pipeline", fake_pipeline)
     result = runner.invoke(app, ["run", "monitor"])
     assert result.exit_code == 0
-    assert calls == ["params.yaml"]
+    assert calls == [("params.yaml", None)]
+    assert "monitoring/drift.html" in result.output
+
+
+def test_run_monitor_local_flag(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+
+    calls = []
+
+    def fake_pipeline(params_file="params.yaml", local_path_override=None):
+        calls.append(local_path_override)
+        return local_path_override
+
+    monkeypatch.setattr("kitchen.flows.monitor_flow.monitor_pipeline", fake_pipeline)
+    result = runner.invoke(app, ["run", "monitor", "--local", "monitoring/drift.html"])
+    assert result.exit_code == 0
+    assert calls == ["monitoring/drift.html"]
     assert "monitoring/drift.html" in result.output
 
 
@@ -381,7 +398,7 @@ def test_run_monitor_missing_output_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text("experiment: test\n")
 
-    def fake_pipeline(params_file="params.yaml"):
+    def fake_pipeline(params_file="params.yaml", local_path_override=None):
         raise ValueError("monitor config must specify at least one of: report_bucket or local_path")
 
     monkeypatch.setattr("kitchen.flows.monitor_flow.monitor_pipeline", fake_pipeline)

@@ -28,6 +28,16 @@ from kitchen.store import DataStore
 _log = logging.getLogger(__name__)
 
 
+def _validate_output(monitor_cfg: dict) -> None:
+    """Fail immediately if no output destination is configured."""
+    if not monitor_cfg.get("report_bucket") and not monitor_cfg.get("local_path"):
+        raise ValueError(
+            "No output configured for monitoring. "
+            "Run with --local report.html, or add 'local_path' or 'report_bucket' "
+            "under the 'monitor' key in params.yaml."
+        )
+
+
 @task(name="load-reference")
 def _load_reference(store: DataStore, filename: str) -> object:
     return store.load_parquet(filename, stage="processed")
@@ -69,12 +79,15 @@ def _save_report(report: DriftReport, monitor_cfg: dict) -> str:
 
 
 @flow(name="kitchen-monitor")
-def monitor_pipeline(params_file: str = "params.yaml") -> str:
+def monitor_pipeline(params_file: str = "params.yaml", local_path_override: str | None = None) -> str:
     """Run drift detection: load reference + current data, generate Evidently report, save/upload."""
     with open(params_file) as f:
         params = yaml.safe_load(f)
 
     monitor_cfg = params.get("monitor", {})
+    if local_path_override:
+        monitor_cfg["local_path"] = local_path_override
+    _validate_output(monitor_cfg)
     store = DataStore()
 
     reference = _load_reference(store, monitor_cfg.get("reference_file", "reference.parquet"))

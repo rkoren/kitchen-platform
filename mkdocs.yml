@@ -55,6 +55,7 @@ nav:
     - Overview: kitchen/index.md
     - Quickstart: kitchen/quickstart.md
     - Kaggle Competition: kitchen/kaggle-quickstart.md
+    - Configuration: kitchen/configuration.md
     - Data Versioning: kitchen/data-versioning.md
     - Experiment Tracking: kitchen/experiment-tracking.md
     - Model Serving: kitchen/model-serving.md
