@@ -1,4 +1,5 @@
 """Terraform generator for S3 bucket resources."""
+
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader

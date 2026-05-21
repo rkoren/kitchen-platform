@@ -1,4 +1,5 @@
 """Tests for `kitchen submit`."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +10,6 @@ from unittest.mock import MagicMock, patch
 import kaggle as _kaggle
 import pandas as pd
 import pytest
-
 from typer.testing import CliRunner
 
 from kitchen.cli import app
@@ -51,6 +51,7 @@ submission:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_csv(path: Path, rows: list[dict]) -> None:
     pd.DataFrame(rows).to_csv(path, index=False)
 
@@ -75,6 +76,7 @@ VALID_SUB = [{"Id": 1, "Pred": 0.9}, {"Id": 2, "Pred": 0.8}]
 # ---------------------------------------------------------------------------
 # Unit tests for validate_submission
 # ---------------------------------------------------------------------------
+
 
 def _df(rows):
     return pd.DataFrame(rows)
@@ -125,6 +127,7 @@ def test_validate_collects_all_errors():
 # ---------------------------------------------------------------------------
 # CLI integration tests
 # ---------------------------------------------------------------------------
+
 
 def test_submit_missing_params(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -185,8 +188,10 @@ def test_submit_validation_failure(tmp_path, monkeypatch):
 def test_submit_happy_path(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
-    with patch("pathlib.Path.home", return_value=tmp_path), \
-         patch("kitchen.submit.upload") as mock_upload:
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload") as mock_upload,
+    ):
         result = runner.invoke(app, ["submit"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
     assert result.exit_code == 0
     assert "Submitted" in result.output
@@ -207,8 +212,10 @@ def test_submit_competition_from_data_section(tmp_path, monkeypatch):
     _write_csv(raw_dir / "sample_submission.csv", sample_default)
     sub_path = tmp_path / "submissions" / "submission.csv"
     _write_csv(sub_path, [{"Id": 1, "target": 0.9}, {"Id": 2, "target": 0.8}])
-    with patch("pathlib.Path.home", return_value=tmp_path), \
-         patch("kitchen.submit.upload") as mock_upload:
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload") as mock_upload,
+    ):
         result = runner.invoke(app, ["submit"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
     assert result.exit_code == 0
     _, _, call_comp = mock_upload.call_args.args
@@ -218,10 +225,13 @@ def test_submit_competition_from_data_section(tmp_path, monkeypatch):
 def test_submit_custom_message(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
-    with patch("pathlib.Path.home", return_value=tmp_path), \
-         patch("kitchen.submit.upload") as mock_upload:
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload") as mock_upload,
+    ):
         result = runner.invoke(
-            app, ["submit", "--message", "my custom msg"],
+            app,
+            ["submit", "--message", "my custom msg"],
             env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"},
         )
     assert result.exit_code == 0
@@ -232,8 +242,10 @@ def test_submit_custom_message(tmp_path, monkeypatch):
 def test_submit_upload_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
-    with patch("pathlib.Path.home", return_value=tmp_path), \
-         patch("kitchen.submit.upload", side_effect=RuntimeError("rate limit exceeded")):
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload", side_effect=RuntimeError("rate limit exceeded")),
+    ):
         result = runner.invoke(app, ["submit"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
     assert result.exit_code != 0
     assert "rate limit exceeded" in result.output
@@ -245,8 +257,7 @@ def test_submit_credentials_via_json(tmp_path, monkeypatch):
     kaggle_dir = tmp_path / ".kaggle"
     kaggle_dir.mkdir()
     (kaggle_dir / "kaggle.json").write_text('{"username":"u","key":"k"}')
-    with patch("pathlib.Path.home", return_value=tmp_path), \
-         patch("kitchen.submit.upload"):
+    with patch("pathlib.Path.home", return_value=tmp_path), patch("kitchen.submit.upload"):
         result = runner.invoke(app, ["submit"], env={})
     assert result.exit_code == 0
 
@@ -255,39 +266,48 @@ def test_submit_credentials_via_json(tmp_path, monkeypatch):
 # fetch_score unit tests
 # ---------------------------------------------------------------------------
 
+
 def _make_submission(status: str, public_score=None):
     return SimpleNamespace(status=status, publicScore=public_score)
 
 
 def test_fetch_score_complete():
     sub = _make_submission("complete", "0.85432")
-    with patch.object(_kaggle.api, "authenticate"), \
-         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+    ):
         score = fetch_score("test-comp", timeout=5, interval=0)
     assert score == pytest.approx(0.85432)
 
 
 def test_fetch_score_complete_float_value():
     sub = _make_submission("complete", 0.72)
-    with patch.object(_kaggle.api, "authenticate"), \
-         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+    ):
         score = fetch_score("test-comp", timeout=5, interval=0)
     assert score == pytest.approx(0.72)
 
 
 def test_fetch_score_error_status():
     sub = _make_submission("error")
-    with patch.object(_kaggle.api, "authenticate"), \
-         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+    ):
         score = fetch_score("test-comp", timeout=5, interval=0)
     assert score is None
 
 
 def test_fetch_score_timeout_on_pending():
     sub = _make_submission("pending")
-    with patch.object(_kaggle.api, "authenticate"), \
-         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]), \
-         patch("time.sleep"):
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+        patch("time.sleep"),
+    ):
         score = fetch_score("test-comp", timeout=0, interval=0)
     assert score is None
 
@@ -296,40 +316,50 @@ def test_fetch_score_pending_then_complete():
     pending = _make_submission("pending")
     complete = _make_submission("complete", "0.91")
     mock_submissions = MagicMock(side_effect=[[pending], [complete]])
-    with patch.object(_kaggle.api, "authenticate"), \
-         patch.object(_kaggle.api, "competition_submissions", mock_submissions), \
-         patch("time.sleep"):
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", mock_submissions),
+        patch("time.sleep"),
+    ):
         score = fetch_score("test-comp", timeout=60, interval=0)
     assert score == pytest.approx(0.91)
 
 
 def test_fetch_score_empty_submissions():
-    with patch.object(_kaggle.api, "authenticate"), \
-         patch.object(_kaggle.api, "competition_submissions", return_value=[]), \
-         patch("time.sleep"):
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[]),
+        patch("time.sleep"),
+    ):
         score = fetch_score("test-comp", timeout=0, interval=0)
     assert score is None
 
 
 def test_fetch_score_api_exception():
-    with patch.object(_kaggle.api, "authenticate"), \
-         patch.object(_kaggle.api, "competition_submissions", side_effect=RuntimeError("api error")):
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", side_effect=RuntimeError("api error")),
+    ):
         score = fetch_score("test-comp", timeout=5, interval=0)
     assert score is None
 
 
 def test_fetch_score_unparseable_score():
     sub = _make_submission("complete", "not-a-number")
-    with patch.object(_kaggle.api, "authenticate"), \
-         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+    ):
         score = fetch_score("test-comp", timeout=5, interval=0)
     assert score is None
 
 
 def test_fetch_score_none_public_score():
     sub = _make_submission("complete", None)
-    with patch.object(_kaggle.api, "authenticate"), \
-         patch.object(_kaggle.api, "competition_submissions", return_value=[sub]):
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+    ):
         score = fetch_score("test-comp", timeout=5, interval=0)
     assert score is None
 
@@ -338,15 +368,20 @@ def test_fetch_score_none_public_score():
 # CLI submit + score integration tests
 # ---------------------------------------------------------------------------
 
+
 def test_submit_wait_writes_score_to_metrics_json(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
     (tmp_path / "metrics.json").write_text('{"val_accuracy": 0.9}\n')
 
-    with patch("pathlib.Path.home", return_value=tmp_path), \
-         patch("kitchen.submit.upload"), \
-         patch("kitchen.submit.fetch_score", return_value=0.78) as mock_fetch:
-        result = runner.invoke(app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload"),
+        patch("kitchen.submit.fetch_score", return_value=0.78) as mock_fetch,
+    ):
+        result = runner.invoke(
+            app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"}
+        )
 
     assert result.exit_code == 0, result.output
     assert "Leaderboard score: 0.780000" in result.output
@@ -362,11 +397,14 @@ def test_submit_default_skips_fetch(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
 
-    with patch("pathlib.Path.home", return_value=tmp_path), \
-         patch("kitchen.submit.upload"), \
-         patch("kitchen.submit.fetch_score") as mock_fetch:
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload"),
+        patch("kitchen.submit.fetch_score") as mock_fetch,
+    ):
         result = runner.invoke(
-            app, ["submit"],
+            app,
+            ["submit"],
             env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"},
         )
 
@@ -379,10 +417,14 @@ def test_submit_wait_score_not_available_message(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
 
-    with patch("pathlib.Path.home", return_value=tmp_path), \
-         patch("kitchen.submit.upload"), \
-         patch("kitchen.submit.fetch_score", return_value=None):
-        result = runner.invoke(app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload"),
+        patch("kitchen.submit.fetch_score", return_value=None),
+    ):
+        result = runner.invoke(
+            app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"}
+        )
 
     assert result.exit_code == 0
     assert "not yet available" in result.output
@@ -393,10 +435,14 @@ def test_submit_wait_creates_metrics_json_if_missing(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
 
-    with patch("pathlib.Path.home", return_value=tmp_path), \
-         patch("kitchen.submit.upload"), \
-         patch("kitchen.submit.fetch_score", return_value=0.82):
-        result = runner.invoke(app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload"),
+        patch("kitchen.submit.fetch_score", return_value=0.82),
+    ):
+        result = runner.invoke(
+            app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"}
+        )
 
     assert result.exit_code == 0
     metrics = json.loads((tmp_path / "metrics.json").read_text())

@@ -1,4 +1,5 @@
 """Tests for FeatureBuilder, Trainer, and Evaluator contracts."""
+
 import json
 from unittest.mock import MagicMock, patch
 
@@ -7,8 +8,8 @@ import pytest
 
 from kitchen.steps import Evaluator, FeatureBuilder, Trainer, _resolve
 
-
 # --- Concrete implementations for testing ---
+
 
 class DoubleFeatures(FeatureBuilder):
     def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame:
@@ -26,6 +27,7 @@ class AccuracyEvaluator(Evaluator):
 
 
 # --- FeatureBuilder ---
+
 
 def test_feature_builder_build():
     raw = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
@@ -50,7 +52,9 @@ def test_feature_builder_run_passes_params_to_build():
 def test_feature_builder_run_calls_store(tmp_path):
     store = MagicMock()
     store.load_csv.return_value = pd.DataFrame({"x": [1, 2]})
-    DoubleFeatures().run(store, params={"raw_file": "data.csv", "processed_file": "features.parquet"})
+    DoubleFeatures().run(
+        store, params={"raw_file": "data.csv", "processed_file": "features.parquet"}
+    )
     store.load_csv.assert_called_once_with("data.csv")
     store.save_parquet.assert_called_once()
     saved_df = store.save_parquet.call_args[0][0]
@@ -58,6 +62,7 @@ def test_feature_builder_run_calls_store(tmp_path):
 
 
 # --- Trainer ---
+
 
 def test_trainer_fit():
     df = pd.DataFrame({"x": [1, 2]})
@@ -84,6 +89,7 @@ def test_trainer_run_logs_and_saves(tmp_path):
 def test_trainer_model_flavour_override(tmp_path):
     class XGBTrainer(Trainer):
         model_flavour = "xgboost"
+
         def fit(self, df, params):
             return object()
 
@@ -100,6 +106,7 @@ def test_trainer_model_flavour_override(tmp_path):
 
 
 # --- Evaluator ---
+
 
 def test_evaluator_evaluate():
     model = object()
@@ -136,6 +143,7 @@ def test_evaluator_run_returns_metrics():
 
 # --- _resolve: flat vs nested params ---
 
+
 def test_resolve_flat_params():
     params = {"processed_file": "flat.parquet"}
     assert _resolve(params, "processed_file", "default.parquet") == "flat.parquet"
@@ -169,15 +177,19 @@ def test_feature_builder_run_nested_params():
 
 # --- Trainer metric contract (P0-008) ---
 
+
 def test_trainer_run_logs_feature_importances_for_xgboost(tmp_path):
     """Trainer.run() calls _log_feature_importances after fit."""
+
     class XGBLikeModel:
         """Minimal stand-in for an XGBoost Booster."""
+
         def get_score(self, importance_type="gain"):
             return {"feature_a": 1.5, "feature_b": 0.8}
 
     class XGBLikeTrainer(Trainer):
         model_flavour = "xgboost"
+
         def fit(self, df, params):
             return XGBLikeModel()
 

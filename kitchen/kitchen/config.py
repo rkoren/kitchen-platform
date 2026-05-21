@@ -9,6 +9,7 @@ Or validate inline::
 
     cfg = KitchenConfig(**yaml.safe_load(open("params.yaml")))
 """
+
 from __future__ import annotations
 
 from typing import Literal
@@ -23,9 +24,9 @@ class DataConfig(BaseModel):
 
     source: Literal["kaggle", "s3", "local"]
     competition: str | None = None  # required when source=kaggle
-    bucket: str | None = None       # required when source=s3
-    prefix: str = ""                # s3 key prefix
-    path: str | None = None         # required when source=local
+    bucket: str | None = None  # required when source=s3
+    prefix: str = ""  # s3 key prefix
+    path: str | None = None  # required when source=local
 
     @model_validator(mode="after")
     def _validate_source_fields(self) -> "DataConfig":
@@ -123,6 +124,7 @@ class KitchenConfig(BaseModel):
     def from_yaml(cls, path: str = "params.yaml") -> "KitchenConfig":
         """Load and validate a params.yaml file."""
         import yaml
+
         with open(path) as f:
             raw = yaml.safe_load(f)
         return cls(**raw)

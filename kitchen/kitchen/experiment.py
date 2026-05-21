@@ -15,6 +15,7 @@ import mlflow
 @dataclass
 class ExperimentConfig:
     """A named, self-describing set of hyperparameters for one experiment run."""
+
     name: str
     params: dict[str, Any] = field(default_factory=dict)
     description: str = ""

@@ -8,6 +8,7 @@ Usage:
     kitchen experiments compare METRIC  # rank runs by a metric
     kitchen promote METRIC              # promote best run to the model registry
 """
+
 from __future__ import annotations
 
 import re
@@ -994,7 +995,7 @@ jobs:
 # Helpers
 # ---------------------------------------------------------------------------
 
-_SLUG_RE = re.compile(r'^[a-z][a-z0-9]*(-[a-z0-9]+)*$')
+_SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 
 
 def _validate_name(name: str) -> str | None:
@@ -1011,6 +1012,7 @@ def _resolve_experiment(experiment: str | None, params_file: str) -> str:
     if experiment:
         return experiment
     from kitchen.config import KitchenConfig
+
     p = Path(params_file)
     if p.exists():
         cfg = KitchenConfig.from_yaml(str(p))
@@ -1023,6 +1025,7 @@ def _resolve_experiment(experiment: str | None, params_file: str) -> str:
 
 def _time_ago(ms: int) -> str:
     import time
+
     diff = int(time.time()) - (ms // 1000)
     if diff < 60:
         return f"{diff}s ago"
@@ -1064,8 +1067,12 @@ app.add_typer(experiments_app, name="experiments")
 
 @experiments_app.command("list")
 def experiments_list(
-    experiment: Annotated[str | None, typer.Option("--experiment", "-e", help="Experiment name")] = None,
-    params_file: Annotated[str, typer.Option("--params", help="params.yaml to read experiment from")] = "params.yaml",
+    experiment: Annotated[
+        str | None, typer.Option("--experiment", "-e", help="Experiment name")
+    ] = None,
+    params_file: Annotated[
+        str, typer.Option("--params", help="params.yaml to read experiment from")
+    ] = "params.yaml",
     limit: Annotated[int, typer.Option("--limit", "-n", help="Max runs to show")] = 10,
 ) -> None:
     """List recent runs in an MLflow experiment."""
@@ -1126,8 +1133,12 @@ def experiments_list(
 @experiments_app.command("compare")
 def experiments_compare(
     metric: str = typer.Argument(..., help="Metric to rank by"),
-    experiment: Annotated[str | None, typer.Option("--experiment", "-e", help="Experiment name")] = None,
-    params_file: Annotated[str, typer.Option("--params", help="params.yaml to read experiment from")] = "params.yaml",
+    experiment: Annotated[
+        str | None, typer.Option("--experiment", "-e", help="Experiment name")
+    ] = None,
+    params_file: Annotated[
+        str, typer.Option("--params", help="params.yaml to read experiment from")
+    ] = "params.yaml",
     lower_is_better: Annotated[bool, typer.Option("--lower-is-better/--higher-is-better")] = False,
     limit: Annotated[int, typer.Option("--limit", "-n", help="Max runs to show")] = 20,
 ) -> None:
@@ -1172,9 +1183,12 @@ def experiments_compare(
 # Ingest command
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def ingest(
-    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
     out_dir: Annotated[str | None, typer.Option("--out", help="Override output directory")] = None,
 ) -> None:
     """Download raw competition data as configured in params.yaml."""
@@ -1196,7 +1210,10 @@ def ingest(
         raise typer.Exit(1)
 
     if cfg.data is None:
-        typer.echo("error: no 'data' section in params.yaml — add source, competition/bucket/path", err=True)
+        typer.echo(
+            "error: no 'data' section in params.yaml — add source, competition/bucket/path",
+            err=True,
+        )
         raise typer.Exit(1)
 
     if cfg.data.source == "kaggle":
@@ -1229,8 +1246,10 @@ def ingest(
 # Submit command
 # ---------------------------------------------------------------------------
 
+
 def _write_kaggle_score(score: float, metrics_file: str = "metrics.json") -> None:
     import json
+
     path = Path(metrics_file)
     try:
         metrics = json.loads(path.read_text()) if path.exists() else {}
@@ -1242,10 +1261,19 @@ def _write_kaggle_score(score: float, metrics_file: str = "metrics.json") -> Non
 
 @app.command()
 def submit(
-    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
-    file: Annotated[str, typer.Option("--file", help="Submission CSV to upload")] = "submissions/submission.csv",
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
+    file: Annotated[
+        str, typer.Option("--file", help="Submission CSV to upload")
+    ] = "submissions/submission.csv",
     message: Annotated[str | None, typer.Option("--message", help="Submission message")] = None,
-    wait: Annotated[bool, typer.Option("--wait", help="Poll for leaderboard score after upload and write to metrics.json")] = False,
+    wait: Annotated[
+        bool,
+        typer.Option(
+            "--wait", help="Poll for leaderboard score after upload and write to metrics.json"
+        ),
+    ] = False,
 ) -> None:
     """Validate and upload a submission CSV to Kaggle."""
     import os
@@ -1330,6 +1358,7 @@ def submit(
 
     if wait:
         from kitchen.submit import fetch_score
+
         typer.echo("Waiting for Kaggle to score submission…")
         score = fetch_score(competition)
         if score is not None:
@@ -1350,7 +1379,9 @@ app.add_typer(run_app, name="run")
 
 @run_app.command("train")
 def run_train(
-    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
 ) -> None:
     """Run the full train pipeline: features → train → log to MLflow."""
     import sys
@@ -1374,8 +1405,7 @@ def run_train(
         train_pipeline(params_file=params_file)
     except ModuleNotFoundError as exc:
         typer.echo(
-            f"error: {exc}\n"
-            "Run from the project root and make sure src/ is implemented.",
+            f"error: {exc}\nRun from the project root and make sure src/ is implemented.",
             err=True,
         )
         raise typer.Exit(1)
@@ -1383,10 +1413,19 @@ def run_train(
 
 @run_app.command("evaluate")
 def run_evaluate(
-    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
-    model_uri: Annotated[str | None, typer.Option("--model-uri", help="MLflow model URI (runs:/… or models:/name@alias)")] = None,
-    alias: Annotated[str, typer.Option("--alias", help="Registry alias when model-uri is not set")] = "champion",
-    flavor: Annotated[str, typer.Option("--flavor", help="MLflow loader flavor: sklearn, xgboost, pyfunc")] = "sklearn",
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
+    model_uri: Annotated[
+        str | None,
+        typer.Option("--model-uri", help="MLflow model URI (runs:/… or models:/name@alias)"),
+    ] = None,
+    alias: Annotated[
+        str, typer.Option("--alias", help="Registry alias when model-uri is not set")
+    ] = "champion",
+    flavor: Annotated[
+        str, typer.Option("--flavor", help="MLflow loader flavor: sklearn, xgboost, pyfunc")
+    ] = "sklearn",
 ) -> None:
     """Load a model from MLflow and run the project's evaluator."""
     import os
@@ -1408,19 +1447,24 @@ def run_evaluate(
 
     if model_uri is None:
         from kitchen.config import KitchenConfig
+
         cfg = KitchenConfig.from_yaml(str(path))
         model_name = os.environ.get("MLFLOW_MODEL_NAME", f"{cfg.experiment}-model")
         model_uri = f"models:/{model_name}@{alias}"
 
     from kitchen.tracking import configure_from_env
+
     configure_from_env()
 
     _LOADERS = {"sklearn": "mlflow.sklearn", "xgboost": "mlflow.xgboost", "pyfunc": "mlflow.pyfunc"}
     if flavor not in _LOADERS:
-        typer.echo(f"error: unknown flavor {flavor!r} — choose from: {', '.join(_LOADERS)}", err=True)
+        typer.echo(
+            f"error: unknown flavor {flavor!r} — choose from: {', '.join(_LOADERS)}", err=True
+        )
         raise typer.Exit(1)
 
     import importlib
+
     loader = importlib.import_module(_LOADERS[flavor])
     try:
         model = loader.load_model(model_uri)
@@ -1432,13 +1476,13 @@ def run_evaluate(
         from src.evaluate.run import evaluate  # project-provided  # noqa: PLC0415
     except ModuleNotFoundError as exc:
         typer.echo(
-            f"error: {exc}\n"
-            "Run from the project root and make sure src/ is implemented.",
+            f"error: {exc}\nRun from the project root and make sure src/ is implemented.",
             err=True,
         )
         raise typer.Exit(1)
 
     from kitchen.store import DataStore
+
     try:
         metrics = evaluate(model, params, DataStore())
     except Exception as exc:
@@ -1453,7 +1497,9 @@ def run_evaluate(
 
 @run_app.command("monitor")
 def run_monitor(
-    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
 ) -> None:
     """Run drift monitoring and generate an Evidently report."""
     import sys
@@ -1482,9 +1528,12 @@ def run_monitor(
 # Check command
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def check(
-    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
 ) -> None:
     """Check that all tools, credentials, and project files are ready."""
     import os
@@ -1521,8 +1570,8 @@ def check(
 
     for name, hint in [
         ("terraform", "needed for `recipes generate`"),
-        ("dvc",       "needed for data versioning"),
-        ("docker",    "needed for `kitchen serve`"),
+        ("dvc", "needed for data versioning"),
+        ("docker", "needed for `kitchen serve`"),
     ]:
         if shutil.which(name):
             _ok(name, _bin_version(name))
@@ -1537,6 +1586,7 @@ def check(
 
     try:
         import boto3
+
         creds = boto3.Session().get_credentials()
         if creds is not None:
             creds.get_frozen_credentials()
@@ -1550,7 +1600,9 @@ def check(
     if os.environ.get("KAGGLE_USERNAME") or kaggle_json.exists():
         _ok("Kaggle credentials", "present")
     else:
-        _fail("Kaggle credentials", "create ~/.kaggle/kaggle.json or set KAGGLE_USERNAME + KAGGLE_KEY")
+        _fail(
+            "Kaggle credentials", "create ~/.kaggle/kaggle.json or set KAGGLE_USERNAME + KAGGLE_KEY"
+        )
 
     params_path = Path(params_file)
     if params_path.exists():
@@ -1558,6 +1610,7 @@ def check(
             from pydantic import ValidationError
 
             from kitchen.config import KitchenConfig
+
             cfg = KitchenConfig.from_yaml(str(params_path))
             _ok(params_file, f"experiment={cfg.experiment!r}")
         except ValidationError:
@@ -1597,12 +1650,21 @@ def check(
 # Report command
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def report(
-    metrics_file: Annotated[str, typer.Option("--metrics", help="Path to metrics.json")] = "metrics.json",
-    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
-    format: Annotated[str, typer.Option("--format", help="Output format: github, plain")] = "github",
-    compare: Annotated[str | None, typer.Option("--compare", help="Path to base metrics.json for delta comparison")] = None,
+    metrics_file: Annotated[
+        str, typer.Option("--metrics", help="Path to metrics.json")
+    ] = "metrics.json",
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
+    format: Annotated[
+        str, typer.Option("--format", help="Output format: github, plain")
+    ] = "github",
+    compare: Annotated[
+        str | None, typer.Option("--compare", help="Path to base metrics.json for delta comparison")
+    ] = None,
 ) -> None:
     """Write a metrics summary to stdout (pipe to $GITHUB_STEP_SUMMARY in CI)."""
     import json
@@ -1637,6 +1699,7 @@ def report(
     if params_path.exists():
         try:
             from kitchen.config import KitchenConfig
+
             cfg = KitchenConfig.from_yaml(str(params_path))
             experiment = cfg.experiment
         except Exception:
@@ -1671,11 +1734,27 @@ def report(
             for key in sorted(set(metrics) | set(base_metrics)):
                 pr_val = metrics.get(key)
                 base_val = base_metrics.get(key)
-                pr_str = f"{pr_val:.6f}" if isinstance(pr_val, float) else str(pr_val) if pr_val is not None else "(new)"
-                base_str = f"{base_val:.6f}" if isinstance(base_val, float) else str(base_val) if base_val is not None else "(new)"
+                pr_str = (
+                    f"{pr_val:.6f}"
+                    if isinstance(pr_val, float)
+                    else str(pr_val)
+                    if pr_val is not None
+                    else "(new)"
+                )
+                base_str = (
+                    f"{base_val:.6f}"
+                    if isinstance(base_val, float)
+                    else str(base_val)
+                    if base_val is not None
+                    else "(new)"
+                )
                 if isinstance(pr_val, (int, float)) and isinstance(base_val, (int, float)):
                     delta = pr_val - base_val
-                    delta_str = f"{float(delta):+.6f}" if isinstance(pr_val, float) or isinstance(base_val, float) else f"{delta:+d}"
+                    delta_str = (
+                        f"{float(delta):+.6f}"
+                        if isinstance(pr_val, float) or isinstance(base_val, float)
+                        else f"{delta:+d}"
+                    )
                 else:
                     delta_str = "—"
                 typer.echo(f"| `{key}` | {base_str} | {pr_str} | {delta_str} |")
@@ -1696,11 +1775,27 @@ def report(
             for key in sorted(set(metrics) | set(base_metrics)):
                 pr_val = metrics.get(key)
                 base_val = base_metrics.get(key)
-                pr_str = f"{pr_val:.6f}" if isinstance(pr_val, float) else str(pr_val) if pr_val is not None else "(new)"
-                base_str = f"{base_val:.6f}" if isinstance(base_val, float) else str(base_val) if base_val is not None else "(new)"
+                pr_str = (
+                    f"{pr_val:.6f}"
+                    if isinstance(pr_val, float)
+                    else str(pr_val)
+                    if pr_val is not None
+                    else "(new)"
+                )
+                base_str = (
+                    f"{base_val:.6f}"
+                    if isinstance(base_val, float)
+                    else str(base_val)
+                    if base_val is not None
+                    else "(new)"
+                )
                 if isinstance(pr_val, (int, float)) and isinstance(base_val, (int, float)):
                     delta = pr_val - base_val
-                    delta_str = f"{float(delta):+.6f}" if isinstance(pr_val, float) or isinstance(base_val, float) else f"{delta:+d}"
+                    delta_str = (
+                        f"{float(delta):+.6f}"
+                        if isinstance(pr_val, float) or isinstance(base_val, float)
+                        else f"{delta:+d}"
+                    )
                 else:
                     delta_str = "—"
                 typer.echo(f"  {key}: {pr_str} (base: {base_str}, delta: {delta_str})")
@@ -1772,15 +1867,24 @@ def report(
 # Promote command
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def promote(
     metric: str = typer.Argument(..., help="Metric to rank runs by"),
-    experiment: Annotated[str | None, typer.Option("--experiment", "-e", help="Experiment name")] = None,
-    params_file: Annotated[str, typer.Option("--params", help="params.yaml to read experiment from")] = "params.yaml",
-    model_name: Annotated[str | None, typer.Option("--model-name", help="Registered model name")] = None,
+    experiment: Annotated[
+        str | None, typer.Option("--experiment", "-e", help="Experiment name")
+    ] = None,
+    params_file: Annotated[
+        str, typer.Option("--params", help="params.yaml to read experiment from")
+    ] = "params.yaml",
+    model_name: Annotated[
+        str | None, typer.Option("--model-name", help="Registered model name")
+    ] = None,
     alias: Annotated[str, typer.Option("--alias", help="Model alias to set")] = "champion",
     lower_is_better: Annotated[bool, typer.Option("--lower-is-better/--higher-is-better")] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show winner without registering")] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show winner without registering")
+    ] = False,
 ) -> None:
     """Promote the best-performing run to the model registry."""
     import os
@@ -1829,15 +1933,24 @@ def promote(
 # Command
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def init(
     name: str = typer.Argument(..., help="Project / competition name (e.g. spaceship-titanic)"),
     here: bool = typer.Option(False, "--here", help="Scaffold into cwd, not a new subdirectory"),
     overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing files"),
     source: str = typer.Option("local", "--source", help="Data source: local, kaggle, s3"),
-    competition: str | None = typer.Option(None, "--competition", help="Kaggle competition slug (required when --source kaggle)"),
-    template: str = typer.Option("none", "--template", help="Starter template for src/train/run.py: none, baseline-xgb, baseline-lr"),
-    ci: bool = typer.Option(False, "--ci", help="Scaffold a .github/workflows/train-evaluate.yml CI workflow"),
+    competition: str | None = typer.Option(
+        None, "--competition", help="Kaggle competition slug (required when --source kaggle)"
+    ),
+    template: str = typer.Option(
+        "none",
+        "--template",
+        help="Starter template for src/train/run.py: none, baseline-xgb, baseline-lr",
+    ),
+    ci: bool = typer.Option(
+        False, "--ci", help="Scaffold a .github/workflows/train-evaluate.yml CI workflow"
+    ),
 ) -> None:
     """Scaffold a new kitchen competition project."""
     err = _validate_name(name)
@@ -1847,7 +1960,10 @@ def init(
 
     valid_sources = {"local", "kaggle", "s3"}
     if source not in valid_sources:
-        typer.echo(f"error: invalid source {source!r} — choose from: {', '.join(sorted(valid_sources))}", err=True)
+        typer.echo(
+            f"error: invalid source {source!r} — choose from: {', '.join(sorted(valid_sources))}",
+            err=True,
+        )
         raise typer.Exit(1)
 
     if source == "kaggle" and not competition:
@@ -1856,7 +1972,10 @@ def init(
 
     valid_templates = {"none", "baseline-xgb", "baseline-lr"}
     if template not in valid_templates:
-        typer.echo(f"error: invalid template {template!r} — choose from: {', '.join(sorted(valid_templates))}", err=True)
+        typer.echo(
+            f"error: invalid template {template!r} — choose from: {', '.join(sorted(valid_templates))}",
+            err=True,
+        )
         raise typer.Exit(1)
 
     class_name = _to_class_name(name)
@@ -1869,43 +1988,47 @@ def init(
     params_tmpl = _PARAMS_YAML_KAGGLE if source == "kaggle" else _PARAMS_YAML
     params_extra = {"competition": competition} if source == "kaggle" else {}
 
-    train_tmpl = {"baseline-xgb": _TRAIN_RUN_XGB, "baseline-lr": _TRAIN_RUN_LR}.get(template, _TRAIN_RUN)
+    train_tmpl = {"baseline-xgb": _TRAIN_RUN_XGB, "baseline-lr": _TRAIN_RUN_LR}.get(
+        template, _TRAIN_RUN
+    )
 
     files: list[tuple[Path, str]] = [
-        (root / "CLAUDE.md",                        r(_CLAUDE_MD, name, class_name)),
-        (root / ".env.example",                     r(_ENV_EXAMPLE, name, class_name)),
-        (root / ".gitignore",                       r(_GITIGNORE, name, class_name)),
-        (root / "params.yaml",                      r(params_tmpl, name, class_name, **params_extra)),
-        (root / "pyproject.toml",                   r(_PYPROJECT_TOML, name, class_name)),
-        (root / "infra" / f"{name}.yaml",           r(_INFRA_YAML, name, class_name)),
-        (root / "src" / "__init__.py",              ""),
+        (root / "CLAUDE.md", r(_CLAUDE_MD, name, class_name)),
+        (root / ".env.example", r(_ENV_EXAMPLE, name, class_name)),
+        (root / ".gitignore", r(_GITIGNORE, name, class_name)),
+        (root / "params.yaml", r(params_tmpl, name, class_name, **params_extra)),
+        (root / "pyproject.toml", r(_PYPROJECT_TOML, name, class_name)),
+        (root / "infra" / f"{name}.yaml", r(_INFRA_YAML, name, class_name)),
+        (root / "src" / "__init__.py", ""),
         (root / "src" / "features" / "__init__.py", ""),
-        (root / "src" / "features" / "run.py",     r(_FEATURES_RUN, name, class_name)),
-        (root / "src" / "train" / "__init__.py",   ""),
-        (root / "src" / "train" / "run.py",        r(train_tmpl, name, class_name)),
+        (root / "src" / "features" / "run.py", r(_FEATURES_RUN, name, class_name)),
+        (root / "src" / "train" / "__init__.py", ""),
+        (root / "src" / "train" / "run.py", r(train_tmpl, name, class_name)),
         (root / "src" / "evaluate" / "__init__.py", ""),
-        (root / "src" / "evaluate" / "run.py",     r(_EVALUATE_RUN, name, class_name)),
-        (root / "src" / "tests" / "__init__.py",   ""),
+        (root / "src" / "evaluate" / "run.py", r(_EVALUATE_RUN, name, class_name)),
+        (root / "src" / "tests" / "__init__.py", ""),
         (root / "src" / "tests" / "test_features.py", r(_TEST_FEATURES, name, class_name)),
-        (root / "experiments" / "__init__.py",      ""),
-        (root / "experiments" / "baseline.py",     r(_BASELINE_PY, name, class_name)),
-        (root / "experiments" / "challenger.py",   r(_CHALLENGER_PY, name, class_name)),
-        (root / "flows" / "train_flow.py",              r(_TRAIN_FLOW_PY, name, class_name)),
-        (root / "flows" / "promote.py",               r(_PROMOTE_PY, name, class_name)),
-        (root / "flows" / "generate_submission.py",   r(_GENERATE_SUBMISSION_PY, name, class_name)),
-        (root / "data" / "raw" / ".gitkeep",       ""),
+        (root / "experiments" / "__init__.py", ""),
+        (root / "experiments" / "baseline.py", r(_BASELINE_PY, name, class_name)),
+        (root / "experiments" / "challenger.py", r(_CHALLENGER_PY, name, class_name)),
+        (root / "flows" / "train_flow.py", r(_TRAIN_FLOW_PY, name, class_name)),
+        (root / "flows" / "promote.py", r(_PROMOTE_PY, name, class_name)),
+        (root / "flows" / "generate_submission.py", r(_GENERATE_SUBMISSION_PY, name, class_name)),
+        (root / "data" / "raw" / ".gitkeep", ""),
         (root / "data" / "processed" / ".gitkeep", ""),
-        (root / "submissions" / ".gitkeep",         ""),
+        (root / "submissions" / ".gitkeep", ""),
     ]
 
     if ci:
         ci_tmpl = _CI_WORKFLOW_KAGGLE if source == "kaggle" else _CI_WORKFLOW
-        files.append((root / ".github" / "workflows" / "train-evaluate.yml", r(ci_tmpl, name, class_name)))
+        files.append(
+            (root / ".github" / "workflows" / "train-evaluate.yml", r(ci_tmpl, name, class_name))
+        )
 
     for path, content in files:
         _write(path, content, overwrite)
 
-    cd_target = root.name if not here else '.'
+    cd_target = root.name if not here else "."
     if source == "kaggle":
         data_step = "  kitchen ingest                      # download competition data → data/raw/"
         submit_step = "  kitchen submit                      # validate and upload to Kaggle"

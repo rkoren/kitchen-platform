@@ -14,6 +14,7 @@ Configure via params.yaml under the ``monitor`` key::
 
 At least one of ``local_path`` or ``report_bucket`` must be provided.
 """
+
 from __future__ import annotations
 
 import logging

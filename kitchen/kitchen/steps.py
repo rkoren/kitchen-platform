@@ -17,6 +17,7 @@ Project repos implement these and wire them into dvc.yaml stages:
     class MyEvaluator(Evaluator):
         def evaluate(self, model: object, df: pd.DataFrame) -> dict[str, float]: ...
 """
+
 from __future__ import annotations
 
 import json
@@ -73,6 +74,7 @@ def _log_feature_importances(model: object) -> None:
     """
     try:
         import mlflow as _mlflow
+
         if hasattr(model, "get_score"):
             importances = model.get_score(importance_type="gain")
         elif hasattr(model, "feature_importances_") and hasattr(model, "feature_names_in_"):
@@ -119,7 +121,9 @@ class Trainer(ABC):
         fits and logs inside it instead of starting a new nested run.
         """
         import mlflow as _mlflow  # noqa: PLC0415 — lazy to keep steps.py lightweight
+
         from kitchen.tracking import log_run_context  # noqa: PLC0415
+
         processed_file = _resolve(params, "processed_file", "features.parquet")
         df = store.load_parquet(processed_file)
         store.models_dir.mkdir(parents=True, exist_ok=True)

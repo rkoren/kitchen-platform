@@ -1,4 +1,5 @@
 """Submission validation and upload for Kaggle competitions."""
+
 from __future__ import annotations
 
 from pathlib import Path

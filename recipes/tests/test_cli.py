@@ -1,9 +1,10 @@
 """Tests for the recipes CLI."""
+
 from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
-from recipes.cli import app, _workspace, _refresh_tf_files
+from recipes.cli import _refresh_tf_files, _workspace, app
 from recipes.schema import RecipeSpec
 
 runner = CliRunner()
@@ -45,6 +46,7 @@ resources:
 
 
 # ── generate ───────────────────────────────────────────────────────────────────
+
 
 def test_generate_exits_zero(tmp_path):
     spec = tmp_path / "infra.yaml"
@@ -103,6 +105,7 @@ def test_generate_lambda_uses_memory_and_timeout(tmp_path):
 
 # ── validate ──────────────────────────────────────────────────────────────────
 
+
 def test_validate_valid_spec(tmp_path):
     spec = tmp_path / "infra.yaml"
     spec.write_text(VALID_SPEC)
@@ -119,6 +122,7 @@ def test_validate_invalid_spec_exits_nonzero(tmp_path):
 
 
 # ── workspace helpers ─────────────────────────────────────────────────────────
+
 
 def test_workspace_creates_directory(tmp_path):
     with patch("recipes.cli._WORKSPACE_ROOT", tmp_path):
@@ -153,8 +157,11 @@ def test_refresh_tf_files_writes_provider(tmp_path):
 
 # ── apply ─────────────────────────────────────────────────────────────────────
 
+
 def test_apply_missing_spec_exits_nonzero(tmp_path):
-    result = runner.invoke(app, ["apply", "no-such-file.yaml", "--state-bucket", "my-bucket", "--yes"])
+    result = runner.invoke(
+        app, ["apply", "no-such-file.yaml", "--state-bucket", "my-bucket", "--yes"]
+    )
     assert result.exit_code != 0
 
 
@@ -216,8 +223,11 @@ def test_apply_aborts_on_terraform_failure(tmp_path):
 
 # ── destroy ───────────────────────────────────────────────────────────────────
 
+
 def test_destroy_missing_spec_exits_nonzero():
-    result = runner.invoke(app, ["destroy", "no-such-file.yaml", "--state-bucket", "my-bucket", "--yes"])
+    result = runner.invoke(
+        app, ["destroy", "no-such-file.yaml", "--state-bucket", "my-bucket", "--yes"]
+    )
     assert result.exit_code != 0
 
 

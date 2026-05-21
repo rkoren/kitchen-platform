@@ -12,6 +12,7 @@ Usage::
     report = DriftReport(ref, cur, target="label", numerical=["age", "score"])
     report.run()
 """
+
 from __future__ import annotations
 
 import boto3
@@ -62,6 +63,7 @@ class DriftReport:
     def save_html(self, path: str) -> None:
         """Write the HTML report to a local file. Requires run() first."""
         import pathlib
+
         pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
         pathlib.Path(path).write_text(self.as_html(), encoding="utf-8")
 

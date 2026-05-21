@@ -1,4 +1,5 @@
 """Tests for `kitchen report`."""
+
 from __future__ import annotations
 
 import json
@@ -24,6 +25,7 @@ def _invoke(tmp_path, monkeypatch, extra_args=None):
 # ---------------------------------------------------------------------------
 # Error cases
 # ---------------------------------------------------------------------------
+
 
 def test_report_missing_metrics_file(tmp_path, monkeypatch):
     result = _invoke(tmp_path, monkeypatch)
@@ -52,6 +54,7 @@ def test_report_custom_metrics_path(tmp_path, monkeypatch):
 # GitHub format (default)
 # ---------------------------------------------------------------------------
 
+
 def test_report_github_format_headers(tmp_path, monkeypatch):
     _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.876543})
     (tmp_path / "params.yaml").write_text(MINIMAL_PARAMS)
@@ -72,10 +75,13 @@ def test_report_github_format_table(tmp_path, monkeypatch):
 
 
 def test_report_github_shows_run_name(tmp_path, monkeypatch):
-    _write_metrics(tmp_path / "metrics.json", {
-        "_run": {"run_name": "baseline-run-42"},
-        "accuracy": 0.9,
-    })
+    _write_metrics(
+        tmp_path / "metrics.json",
+        {
+            "_run": {"run_name": "baseline-run-42"},
+            "accuracy": 0.9,
+        },
+    )
     result = _invoke(tmp_path, monkeypatch)
     assert result.exit_code == 0
     assert "baseline-run-42" in result.output
@@ -112,6 +118,7 @@ def test_report_metrics_sorted(tmp_path, monkeypatch):
 # Plain format
 # ---------------------------------------------------------------------------
 
+
 def test_report_plain_format(tmp_path, monkeypatch):
     _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.876543})
     (tmp_path / "params.yaml").write_text(MINIMAL_PARAMS)
@@ -133,6 +140,7 @@ def test_report_plain_no_markdown(tmp_path, monkeypatch):
 # Experiment name fallback
 # ---------------------------------------------------------------------------
 
+
 def test_report_experiment_from_params(tmp_path, monkeypatch):
     _write_metrics(tmp_path / "metrics.json", {"auc": 0.88})
     (tmp_path / "params.yaml").write_text("experiment: my-competition\n")
@@ -150,6 +158,7 @@ def test_report_experiment_unknown_when_no_params(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # --compare flag (GH-006 / GH-003)
 # ---------------------------------------------------------------------------
+
 
 def test_report_compare_missing_file(tmp_path, monkeypatch):
     _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.9})
@@ -205,9 +214,11 @@ def test_report_compare_negative_delta(tmp_path, monkeypatch):
 def test_report_compare_plain_format(tmp_path, monkeypatch):
     _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.91})
     _write_metrics(tmp_path / "base.json", {"accuracy": 0.88})
-    result = _invoke(tmp_path, monkeypatch, extra_args=[
-        "--compare", str(tmp_path / "base.json"), "--format", "plain"
-    ])
+    result = _invoke(
+        tmp_path,
+        monkeypatch,
+        extra_args=["--compare", str(tmp_path / "base.json"), "--format", "plain"],
+    )
     assert result.exit_code == 0
     assert "base:" in result.output
     assert "delta:" in result.output
@@ -259,8 +270,8 @@ def test_report_threshold_fail_shows_violation_table(tmp_path, monkeypatch):
     (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
     result = _invoke(tmp_path, monkeypatch)
     assert "Threshold Violations" in result.output
-    assert "0.850000" in result.output   # threshold
-    assert "0.750000" in result.output   # actual
+    assert "0.850000" in result.output  # threshold
+    assert "0.750000" in result.output  # actual
 
 
 def test_report_threshold_fail_still_shows_metrics(tmp_path, monkeypatch):
@@ -394,8 +405,11 @@ def test_report_mixed_min_max_thresholds(tmp_path, monkeypatch):
 # Kaggle leaderboard score (GH-007)
 # ---------------------------------------------------------------------------
 
+
 def test_report_kaggle_score_appears_in_dedicated_section(tmp_path, monkeypatch):
-    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.77123})
+    _write_metrics(
+        tmp_path / "metrics.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.77123}
+    )
     result = _invoke(tmp_path, monkeypatch)
     assert result.exit_code == 0
     assert "Kaggle Public Leaderboard" in result.output
@@ -403,7 +417,9 @@ def test_report_kaggle_score_appears_in_dedicated_section(tmp_path, monkeypatch)
 
 
 def test_report_kaggle_score_not_in_metrics_table(tmp_path, monkeypatch):
-    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.77123})
+    _write_metrics(
+        tmp_path / "metrics.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.77123}
+    )
     result = _invoke(tmp_path, monkeypatch)
     assert result.exit_code == 0
     # Score should not appear as a row in the main metrics table
@@ -441,7 +457,9 @@ def test_report_kaggle_score_compare_no_base_score(tmp_path, monkeypatch):
 
 
 def test_report_kaggle_score_plain_format(tmp_path, monkeypatch):
-    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.77123})
+    _write_metrics(
+        tmp_path / "metrics.json", {"val_accuracy": 0.88, "kaggle_public_score": 0.77123}
+    )
     result = _invoke(tmp_path, monkeypatch, extra_args=["--format", "plain"])
     assert result.exit_code == 0
     assert "Kaggle Public Leaderboard: 0.771230" in result.output
@@ -451,7 +469,11 @@ def test_report_kaggle_score_plain_format(tmp_path, monkeypatch):
 def test_report_kaggle_score_plain_format_compare_delta(tmp_path, monkeypatch):
     _write_metrics(tmp_path / "metrics.json", {"kaggle_public_score": 0.78})
     _write_metrics(tmp_path / "base.json", {"kaggle_public_score": 0.75})
-    result = _invoke(tmp_path, monkeypatch, extra_args=["--compare", str(tmp_path / "base.json"), "--format", "plain"])
+    result = _invoke(
+        tmp_path,
+        monkeypatch,
+        extra_args=["--compare", str(tmp_path / "base.json"), "--format", "plain"],
+    )
     assert result.exit_code == 0
     assert "Kaggle Public Leaderboard" in result.output
     assert "delta: +0.030000" in result.output

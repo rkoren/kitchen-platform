@@ -44,6 +44,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Quickstart: quickstart.md
   - Backlog: backlog.md
   - recipes:
     - Overview: recipes/index.md
@@ -53,6 +54,7 @@ nav:
   - kitchen:
     - Overview: kitchen/index.md
     - Quickstart: kitchen/quickstart.md
+    - Kaggle Competition: kitchen/kaggle-quickstart.md
     - Data Versioning: kitchen/data-versioning.md
     - Experiment Tracking: kitchen/experiment-tracking.md
     - Model Serving: kitchen/model-serving.md

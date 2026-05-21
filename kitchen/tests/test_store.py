@@ -1,11 +1,12 @@
 import pandas as pd
 import pytest
-from kitchen.store import DataStore
 
+from kitchen.store import DataStore
 
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
+
 
 def test_standard_paths(tmp_path):
     store = DataStore(root=tmp_path)
@@ -50,6 +51,7 @@ def test_save_parquet_models_stage(tmp_path):
 # root validation
 # ---------------------------------------------------------------------------
 
+
 def test_root_nonexistent_raises(tmp_path):
     missing = tmp_path / "does-not-exist"
     with pytest.raises(FileNotFoundError, match="does not exist"):
@@ -65,6 +67,7 @@ def test_root_none_uses_cwd(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 # Invalid stage
 # ---------------------------------------------------------------------------
+
 
 def test_save_parquet_invalid_stage_raises(tmp_path):
     store = DataStore(root=tmp_path)
@@ -82,6 +85,7 @@ def test_load_parquet_invalid_stage_raises(tmp_path):
 # ---------------------------------------------------------------------------
 # Actionable errors on missing files
 # ---------------------------------------------------------------------------
+
 
 def test_load_parquet_missing_raises_with_command(tmp_path):
     store = DataStore(root=tmp_path)

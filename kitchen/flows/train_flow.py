@@ -17,7 +17,9 @@ def build_features(params: dict, store: DataStore) -> None:
     try:
         from src.features.run import build  # project-defined
     except ImportError as e:
-        raise RuntimeError("Project must implement src/features/run.py with a build(params, store) function") from e
+        raise RuntimeError(
+            "Project must implement src/features/run.py with a build(params, store) function"
+        ) from e
     build(params, store)
 
 
@@ -26,7 +28,9 @@ def train_model(params: dict, store: DataStore, tracker: Tracker) -> object:
     try:
         from src.train.run import train  # project-defined
     except ImportError as e:
-        raise RuntimeError("Project must implement src/train/run.py with a train(params, store, tracker) function") from e
+        raise RuntimeError(
+            "Project must implement src/train/run.py with a train(params, store, tracker) function"
+        ) from e
     return train(params, store, tracker)
 
 
@@ -35,7 +39,9 @@ def evaluate_model(model: object, params: dict, store: DataStore) -> dict:
     try:
         from src.evaluate.run import evaluate  # project-defined
     except ImportError as e:
-        raise RuntimeError("Project must implement src/evaluate/run.py with an evaluate(model, params, store) function") from e
+        raise RuntimeError(
+            "Project must implement src/evaluate/run.py with an evaluate(model, params, store) function"
+        ) from e
     return evaluate(model, params, store)
 
 

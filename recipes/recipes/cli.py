@@ -1,4 +1,5 @@
 """recipes CLI entry point."""
+
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,6 +20,7 @@ _WORKSPACE_ROOT = Path.home() / ".recipes" / "tf"
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
+
 
 def _load_spec(spec_path: str) -> RecipeSpec:
     spec_file = Path(spec_path)
@@ -59,7 +61,9 @@ def _run_tf(args: list[str], workspace: Path) -> int:
     """Stream terraform output line-by-line. Returns exit code."""
     tf = shutil.which("terraform")
     if not tf:
-        console.print("[red]error:[/red] terraform not found on PATH. Install via: brew install hashicorp/tap/terraform")
+        console.print(
+            "[red]error:[/red] terraform not found on PATH. Install via: brew install hashicorp/tap/terraform"
+        )
         return 1
 
     proc = subprocess.Popen(
@@ -80,17 +84,21 @@ def _tf_init(spec: RecipeSpec, workspace: Path, state_bucket: str) -> bool:
     """Run terraform init with S3 backend config. Returns True on success."""
     console.print(f"\n[bold]→ terraform init[/bold]  (workspace: {workspace})\n")
     state_key = f"{spec.name}/terraform.tfstate"
-    rc = _run_tf([
-        "init",
-        f"-backend-config=bucket={state_bucket}",
-        f"-backend-config=key={state_key}",
-        f"-backend-config=region={spec.region}",
-        "-reconfigure",
-    ], workspace)
+    rc = _run_tf(
+        [
+            "init",
+            f"-backend-config=bucket={state_bucket}",
+            f"-backend-config=key={state_key}",
+            f"-backend-config=region={spec.region}",
+            "-reconfigure",
+        ],
+        workspace,
+    )
     return rc == 0
 
 
 # ── Commands ───────────────────────────────────────────────────────────────────
+
 
 @app.command()
 def generate(
@@ -140,7 +148,9 @@ def apply(
     spec = _load_spec(spec_path)
     workspace = _workspace(spec.name)
 
-    console.print(f"\n[bold]recipes apply[/bold]  spec=[cyan]{spec_path}[/cyan]  project=[cyan]{spec.name}[/cyan]")
+    console.print(
+        f"\n[bold]recipes apply[/bold]  spec=[cyan]{spec_path}[/cyan]  project=[cyan]{spec.name}[/cyan]"
+    )
     console.print(f"[dim]state: s3://{state_bucket}/{spec.name}/terraform.tfstate[/dim]")
     console.print(f"[dim]workspace: {workspace}[/dim]\n")
 
@@ -182,7 +192,9 @@ def destroy(
     spec = _load_spec(spec_path)
     workspace = _workspace(spec.name)
 
-    console.print(f"\n[bold red]recipes destroy[/bold red]  spec=[cyan]{spec_path}[/cyan]  project=[cyan]{spec.name}[/cyan]")
+    console.print(
+        f"\n[bold red]recipes destroy[/bold red]  spec=[cyan]{spec_path}[/cyan]  project=[cyan]{spec.name}[/cyan]"
+    )
     console.print(f"[dim]state: s3://{state_bucket}/{spec.name}/terraform.tfstate[/dim]\n")
 
     _refresh_tf_files(spec, workspace)
@@ -206,6 +218,7 @@ def destroy(
 
 
 # ── Internal ───────────────────────────────────────────────────────────────────
+
 
 def _write_provider(region: str, out_dir: Path) -> None:
     env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), keep_trailing_newline=True)

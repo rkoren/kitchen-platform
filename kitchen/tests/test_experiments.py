@@ -1,4 +1,5 @@
 """Tests for `kitchen experiments` and `kitchen promote` CLI commands."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -38,6 +39,7 @@ def _make_exp(experiment_id: str = "1") -> MagicMock:
 # experiments list
 # ---------------------------------------------------------------------------
 
+
 class TestExperimentsList:
     def test_experiment_not_found(self):
         with patch("mlflow.tracking.MlflowClient") as mock_client_cls:
@@ -57,7 +59,9 @@ class TestExperimentsList:
 
     def test_shows_runs_with_metrics(self):
         runs = [
-            _make_run("aaa0000011111111", "baseline", metrics={"val_accuracy": 0.85, "fi.feat1": 0.5}),
+            _make_run(
+                "aaa0000011111111", "baseline", metrics={"val_accuracy": 0.85, "fi.feat1": 0.5}
+            ),
             _make_run("bbb0000022222222", "challenger", metrics={"val_accuracy": 0.88}),
         ]
         with patch("mlflow.tracking.MlflowClient") as mock_client_cls:
@@ -93,11 +97,14 @@ class TestExperimentsList:
 # experiments compare
 # ---------------------------------------------------------------------------
 
+
 class TestExperimentsCompare:
     def test_experiment_not_found(self):
         with patch("mlflow.tracking.MlflowClient") as mock_client_cls:
             mock_client_cls.return_value.get_experiment_by_name.return_value = None
-            result = runner.invoke(app, ["experiments", "compare", "val_accuracy", "--experiment", "x"])
+            result = runner.invoke(
+                app, ["experiments", "compare", "val_accuracy", "--experiment", "x"]
+            )
         assert result.exit_code != 0
         assert "not found" in result.output
 
@@ -106,7 +113,9 @@ class TestExperimentsCompare:
             client = mock_client_cls.return_value
             client.get_experiment_by_name.return_value = _make_exp()
             client.search_runs.return_value = []
-            result = runner.invoke(app, ["experiments", "compare", "val_accuracy", "--experiment", "x"])
+            result = runner.invoke(
+                app, ["experiments", "compare", "val_accuracy", "--experiment", "x"]
+            )
         assert result.exit_code == 0
         assert "No runs" in result.output
 
@@ -119,7 +128,9 @@ class TestExperimentsCompare:
             client = mock_client_cls.return_value
             client.get_experiment_by_name.return_value = _make_exp()
             client.search_runs.return_value = runs
-            result = runner.invoke(app, ["experiments", "compare", "val_accuracy", "--experiment", "x"])
+            result = runner.invoke(
+                app, ["experiments", "compare", "val_accuracy", "--experiment", "x"]
+            )
         assert result.exit_code == 0
         assert "★" in result.output
         assert "aaa00000" in result.output
@@ -128,14 +139,19 @@ class TestExperimentsCompare:
 
     def test_shows_variant_tag(self):
         runs = [
-            _make_run("aaa0000011111111", metrics={"val_accuracy": 0.9},
-                      tags={"model_variant": "challenger"}),
+            _make_run(
+                "aaa0000011111111",
+                metrics={"val_accuracy": 0.9},
+                tags={"model_variant": "challenger"},
+            ),
         ]
         with patch("mlflow.tracking.MlflowClient") as mock_client_cls:
             client = mock_client_cls.return_value
             client.get_experiment_by_name.return_value = _make_exp()
             client.search_runs.return_value = runs
-            result = runner.invoke(app, ["experiments", "compare", "val_accuracy", "--experiment", "x"])
+            result = runner.invoke(
+                app, ["experiments", "compare", "val_accuracy", "--experiment", "x"]
+            )
         assert result.exit_code == 0
         assert "challenger" in result.output
 
@@ -157,10 +173,12 @@ class TestExperimentsCompare:
 # promote
 # ---------------------------------------------------------------------------
 
+
 class TestPromote:
     def _run_promote(self, *extra_args, run=None, production_uri=None):
         mock_run = run or _make_run(
-            "abc1234567890000", "baseline",
+            "abc1234567890000",
+            "baseline",
             metrics={"val_accuracy": 0.9},
             tags={"model_variant": "baseline"},
         )
@@ -196,7 +214,9 @@ class TestPromote:
         assert "champion" in result.output
 
     def test_shows_current_champion_if_exists(self):
-        result, _, _ = self._run_promote("--dry-run", production_uri="models:/my-exp-model@champion")
+        result, _, _ = self._run_promote(
+            "--dry-run", production_uri="models:/my-exp-model@champion"
+        )
         assert "Current" in result.output
         assert "champion" in result.output
 

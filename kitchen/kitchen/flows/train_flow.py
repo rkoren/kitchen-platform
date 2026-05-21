@@ -8,6 +8,7 @@ the model — delegating all project-specific logic to the project's own
 Run from the project root:
     python flows/train_flow.py
 """
+
 from __future__ import annotations
 
 import os
@@ -27,12 +28,14 @@ EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT", "default")
 @task
 def _build(params: dict) -> None:
     from src.features.run import build  # project-provided
+
     build(params, DataStore())
 
 
 @task
 def _train(params: dict) -> None:
     from src.train.run import train  # project-provided
+
     log = get_run_logger()
     configure_from_env()
     experiment = params.get("experiment", EXPERIMENT)

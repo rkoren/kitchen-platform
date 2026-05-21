@@ -8,6 +8,7 @@ Verifies that a fresh scaffold:
 - contains no maintainer-specific names
 - leaves intentional TODO boundaries as NotImplementedError (not silent pass-throughs)
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -148,6 +149,7 @@ def test_feature_builder_raises_not_implemented(scaffold, monkeypatch):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     import pandas as pd
+
     cls_name = "MyCompetitionFeatures"
     features_cls = getattr(mod, cls_name, None)
     if features_cls is None:
@@ -171,7 +173,9 @@ def test_init_skips_existing_files(tmp_path, monkeypatch):
     sentinel = tmp_path / "my-competition" / "params.yaml"
     sentinel.write_text("# modified")
     runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)
-    assert sentinel.read_text() == "# modified", "Re-init without --overwrite should skip existing files"
+    assert sentinel.read_text() == "# modified", (
+        "Re-init without --overwrite should skip existing files"
+    )
 
 
 def test_init_overwrite_flag(tmp_path, monkeypatch):
@@ -185,29 +189,36 @@ def test_init_overwrite_flag(tmp_path, monkeypatch):
 
 # --- kitchen init name validation ---
 
-@pytest.mark.parametrize("name", [
-    "titanic",
-    "spaceship-titanic",
-    "house-prices-2024",
-    "a",
-    "abc123",
-])
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "titanic",
+        "spaceship-titanic",
+        "house-prices-2024",
+        "a",
+        "abc123",
+    ],
+)
 def test_init_valid_names(name, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["init", name], catch_exceptions=False)
     assert result.exit_code == 0, f"Expected valid name {name!r} to be accepted"
 
 
-@pytest.mark.parametrize("name", [
-    "My-Competition",   # uppercase
-    "my competition",   # space
-    "-leading",         # leading hyphen
-    "trailing-",        # trailing hyphen
-    "a--b",             # consecutive hyphens
-    "1competition",     # starts with digit
-    "../escape",        # path traversal
-    "",                 # empty
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "My-Competition",  # uppercase
+        "my competition",  # space
+        "-leading",  # leading hyphen
+        "trailing-",  # trailing hyphen
+        "a--b",  # consecutive hyphens
+        "1competition",  # starts with digit
+        "../escape",  # path traversal
+        "",  # empty
+    ],
+)
 def test_init_invalid_names(name, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["init", name])
@@ -216,6 +227,7 @@ def test_init_invalid_names(name, tmp_path, monkeypatch):
 
 # --- generated test file ---
 
+
 def test_generated_test_asserts_not_implemented(scaffold):
     raw = (scaffold / "src/tests/test_features.py").read_text()
     assert "NotImplementedError" in raw, "Generated test should assert the TODO boundary"
@@ -223,6 +235,7 @@ def test_generated_test_asserts_not_implemented(scaffold):
 
 
 # --- kitchen validate ---
+
 
 def test_validate_valid_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -283,6 +296,7 @@ def test_validate_default_filename(tmp_path, monkeypatch):
 # kitchen run train
 # ---------------------------------------------------------------------------
 
+
 def test_run_train_missing_params(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["run", "train", "--params", "missing.yaml"])
@@ -337,6 +351,7 @@ def test_run_train_missing_src_module(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # kitchen run monitor
 # ---------------------------------------------------------------------------
+
 
 def test_run_monitor_missing_params(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -427,6 +442,7 @@ def test_run_evaluate_default_uri_from_experiment(tmp_path, monkeypatch):
 
     # Bypass actual import with a direct monkeypatch on the CLI's lazy import path
     import sys
+
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = fake_evaluate
     monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
@@ -443,6 +459,7 @@ def test_run_evaluate_custom_model_uri(tmp_path, monkeypatch):
     fake_evaluate, calls, _ = _make_evaluate_mocks(monkeypatch)
 
     import sys
+
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = fake_evaluate
     monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
@@ -459,6 +476,7 @@ def test_run_evaluate_custom_alias(tmp_path, monkeypatch):
     fake_evaluate, _, _ = _make_evaluate_mocks(monkeypatch)
 
     import sys
+
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = fake_evaluate
     monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
@@ -472,9 +490,12 @@ def test_run_evaluate_prints_metrics(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
 
-    fake_evaluate, _, _ = _make_evaluate_mocks(monkeypatch, metrics={"val_brier": 0.18, "val_accuracy": 0.72})
+    fake_evaluate, _, _ = _make_evaluate_mocks(
+        monkeypatch, metrics={"val_brier": 0.18, "val_accuracy": 0.72}
+    )
 
     import sys
+
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = fake_evaluate
     monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
@@ -492,6 +513,7 @@ def test_run_evaluate_model_load_failure(tmp_path, monkeypatch):
     _make_evaluate_mocks(monkeypatch, load_raises=Exception("registry not found"))
 
     import sys
+
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = lambda m, p, s: {}
     monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
@@ -519,6 +541,7 @@ def test_run_evaluate_missing_src_module(tmp_path, monkeypatch):
     # `from src.evaluate.run import evaluate` uses builtins.__import__, not
     # importlib.import_module, so we must intercept at the builtin level.
     import builtins
+
     real_import = builtins.__import__
 
     def blocking_import(name, *args, **kwargs):
@@ -536,10 +559,12 @@ def test_run_evaluate_missing_src_module(tmp_path, monkeypatch):
 # kitchen init --source / --competition / --template
 # ---------------------------------------------------------------------------
 
+
 def test_init_kaggle_source_params_yaml(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
-        app, ["init", "march-mania", "--source", "kaggle", "--competition", "march-ml-mania-2026"],
+        app,
+        ["init", "march-mania", "--source", "kaggle", "--competition", "march-ml-mania-2026"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0
@@ -554,7 +579,8 @@ def test_init_kaggle_source_params_yaml(tmp_path, monkeypatch):
 def test_init_kaggle_next_steps_mentions_ingest_and_submit(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
-        app, ["init", "my-comp", "--source", "kaggle", "--competition", "my-comp"],
+        app,
+        ["init", "my-comp", "--source", "kaggle", "--competition", "my-comp"],
         catch_exceptions=False,
     )
     assert "kitchen ingest" in result.output
@@ -585,7 +611,9 @@ def test_init_invalid_source(tmp_path, monkeypatch):
 def test_init_baseline_xgb_template(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
-        app, ["init", "my-comp", "--template", "baseline-xgb"], catch_exceptions=False,
+        app,
+        ["init", "my-comp", "--template", "baseline-xgb"],
+        catch_exceptions=False,
     )
     assert result.exit_code == 0
     train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
@@ -596,7 +624,9 @@ def test_init_baseline_xgb_template(tmp_path, monkeypatch):
 def test_init_baseline_lr_template(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
-        app, ["init", "my-comp", "--template", "baseline-lr"], catch_exceptions=False,
+        app,
+        ["init", "my-comp", "--template", "baseline-lr"],
+        catch_exceptions=False,
     )
     assert result.exit_code == 0
     train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
@@ -619,9 +649,16 @@ def test_init_default_train_template_unchanged(scaffold):
 def test_init_kaggle_with_template(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
-        app, [
-            "init", "mania", "--source", "kaggle",
-            "--competition", "march-ml-mania-2026", "--template", "baseline-xgb",
+        app,
+        [
+            "init",
+            "mania",
+            "--source",
+            "kaggle",
+            "--competition",
+            "march-ml-mania-2026",
+            "--template",
+            "baseline-xgb",
         ],
         catch_exceptions=False,
     )
@@ -693,7 +730,8 @@ def test_init_ci_workflow_has_workflow_dispatch(tmp_path, monkeypatch):
 def test_init_ci_kaggle_includes_ingest_step(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(
-        app, ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
         catch_exceptions=False,
     )
     content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
@@ -705,7 +743,8 @@ def test_init_ci_kaggle_includes_ingest_step(tmp_path, monkeypatch):
 def test_init_ci_kaggle_ingest_uses_secrets(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(
-        app, ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
         catch_exceptions=False,
     )
     raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
@@ -725,7 +764,8 @@ def test_init_ci_local_no_ingest_step(tmp_path, monkeypatch):
 def test_init_ci_note_in_output_for_kaggle(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
-        app, ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
         catch_exceptions=False,
     )
     assert "KAGGLE_USERNAME" in result.output
@@ -741,6 +781,7 @@ def test_init_ci_note_in_output(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # GH-003: PR comment steps in CI workflow
 # ---------------------------------------------------------------------------
+
 
 def test_init_ci_workflow_has_pr_comment_steps(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -790,7 +831,8 @@ def test_init_ci_workflow_has_pr_write_permission(tmp_path, monkeypatch):
 def test_init_ci_kaggle_workflow_has_pr_comment_steps(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(
-        app, ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
         catch_exceptions=False,
     )
     content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())

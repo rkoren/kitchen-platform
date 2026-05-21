@@ -9,6 +9,7 @@ Usage::
     store.save_parquet(df, "teams.parquet") # writes to data/processed/
     df = store.load_parquet("teams.parquet")
 """
+
 from pathlib import Path
 
 import pandas as pd
@@ -50,18 +51,14 @@ class DataStore:
 
     def _stage_dir(self, stage: str) -> Path:
         if stage not in _KNOWN_STAGES:
-            raise ValueError(
-                f"Unknown stage {stage!r}. Valid stages: {sorted(_KNOWN_STAGES)}"
-            )
+            raise ValueError(f"Unknown stage {stage!r}. Valid stages: {sorted(_KNOWN_STAGES)}")
         return getattr(self, f"{stage}_dir")
 
     def load_csv(self, filename: str, **kwargs: object) -> pd.DataFrame:
         """Read a CSV from data/raw/."""
         path = self.raw_dir / filename
         if not path.exists():
-            raise FileNotFoundError(
-                f"{path} not found — run `{_STAGE_COMMAND['raw']}` first"
-            )
+            raise FileNotFoundError(f"{path} not found — run `{_STAGE_COMMAND['raw']}` first")
         return pd.read_csv(path, **kwargs)
 
     def save_parquet(self, df: pd.DataFrame, filename: str, stage: str = "processed") -> Path:

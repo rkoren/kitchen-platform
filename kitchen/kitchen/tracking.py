@@ -18,6 +18,7 @@ Environment variables:
     MLFLOW_ARTIFACT_BUCKET — S3 bucket name; when set, new experiments store artifacts
                              at s3://<bucket>/mlflow-artifacts/<experiment-name>
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -52,10 +53,13 @@ _TRACKED_PACKAGES = [
 
 def _git_sha() -> str | None:
     import subprocess
+
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return result.stdout.strip() if result.returncode == 0 else None
     except Exception:
@@ -64,6 +68,7 @@ def _git_sha() -> str | None:
 
 def _package_versions(packages: list[str]) -> dict[str, str]:
     from importlib.metadata import PackageNotFoundError, version
+
     out: dict[str, str] = {}
     for pkg in packages:
         try:
@@ -76,12 +81,14 @@ def _package_versions(packages: list[str]) -> dict[str, str]:
 def _dict_hash(d: dict) -> str:
     import hashlib
     import json
+
     canonical = json.dumps(d, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _file_hash(path: Path) -> str:
     import hashlib
+
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
@@ -95,6 +102,7 @@ def log_run_context(
 ) -> None:
     """Best-effort: tag the active MLflow run with git SHA, package versions, and data/params hashes."""
     import sys
+
     try:
         tags: dict[str, str] = {}
         sha = _git_sha()
@@ -163,6 +171,7 @@ class Tracker:
 
 
 # ── Functional API for env-driven setup ───────────────────────────────────────
+
 
 def configure(tracking_uri: str, artifact_bucket: str | None = None) -> None:
     """Set MLflow tracking URI and optional S3 artifact bucket."""

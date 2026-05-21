@@ -1,4 +1,5 @@
 """Terraform generator for ECR repository resources."""
+
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader

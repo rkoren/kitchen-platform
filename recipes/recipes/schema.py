@@ -1,4 +1,5 @@
 """Pydantic models for YAML spec validation."""
+
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator

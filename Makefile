@@ -1,4 +1,4 @@
-.PHONY: test lint fmt build clean
+.PHONY: test lint fmt build clean hooks
 
 # Run all tests
 test:
@@ -24,3 +24,7 @@ build:
 clean:
 	rm -rf dist/ kitchen/.pytest_cache recipes/.pytest_cache
 	find . -type d -name __pycache__ -exec rm -rf {} +
+
+# Install pre-commit hooks into the local git repo
+hooks:
+	pre-commit install

@@ -1,12 +1,13 @@
 """Tests for KitchenConfig and sub-models."""
+
 import pytest
 import yaml
 from pydantic import ValidationError
 
 from kitchen.config import DataConfig, KitchenConfig, MLflowConfig, MonitorConfig, ThresholdSpec
 
-
 # --- KitchenConfig top-level ---
+
 
 def test_minimal_valid_config():
     cfg = KitchenConfig(experiment="my-exp")
@@ -37,6 +38,7 @@ def test_from_yaml(tmp_path):
 
 
 # --- DataConfig ---
+
 
 def test_kaggle_source_valid():
     cfg = DataConfig(source="kaggle", competition="titanic")
@@ -80,6 +82,7 @@ def test_data_extra_fields_allowed():
 
 # --- MLflowConfig ---
 
+
 def test_mlflow_defaults():
     cfg = MLflowConfig()
     assert cfg.tracking_uri == "sqlite:///mlruns.db"
@@ -92,6 +95,7 @@ def test_mlflow_custom_uri():
 
 
 # --- MonitorConfig ---
+
 
 def test_monitor_with_bucket():
     cfg = MonitorConfig(report_bucket="my-bucket")
@@ -110,7 +114,9 @@ def test_monitor_with_both():
 
 
 def test_monitor_missing_output_raises():
-    with pytest.raises(ValidationError, match="report_bucket.*local_path|local_path.*report_bucket"):
+    with pytest.raises(
+        ValidationError, match="report_bucket.*local_path|local_path.*report_bucket"
+    ):
         MonitorConfig()
 
 
@@ -121,6 +127,7 @@ def test_monitor_defaults():
 
 
 # --- Nested in KitchenConfig ---
+
 
 def test_full_config_with_all_sections():
     cfg = KitchenConfig(
@@ -142,6 +149,7 @@ def test_invalid_data_section_propagates():
 
 
 # --- ThresholdSpec ---
+
 
 def test_threshold_spec_min_only():
     spec = ThresholdSpec(min=0.80)
@@ -173,6 +181,7 @@ def test_threshold_spec_extra_field_raises():
 
 # --- thresholds in KitchenConfig ---
 
+
 def test_config_plain_float_thresholds():
     cfg = KitchenConfig(experiment="x", thresholds={"val_accuracy": 0.85})
     assert cfg.thresholds["val_accuracy"] == 0.85
@@ -196,11 +205,7 @@ def test_config_mixed_thresholds():
 def test_config_thresholds_from_yaml(tmp_path):
     params = tmp_path / "params.yaml"
     params.write_text(
-        "experiment: titanic\n"
-        "thresholds:\n"
-        "  val_accuracy: 0.80\n"
-        "  val_logloss:\n"
-        "    max: 0.45\n"
+        "experiment: titanic\nthresholds:\n  val_accuracy: 0.80\n  val_logloss:\n    max: 0.45\n"
     )
     cfg = KitchenConfig.from_yaml(str(params))
     assert cfg.thresholds["val_accuracy"] == 0.80
