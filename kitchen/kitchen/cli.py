@@ -1645,6 +1645,20 @@ def report(
     run_meta = metrics.pop("_run", {}) if isinstance(metrics.get("_run"), dict) else {}
     run_name = run_meta.get("run_name") or run_meta.get("run_id", "")
 
+    # Extract leaderboard score before the table loop so it renders in its own section.
+    def _to_float(v: object) -> float | None:
+        try:
+            return float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+
+    kaggle_score: float | None = _to_float(metrics.pop("kaggle_public_score", None))
+    base_kaggle_score: float | None = (
+        _to_float(base_metrics.pop("kaggle_public_score", None))
+        if base_metrics is not None
+        else None
+    )
+
     if format == "github":
         typer.echo(f"## Kitchen Report — `{experiment}`")
         if run_name:
@@ -1696,6 +1710,26 @@ def report(
                     typer.echo(f"  {key}: {value:.6f}")
                 else:
                     typer.echo(f"  {key}: {value}")
+
+    if kaggle_score is not None:
+        if format == "github":
+            if base_kaggle_score is not None:
+                delta = kaggle_score - base_kaggle_score
+                typer.echo(
+                    f"\n**Kaggle Public Leaderboard:** {kaggle_score:.6f}"
+                    f" (base: {base_kaggle_score:.6f}, delta: {delta:+.6f})"
+                )
+            else:
+                typer.echo(f"\n**Kaggle Public Leaderboard:** {kaggle_score:.6f}")
+        else:
+            if base_kaggle_score is not None:
+                delta = kaggle_score - base_kaggle_score
+                typer.echo(
+                    f"Kaggle Public Leaderboard: {kaggle_score:.6f}"
+                    f" (base: {base_kaggle_score:.6f}, delta: {delta:+.6f})"
+                )
+            else:
+                typer.echo(f"Kaggle Public Leaderboard: {kaggle_score:.6f}")
 
     thresholds = cfg.thresholds if cfg is not None else {}
     if thresholds:
