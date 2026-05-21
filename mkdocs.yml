@@ -58,3 +58,4 @@ nav:
     - Model Serving: kitchen/model-serving.md
     - Monitoring: kitchen/monitoring.md
     - Orchestration: kitchen/orchestration.md
+    - CI/CD Integration: kitchen/ci-cd.md
