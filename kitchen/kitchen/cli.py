@@ -888,6 +888,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      submit:
+        description: 'Submit to Kaggle leaderboard after evaluate'
+        type: boolean
+        default: false
 
 jobs:
   train-evaluate:
@@ -924,6 +929,13 @@ jobs:
 
       - name: Evaluate
         run: kitchen run evaluate
+
+      - name: Submit to Kaggle
+        if: inputs.submit
+        env:
+          KAGGLE_USERNAME: $${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: $${{ secrets.KAGGLE_KEY }}
+        run: kitchen submit --wait
 
       - name: Download base metrics
         if: github.event_name == 'pull_request'
@@ -1217,11 +1229,23 @@ def ingest(
 # Submit command
 # ---------------------------------------------------------------------------
 
+def _write_kaggle_score(score: float, metrics_file: str = "metrics.json") -> None:
+    import json
+    path = Path(metrics_file)
+    try:
+        metrics = json.loads(path.read_text()) if path.exists() else {}
+        metrics["kaggle_public_score"] = score
+        path.write_text(json.dumps(metrics, indent=2) + "\n")
+    except Exception:
+        pass
+
+
 @app.command()
 def submit(
     params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
     file: Annotated[str, typer.Option("--file", help="Submission CSV to upload")] = "submissions/submission.csv",
     message: Annotated[str | None, typer.Option("--message", help="Submission message")] = None,
+    wait: Annotated[bool, typer.Option("--wait", help="Poll for leaderboard score after upload and write to metrics.json")] = False,
 ) -> None:
     """Validate and upload a submission CSV to Kaggle."""
     import os
@@ -1303,6 +1327,17 @@ def submit(
         raise typer.Exit(1)
 
     typer.echo(f"Submitted {sub_path} → {competition}")
+
+    if wait:
+        from kitchen.submit import fetch_score
+        typer.echo("Waiting for Kaggle to score submission…")
+        score = fetch_score(competition)
+        if score is not None:
+            typer.echo(f"Leaderboard score: {score:.6f}")
+            _write_kaggle_score(score)
+            typer.echo("Score written to metrics.json")
+        else:
+            typer.echo("Score not yet available — check the Kaggle leaderboard.")
 
 
 # ---------------------------------------------------------------------------
@@ -1664,7 +1699,6 @@ def report(
 
     thresholds = cfg.thresholds if cfg is not None else {}
     if thresholds:
-        from kitchen.config import ThresholdSpec
         failures: list[tuple[str, float | int, str]] = []
         for name in sorted(thresholds):
             if name not in metrics:
