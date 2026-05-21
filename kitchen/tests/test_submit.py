@@ -13,7 +13,7 @@ import pytest
 from typer.testing import CliRunner
 
 from kitchen.cli import app
-from kitchen.submit import fetch_score, validate_submission
+from kitchen.submit import fetch_score, log_submission, validate_submission
 
 runner = CliRunner()
 
@@ -122,6 +122,117 @@ def test_validate_collects_all_errors():
     sub = _df([{"Id": 1, "Pred": None}])
     errors = validate_submission(sub, _df(SAMPLE), "Id", "Pred")
     assert len(errors) >= 2
+
+
+# ---------------------------------------------------------------------------
+# log_submission unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_log_submission_validates_and_raises(tmp_path):
+    bad = _df([{"ID": 1, "Pred": None}, {"ID": 1, "Pred": 0.5}])
+    sample = _df(SAMPLE)
+    path = tmp_path / "sub.csv"
+    bad.to_csv(path, index=False)
+    with pytest.raises(ValueError, match="validation failed"):
+        log_submission(bad, sample, path)
+
+
+def test_log_submission_logs_artifact_to_active_run(tmp_path):
+    sub = _df(VALID_SUB)
+    sample = _df(SAMPLE)
+    path = tmp_path / "sub.csv"
+    sub.to_csv(path, index=False)
+
+    import mlflow
+    with mlflow.start_run():
+        result = log_submission(sub, sample, path, id_col="Id")
+        run = mlflow.active_run()
+        client = mlflow.tracking.MlflowClient()
+        artifacts = client.list_artifacts(run.info.run_id, "submission")
+
+    assert result == {}
+    assert any(a.path == "submission/sub.csv" for a in artifacts)
+
+
+def test_log_submission_no_active_run_skips_artifact(tmp_path):
+    sub = _df(VALID_SUB)
+    sample = _df(SAMPLE)
+    path = tmp_path / "sub.csv"
+    sub.to_csv(path, index=False)
+    # No mlflow.start_run() — should not raise, just skips artifact logging
+    result = log_submission(sub, sample, path, id_col="Id")
+    assert result == {}
+
+
+def test_log_submission_uploads_when_competition_set(tmp_path):
+    sub = _df(VALID_SUB)
+    sample = _df(SAMPLE)
+    path = tmp_path / "sub.csv"
+    sub.to_csv(path, index=False)
+
+    with patch("kitchen.submit.upload") as mock_upload:
+        result = log_submission(sub, sample, path, id_col="Id", competition="test-comp", message="v1")
+
+    mock_upload.assert_called_once_with(path, "v1", "test-comp")
+    assert result == {}
+
+
+def test_log_submission_fetches_and_logs_lb_score(tmp_path):
+    sub = _df(VALID_SUB)
+    sample = _df(SAMPLE)
+    path = tmp_path / "sub.csv"
+    sub.to_csv(path, index=False)
+
+    import mlflow
+    with mlflow.start_run():
+        with (
+            patch("kitchen.submit.upload"),
+            patch("kitchen.submit.fetch_score", return_value=0.1765),
+        ):
+            result = log_submission(
+                sub, sample, path,
+                id_col="Id",
+                competition="test-comp",
+                fetch_lb_score=True,
+            )
+        run_id = mlflow.active_run().info.run_id
+
+    assert result == {"lb_score": pytest.approx(0.1765)}
+    client = mlflow.tracking.MlflowClient()
+    metrics = client.get_run(run_id).data.metrics
+    assert metrics["lb_score"] == pytest.approx(0.1765)
+
+
+def test_log_submission_no_fetch_when_flag_false(tmp_path):
+    sub = _df(VALID_SUB)
+    sample = _df(SAMPLE)
+    path = tmp_path / "sub.csv"
+    sub.to_csv(path, index=False)
+
+    with (
+        patch("kitchen.submit.upload"),
+        patch("kitchen.submit.fetch_score") as mock_fetch,
+    ):
+        result = log_submission(sub, sample, path, id_col="Id", competition="test-comp", fetch_lb_score=False)
+
+    mock_fetch.assert_not_called()
+    assert result == {}
+
+
+def test_log_submission_score_none_excluded_from_result(tmp_path):
+    sub = _df(VALID_SUB)
+    sample = _df(SAMPLE)
+    path = tmp_path / "sub.csv"
+    sub.to_csv(path, index=False)
+
+    with (
+        patch("kitchen.submit.upload"),
+        patch("kitchen.submit.fetch_score", return_value=None),
+    ):
+        result = log_submission(sub, sample, path, id_col="Id", competition="test-comp", fetch_lb_score=True)
+
+    assert result == {}
 
 
 # ---------------------------------------------------------------------------
