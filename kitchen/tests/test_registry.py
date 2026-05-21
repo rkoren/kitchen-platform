@@ -1,4 +1,5 @@
 """Tests for kitchen.registry — MLflow Model Registry helpers."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -7,10 +8,10 @@ import pytest
 
 from kitchen.registry import get_best_run, get_production_uri, promote_model, register_model
 
-
 # ---------------------------------------------------------------------------
 # register_model
 # ---------------------------------------------------------------------------
+
 
 def test_register_model_constructs_uri():
     mv = MagicMock()
@@ -31,6 +32,7 @@ def test_register_model_returns_version_string():
 # ---------------------------------------------------------------------------
 # get_best_run
 # ---------------------------------------------------------------------------
+
 
 def _mock_client(exp=MagicMock(), runs=None):
     client = MagicMock()
@@ -114,6 +116,7 @@ def test_get_best_run_error_mentions_tags_when_filter_set():
 # promote_model
 # ---------------------------------------------------------------------------
 
+
 def test_promote_model_sets_alias():
     with patch("mlflow.tracking.MlflowClient") as MockClient:
         client = MockClient.return_value
@@ -140,6 +143,7 @@ def test_promote_model_custom_alias():
 # get_production_uri
 # ---------------------------------------------------------------------------
 
+
 def test_get_production_uri_returns_uri_when_alias_exists():
     with patch("mlflow.tracking.MlflowClient") as MockClient:
         MockClient.return_value.get_model_version_by_alias.return_value = MagicMock()
@@ -162,7 +166,9 @@ def test_get_production_uri_default_alias_is_champion():
     with patch("mlflow.tracking.MlflowClient") as MockClient:
         MockClient.return_value.get_model_version_by_alias.return_value = MagicMock()
         get_production_uri("my-model")
-    MockClient.return_value.get_model_version_by_alias.assert_called_once_with("my-model", "champion")
+    MockClient.return_value.get_model_version_by_alias.assert_called_once_with(
+        "my-model", "champion"
+    )
 
 
 def test_get_production_uri_custom_alias():

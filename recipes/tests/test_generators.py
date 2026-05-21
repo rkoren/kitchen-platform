@@ -1,4 +1,5 @@
 """Tests for per-resource Terraform generators."""
+
 from recipes.generators import generate_resource
 from recipes.generators.ecr import generate as ecr_generate
 from recipes.generators.iam import generate as iam_generate
@@ -6,8 +7,8 @@ from recipes.generators.lambda_ import generate as lambda_generate
 from recipes.generators.s3 import generate as s3_generate
 from recipes.schema import ECRSpec, IAMRoleSpec, LambdaSpec, S3Spec
 
-
 # --- S3 ---
+
 
 def test_s3_basic_resource_block():
     spec = S3Spec(type="s3", name="my-bucket")
@@ -42,6 +43,7 @@ def test_s3_versioning_references_bucket():
 
 
 # --- IAM ---
+
 
 def test_iam_role_resource_block():
     spec = IAMRoleSpec(type="iam_role", name="my-role", service="lambda.amazonaws.com")
@@ -81,6 +83,7 @@ def test_iam_role_no_policies_no_attachment_block():
 
 
 # --- ECR ---
+
 
 def test_ecr_resource_block():
     spec = ECRSpec(type="ecr", name="my-repo")
@@ -133,6 +136,7 @@ def test_ecr_lambda_access_adds_repository_policy():
 
 
 # --- Lambda ---
+
 
 def test_lambda_image_uri():
     spec = LambdaSpec(
@@ -194,9 +198,12 @@ def test_lambda_zip_runtime_and_handler():
 
 def test_lambda_memory_and_timeout():
     spec = LambdaSpec(
-        type="lambda", name="my-fn", role="my-role",
+        type="lambda",
+        name="my-fn",
+        role="my-role",
         image_uri="123456789.dkr.ecr.us-east-1.amazonaws.com/my-fn:latest",
-        memory=512, timeout=30,
+        memory=512,
+        timeout=30,
     )
     out = lambda_generate(spec)
     assert "memory_size = 512" in out
@@ -205,7 +212,9 @@ def test_lambda_memory_and_timeout():
 
 def test_lambda_environment_variables():
     spec = LambdaSpec(
-        type="lambda", name="my-fn", role="my-role",
+        type="lambda",
+        name="my-fn",
+        role="my-role",
         image_uri="123456789.dkr.ecr.us-east-1.amazonaws.com/my-fn:latest",
         environment={"TABLE_NAME": "my-table"},
     )
@@ -261,6 +270,7 @@ def test_lambda_no_depends_on_for_role_with_no_policies():
 
 
 # --- Dispatch ---
+
 
 def test_generate_resource_dispatches_s3():
     spec = S3Spec(type="s3", name="x")

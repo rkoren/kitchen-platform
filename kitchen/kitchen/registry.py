@@ -48,9 +48,7 @@ def get_best_run(
     if exp is None:
         raise ValueError(f"Experiment {experiment_name!r} not found")
 
-    filter_str = " and ".join(
-        f"tags.{k} = '{v}'" for k, v in (tag_filter or {}).items()
-    )
+    filter_str = " and ".join(f"tags.{k} = '{v}'" for k, v in (tag_filter or {}).items())
     order = "ASC" if lower_is_better else "DESC"
     runs = client.search_runs(
         experiment_ids=[exp.experiment_id],

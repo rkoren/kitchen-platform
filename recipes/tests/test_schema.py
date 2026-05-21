@@ -1,4 +1,5 @@
 """Tests for YAML spec schema validation."""
+
 import pytest
 from pydantic import ValidationError
 
@@ -118,6 +119,7 @@ def test_lambda_missing_role_raises():
 
 # --- P0-002: extra fields rejected ---
 
+
 def test_unknown_field_on_s3_raises():
     with pytest.raises(ValidationError, match="extra_field"):
         S3Spec.model_validate({"type": "s3", "name": "x", "extra_field": "bad"})
@@ -126,8 +128,7 @@ def test_unknown_field_on_s3_raises():
 def test_unknown_field_on_lambda_raises():
     with pytest.raises(ValidationError, match="memory_mb"):
         LambdaSpec.model_validate(
-            {"type": "lambda", "name": "fn", "role": "r",
-             "ecr_repo": "repo", "memory_mb": 512}
+            {"type": "lambda", "name": "fn", "role": "r", "ecr_repo": "repo", "memory_mb": 512}
         )
 
 
@@ -138,12 +139,18 @@ def test_unknown_field_on_recipe_raises():
 
 # --- P0-003: Lambda package type validation ---
 
+
 def test_lambda_image_and_zip_fields_raises():
     with pytest.raises(ValidationError, match="cannot mix"):
         LambdaSpec.model_validate(
-            {"type": "lambda", "name": "fn", "role": "r",
-             "image_uri": "123.dkr.ecr.amazonaws.com/x:latest",
-             "runtime": "python3.11", "handler": "app.handler"}
+            {
+                "type": "lambda",
+                "name": "fn",
+                "role": "r",
+                "image_uri": "123.dkr.ecr.amazonaws.com/x:latest",
+                "runtime": "python3.11",
+                "handler": "app.handler",
+            }
         )
 
 
@@ -168,42 +175,59 @@ def test_lambda_zip_missing_runtime_raises():
 
 # --- P0-004: cross-resource reference validation ---
 
+
 def test_lambda_role_references_unknown_iam_raises():
     with pytest.raises(ValidationError, match="does not match any iam_role"):
-        RecipeSpec.model_validate({
-            "name": "x",
-            "resources": [
-                {"type": "lambda", "name": "fn", "role": "nonexistent-role",
-                 "ecr_repo": "my-repo"},
-                {"type": "ecr", "name": "my-repo"},
-            ],
-        })
+        RecipeSpec.model_validate(
+            {
+                "name": "x",
+                "resources": [
+                    {
+                        "type": "lambda",
+                        "name": "fn",
+                        "role": "nonexistent-role",
+                        "ecr_repo": "my-repo",
+                    },
+                    {"type": "ecr", "name": "my-repo"},
+                ],
+            }
+        )
 
 
 def test_lambda_role_arn_passes_reference_check():
-    spec = RecipeSpec.model_validate({
-        "name": "x",
-        "resources": [
-            {"type": "lambda", "name": "fn",
-             "role": "arn:aws:iam::123456789:role/my-role",
-             "ecr_repo": "my-repo"},
-            {"type": "ecr", "name": "my-repo"},
-        ],
-    })
+    spec = RecipeSpec.model_validate(
+        {
+            "name": "x",
+            "resources": [
+                {
+                    "type": "lambda",
+                    "name": "fn",
+                    "role": "arn:aws:iam::123456789:role/my-role",
+                    "ecr_repo": "my-repo",
+                },
+                {"type": "ecr", "name": "my-repo"},
+            ],
+        }
+    )
     assert spec.resources[0].role.startswith("arn:")
 
 
 def test_lambda_ecr_repo_references_unknown_ecr_raises():
     with pytest.raises(ValidationError, match="does not match any ecr"):
-        RecipeSpec.model_validate({
-            "name": "x",
-            "resources": [
-                {"type": "iam_role", "name": "my-role",
-                 "service": "lambda.amazonaws.com"},
-                {"type": "lambda", "name": "fn", "role": "my-role",
-                 "ecr_repo": "nonexistent-ecr"},
-            ],
-        })
+        RecipeSpec.model_validate(
+            {
+                "name": "x",
+                "resources": [
+                    {"type": "iam_role", "name": "my-role", "service": "lambda.amazonaws.com"},
+                    {
+                        "type": "lambda",
+                        "name": "fn",
+                        "role": "my-role",
+                        "ecr_repo": "nonexistent-ecr",
+                    },
+                ],
+            }
+        )
 
 
 def test_valid_cross_references_pass():
@@ -213,9 +237,12 @@ def test_valid_cross_references_pass():
 
 # --- Example file validates cleanly ---
 
+
 def test_example_lambda_api_yaml_validates():
-    import yaml
     from pathlib import Path
+
+    import yaml
+
     example = Path(__file__).parent.parent / "examples" / "lambda-api.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)

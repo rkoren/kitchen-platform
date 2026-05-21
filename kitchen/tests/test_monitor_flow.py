@@ -1,4 +1,5 @@
 """Tests for kitchen.flows.monitor_flow."""
+
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -72,18 +73,25 @@ def test_pipeline_wiring(frames, tmp_path):
     """monitor_pipeline.fn() reads params and calls stages in order."""
     ref, cur = frames
     report_path = tmp_path / "drift.html"
-    params_file = _write_params(tmp_path, {
-        "reference_file": "reference.parquet",
-        "current_file": "current.parquet",
-        "local_path": str(report_path),
-    })
+    params_file = _write_params(
+        tmp_path,
+        {
+            "reference_file": "reference.parquet",
+            "current_file": "current.parquet",
+            "local_path": str(report_path),
+        },
+    )
     fake_report = _run_drift_report.fn(ref, cur)
-    with patch("kitchen.flows.monitor_flow.DataStore"), \
-         patch("kitchen.flows.monitor_flow._load_reference", return_value=ref), \
-         patch("kitchen.flows.monitor_flow._load_current", return_value=cur), \
-         patch("kitchen.flows.monitor_flow._run_drift_report", return_value=fake_report), \
-         patch("kitchen.flows.monitor_flow._save_report",
-               side_effect=lambda r, cfg: _save_report.fn(r, cfg)):
+    with (
+        patch("kitchen.flows.monitor_flow.DataStore"),
+        patch("kitchen.flows.monitor_flow._load_reference", return_value=ref),
+        patch("kitchen.flows.monitor_flow._load_current", return_value=cur),
+        patch("kitchen.flows.monitor_flow._run_drift_report", return_value=fake_report),
+        patch(
+            "kitchen.flows.monitor_flow._save_report",
+            side_effect=lambda r, cfg: _save_report.fn(r, cfg),
+        ),
+    ):
         result = monitor_pipeline.fn(params_file=params_file)
     assert result == str(report_path)
     assert report_path.exists()

@@ -26,6 +26,7 @@ def clean_env(monkeypatch):
 
 # ── Tracker ───────────────────────────────────────────────────────────────────
 
+
 def test_flatten_nested():
     assert _flatten({"a": {"b": 1}, "c": 2}) == {"a.b": 1, "c": 2}
 
@@ -67,6 +68,7 @@ def test_tracker_log_model_unknown_flavour(tmp_path):
 
 # ── configure ─────────────────────────────────────────────────────────────────
 
+
 def test_configure_sets_tracking_uri():
     with patch("kitchen.tracking.mlflow") as mock_mlflow:
         configure("http://mlflow:5000")
@@ -86,6 +88,7 @@ def test_configure_no_artifact_bucket_leaves_env_unset():
 
 
 # ── configure_from_env ────────────────────────────────────────────────────────
+
 
 def test_configure_from_env_reads_tracking_uri(monkeypatch):
     monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://remote:5000")
@@ -108,6 +111,7 @@ def test_configure_from_env_passes_artifact_bucket(monkeypatch):
 
 
 # ── init_experiment ───────────────────────────────────────────────────────────
+
 
 def test_init_experiment_returns_existing_id():
     mock_exp = MagicMock()
@@ -148,6 +152,7 @@ def test_init_experiment_no_artifact_location_without_bucket():
 
 
 # ── K-008: reproducibility helpers ───────────────────────────────────────────
+
 
 def test_git_sha_returns_string_or_none():
     result = _git_sha()
@@ -193,6 +198,7 @@ def test_dict_hash_differs_on_different_content():
 
 def test_file_hash_matches_sha256(tmp_path):
     import hashlib
+
     content = b"hello world"
     f = tmp_path / "data.bin"
     f.write_bytes(content)
@@ -234,7 +240,9 @@ def test_log_run_context_skips_missing_data_file(tmp_path):
         log_run_context(data_path=tmp_path / "does_not_exist.parquet")
 
     runs = mlflow.search_runs(experiment_names=["ctx-missing-test"])
-    assert "tags.kitchen.data_sha256" not in runs.columns or runs.iloc[0].get("tags.kitchen.data_sha256") != runs.iloc[0].get("tags.kitchen.data_sha256")  # NaN
+    assert "tags.kitchen.data_sha256" not in runs.columns or runs.iloc[0].get(
+        "tags.kitchen.data_sha256"
+    ) != runs.iloc[0].get("tags.kitchen.data_sha256")  # NaN
 
 
 def test_log_run_context_is_best_effort(tmp_path):

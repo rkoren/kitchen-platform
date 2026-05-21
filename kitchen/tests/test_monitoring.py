@@ -1,4 +1,5 @@
 """Tests for DriftReport."""
+
 from unittest.mock import MagicMock, patch
 
 import pandas as pd

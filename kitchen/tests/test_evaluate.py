@@ -31,6 +31,7 @@ def test_brier_accepts_series():
 
 # ── log_loss ──────────────────────────────────────────────────────────────────
 
+
 def test_log_loss_perfect():
     assert log_loss([1, 0], [1.0, 0.0]) == pytest.approx(0.0, abs=1e-6)
 

@@ -3,6 +3,7 @@
 Run via:  python -m kitchen.ingest.run
 or:       dvc repro ingest
 """
+
 from pathlib import Path
 
 import yaml

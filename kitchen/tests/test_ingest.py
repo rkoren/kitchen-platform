@@ -14,6 +14,7 @@ def _make_zip(path: Path, filenames: list[str]) -> None:
 
 # --- KaggleSource ---
 
+
 def _mock_kaggle(tmp_path, monkeypatch):
     mock_module = MagicMock()
     mock_module.api.competition_download_files.side_effect = lambda *a, **kw: None
@@ -43,6 +44,7 @@ def test_kaggle_creates_out_dir(tmp_path, monkeypatch):
 
 # --- LocalSource ---
 
+
 def test_local_copies_files(tmp_path):
     src = tmp_path / "src"
     src.mkdir()
@@ -67,6 +69,7 @@ def test_local_creates_out_dir(tmp_path):
 
 # --- S3Source ---
 
+
 def test_s3_downloads_files(tmp_path):
     mock_s3 = MagicMock()
     mock_s3.get_paginator.return_value.paginate.return_value = [
@@ -80,6 +83,7 @@ def test_s3_downloads_files(tmp_path):
 
 
 # --- source_from_params ---
+
 
 def test_source_from_params_kaggle():
     src = source_from_params({"source": "kaggle", "competition": "test-comp"})
@@ -100,5 +104,6 @@ def test_source_from_params_local(tmp_path):
 
 def test_source_from_params_unknown():
     import pytest
+
     with pytest.raises(ValueError, match="Unknown source"):
         source_from_params({"source": "ftp"})

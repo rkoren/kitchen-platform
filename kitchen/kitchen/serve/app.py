@@ -7,6 +7,7 @@ this file (i.e. in the same Docker image working directory) that exposes::
 
 If no predictor is found the /predict endpoint returns 501 Not Implemented.
 """
+
 from fastapi import FastAPI, HTTPException
 from mangum import Mangum
 

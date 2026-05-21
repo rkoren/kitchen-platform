@@ -1,4 +1,5 @@
 """Generator registry and dispatch."""
+
 from recipes.schema import ResourceSpec
 
 
