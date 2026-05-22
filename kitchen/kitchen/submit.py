@@ -65,6 +65,26 @@ def log_submission(
     return {"lb_score": score} if score is not None else {}
 
 
+def check_feature_parity(
+    expected: list[str],
+    df: pd.DataFrame,
+) -> list[str]:
+    """Check that all model training features are present in an inference DataFrame.
+
+    Returns a list of error strings, one per missing feature (empty = all clear).
+    Missing features cause silent wrong predictions; call this before predict_batch.
+
+    Args:
+        expected: Feature names the model was trained on (e.g. loto.features).
+        df: DataFrame that will be passed to the model at inference time.
+
+    Returns:
+        List of error strings. Empty list means all features are present.
+    """
+    # KG-013: train/test feature parity
+    return [f"missing feature: {f!r}" for f in expected if f not in df.columns]
+
+
 def validate_submission(
     sub: pd.DataFrame,
     sample: pd.DataFrame,

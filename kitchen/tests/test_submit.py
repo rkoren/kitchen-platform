@@ -13,7 +13,7 @@ import pytest
 from typer.testing import CliRunner
 
 from kitchen.cli import app
-from kitchen.submit import fetch_score, log_submission, validate_submission
+from kitchen.submit import check_feature_parity, fetch_score, log_submission, validate_submission
 
 runner = CliRunner()
 
@@ -71,6 +71,50 @@ def _setup(tmp_path: Path, params: str, sub_rows: list[dict], sample_rows: list[
 
 SAMPLE = [{"Id": 1, "Pred": 0.5}, {"Id": 2, "Pred": 0.6}]
 VALID_SUB = [{"Id": 1, "Pred": 0.9}, {"Id": 2, "Pred": 0.8}]
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for check_feature_parity (KG-013)
+# ---------------------------------------------------------------------------
+
+
+def test_parity_ok():
+    df = pd.DataFrame({"a": [1], "b": [2], "c": [3]})
+    assert check_feature_parity(["a", "b"], df) == []
+
+
+def test_parity_missing_one():
+    df = pd.DataFrame({"a": [1]})
+    errors = check_feature_parity(["a", "b"], df)
+    assert len(errors) == 1
+    assert "missing feature" in errors[0]
+    assert "'b'" in errors[0]
+
+
+def test_parity_missing_multiple():
+    df = pd.DataFrame({"a": [1]})
+    errors = check_feature_parity(["a", "b", "c"], df)
+    assert len(errors) == 2
+    missing = {e for e in errors}
+    assert any("'b'" in e for e in missing)
+    assert any("'c'" in e for e in missing)
+
+
+def test_parity_empty_expected():
+    df = pd.DataFrame({"a": [1]})
+    assert check_feature_parity([], df) == []
+
+
+def test_parity_extra_columns_ignored():
+    # Columns in df that weren't in training are not reported as errors
+    df = pd.DataFrame({"a": [1], "b": [2], "extra": [3]})
+    assert check_feature_parity(["a", "b"], df) == []
+
+
+def test_parity_all_missing():
+    df = pd.DataFrame({"x": [1]})
+    errors = check_feature_parity(["a", "b", "c"], df)
+    assert len(errors) == 3
 
 
 # ---------------------------------------------------------------------------
