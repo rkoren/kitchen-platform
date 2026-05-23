@@ -919,6 +919,91 @@ def test_init_ci_note_in_output(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# LML-006: Push results step in CI workflow
+# ---------------------------------------------------------------------------
+
+
+def test_init_ci_workflow_has_push_results_step(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert "Push results" in step_names
+
+
+def test_init_ci_workflow_push_step_after_evaluate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert step_names.index("Push results") > step_names.index("Evaluate")
+
+
+def test_init_ci_workflow_contents_write_permission(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    perms = content["jobs"]["train-evaluate"]["permissions"]
+    assert perms.get("contents") == "write"
+
+
+def test_init_ci_workflow_push_step_fetches_branch(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    assert "git fetch origin results:results" in raw
+
+
+def test_init_ci_workflow_push_step_gated_on_main(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    push_step = next(s for s in steps if s.get("name") == "Push results")
+    assert "refs/heads/main" in str(push_step.get("if", ""))
+
+
+def test_init_ci_kaggle_has_push_results_step(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert "Push results" in step_names
+
+
+def test_init_ci_kaggle_push_step_after_submit(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    step_names = [s.get("name", "") for s in steps]
+    assert step_names.index("Push results") > step_names.index("Submit to Kaggle")
+
+
+def test_init_ci_kaggle_contents_write_permission(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    perms = content["jobs"]["train-evaluate"]["permissions"]
+    assert perms.get("contents") == "write"
+
+
+# ---------------------------------------------------------------------------
 # GH-003: PR comment steps in CI workflow
 # ---------------------------------------------------------------------------
 
@@ -989,3 +1074,57 @@ def test_init_ci_workflow_report_step_has_compare_logic(tmp_path, monkeypatch):
     raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
     assert "--compare" in raw
     assert "base-metrics/metrics.json" in raw
+
+
+# ---------------------------------------------------------------------------
+# Dashboard (GP-002)
+# ---------------------------------------------------------------------------
+
+_DASHBOARD_PATH = "docs/index.html"
+
+
+def test_init_creates_dashboard(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    assert (tmp_path / "my-comp" / _DASHBOARD_PATH).exists()
+
+
+def test_init_dashboard_name_substituted(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
+    assert "my-comp" in html
+    assert "$name" not in html
+
+
+def test_init_dashboard_chartjs_script_tag(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
+    assert "cdn.jsdelivr.net/npm/chart.js" in html
+
+
+def test_init_dashboard_has_canvas(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
+    assert "<canvas" in html
+
+
+def test_init_dashboard_github_api_url(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
+    assert "contents/results?ref=results" in html
+
+
+def test_init_dashboard_created_without_ci_flag(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    assert (tmp_path / "my-comp" / _DASHBOARD_PATH).exists()
+
+
+def test_init_output_mentions_github_pages(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    assert "GitHub Pages" in result.output
