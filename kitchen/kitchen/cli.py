@@ -8,6 +8,7 @@ Usage:
         --promote-metric <m> [--lower-is-better] # train + auto-promote if new run wins
     kitchen run evaluate                         # evaluate champion model
     kitchen run monitor [--local report.html]    # generate drift report
+    kitchen status                               # one-screen project summary: champion + recent runs
     kitchen leaderboard                          # rank runs; [C]=champion ★=metric leader
     kitchen promote METRIC                       # manually promote best run
     kitchen ui                                   # open MLflow UI in browser
@@ -80,6 +81,181 @@ def ui(
         )
     except KeyboardInterrupt:
         typer.echo("\nStopped.")
+
+
+@app.command()
+def status(
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
+    experiment: Annotated[
+        str | None, typer.Option("--experiment", "-e", help="Experiment name")
+    ] = None,
+    model_name: Annotated[
+        str | None, typer.Option("--model-name", help="Registered model name")
+    ] = None,
+    n_runs: Annotated[
+        int, typer.Option("--runs", "-n", help="Number of recent runs to show")
+    ] = 5,
+) -> None:
+    """One-screen project summary: champion, recent runs with thresholds, and submission file.
+
+    Always exits 0 — informational only, even when thresholds are violated.
+    """
+    import os
+
+    import mlflow.tracking
+
+    from kitchen.tracking import configure_from_env
+
+    configure_from_env()
+
+    cfg = None
+    thresholds: dict = {}
+    exp_name: str | None = experiment
+    params_path = Path(params_file)
+    if params_path.exists():
+        try:
+            from kitchen.config import KitchenConfig
+
+            cfg = KitchenConfig.from_yaml(str(params_path))
+            if exp_name is None:
+                exp_name = cfg.experiment
+            thresholds = cfg.thresholds or {}
+        except Exception:
+            pass
+
+    if exp_name is None:
+        typer.echo(
+            "error: no experiment found — pass --experiment or run from a project directory.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    resolved_model = model_name or os.environ.get("MLFLOW_MODEL_NAME", f"{exp_name}-model")
+    typer.echo(f"\nProject: {exp_name}  ({params_file})\n")
+
+    client = mlflow.tracking.MlflowClient()
+
+    # Champion section
+    champion_run_id: str | None = None
+    typer.echo("Champion")
+    try:
+        mv = client.get_model_version_by_alias(resolved_model, "champion")
+        champion_run_id = mv.run_id
+        champ_run = client.get_run(champion_run_id)
+        typer.echo(f"  model   : {resolved_model} @ champion  (v{mv.version})")
+        typer.echo(
+            f"  run     : {champion_run_id[:8]}  ({_time_ago(champ_run.info.start_time)})"
+        )
+        variant = champ_run.data.tags.get("model_variant", "")
+        if variant:
+            typer.echo(f"  variant : {variant}")
+        for k, v in sorted(champ_run.data.metrics.items()):
+            if not k.startswith("fi."):
+                typer.echo(f"  {k:<14}: {v:.6f}")
+    except Exception:
+        typer.echo(f"  (no champion registered for {resolved_model!r})")
+        typer.echo("  Run `kitchen promote METRIC` to register the best run.")
+
+    typer.echo()
+
+    # Recent Runs section
+    exp = client.get_experiment_by_name(exp_name)
+    if exp is None:
+        typer.echo(f"No experiment {exp_name!r} found — no runs to show.\n")
+        return
+
+    recent = client.search_runs(
+        experiment_ids=[exp.experiment_id],
+        order_by=["start_time DESC"],
+        max_results=n_runs,
+    )
+
+    # Pick the primary display metric: first threshold key, then priority list, then first non-fi
+    display_metric: str | None = None
+    if thresholds:
+        display_metric = sorted(thresholds.keys())[0]
+    if display_metric is None:
+        for candidate in ("loto_brier", "val_accuracy", "val_brier", "val_log_loss", "val_auc"):
+            if any(candidate in r.data.metrics for r in recent):
+                display_metric = candidate
+                break
+    if display_metric is None:
+        for run in recent:
+            for k in run.data.metrics:
+                if not k.startswith("fi."):
+                    display_metric = k
+                    break
+            if display_metric:
+                break
+
+    has_thresholds = bool(thresholds)
+    metric_label = display_metric or "—"
+    metric_w = max(12, len(metric_label))
+    typer.echo(f"Recent Runs (last {n_runs})  —  {metric_label}")
+    header = f"  {'#':<4}  {'RUN ID':<10}  {'VARIANT':<12}  {metric_label:>{metric_w}}"
+    if has_thresholds:
+        header += "  STATUS"
+    typer.echo(header)
+    typer.echo("  " + "-" * (len(header) - 2))
+
+    if not recent:
+        typer.echo("  No runs found.")
+    else:
+        for i, run in enumerate(recent):
+            run_id_short = run.info.run_id[:8]
+            is_champ = run.info.run_id == champion_run_id
+            rank = "[C]" if is_champ else str(i + 1)
+            variant = run.data.tags.get("model_variant", "")[:12]
+            val = _fmt_metric(
+                run.data.metrics.get(display_metric) if display_metric else None
+            )
+            row = f"  {rank:<4}  {run_id_short:<10}  {variant:<12}  {val:>{metric_w}}"
+            if has_thresholds:
+                fails: list[str] = []
+                for tname, spec in thresholds.items():
+                    actual = run.data.metrics.get(tname)
+                    if actual is None:
+                        continue
+                    if isinstance(spec, (int, float)):
+                        if actual < spec:
+                            fails.append(f"{tname}<{spec:.4f}")
+                    else:
+                        if spec.min is not None and actual < spec.min:
+                            fails.append(f"{tname}<{spec.min:.4f}")
+                        if spec.max is not None and actual > spec.max:
+                            fails.append(f"{tname}>{spec.max:.4f}")
+                row += f"  {'FAIL' if fails else 'PASS'}"
+                if fails:
+                    row += f"  ({', '.join(fails)})"
+            typer.echo(row)
+
+    typer.echo()
+
+    if has_thresholds:
+        typer.echo("Thresholds:")
+        for tname, spec in sorted(thresholds.items()):
+            if isinstance(spec, (int, float)):
+                typer.echo(f"  {tname}: >= {spec:.6f}")
+            else:
+                parts = []
+                if spec.min is not None:
+                    parts.append(f">= {spec.min:.6f}")
+                if spec.max is not None:
+                    parts.append(f"<= {spec.max:.6f}")
+                typer.echo(f"  {tname}: {' and '.join(parts)}")
+        typer.echo()
+
+    # Local Submission File section
+    sub_path = Path("submissions/submission.csv")
+    if sub_path.exists():
+        age_str = _time_ago(int(sub_path.stat().st_mtime * 1000))
+        size_kb = sub_path.stat().st_size / 1024
+        typer.echo(
+            f"Local Submission File: {sub_path}  ({size_kb:.0f} KB, modified {age_str})"
+        )
+        typer.echo()
 
 
 @app.command()
