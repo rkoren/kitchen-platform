@@ -7,6 +7,84 @@ from pathlib import Path
 import pandas as pd
 
 
+def log_submission(
+    submission: pd.DataFrame,
+    sample: pd.DataFrame,
+    file_path: Path,
+    id_col: str = "ID",
+    target_col: str = "Pred",
+    competition: str | None = None,
+    message: str = "",
+    fetch_lb_score: bool = False,
+    fetch_timeout: int = 300,
+) -> dict[str, float]:
+    """Validate, log, and optionally upload a competition submission.
+
+    Attaches the submission CSV as an MLflow artifact on the *active* run and
+    (when ``competition`` is provided) uploads it to Kaggle. When
+    ``fetch_lb_score=True``, polls Kaggle for the public leaderboard score and
+    logs it as ``lb_score`` on the same run.
+
+    Args:
+        submission: Submission DataFrame (already written to ``file_path``).
+        sample: Sample submission DataFrame used for row-count validation.
+        file_path: Path to the on-disk CSV (written by the caller).
+        id_col: ID column name (default "ID").
+        target_col: Prediction column name (default "Pred").
+        competition: Kaggle competition slug. When None, skips upload/score fetch.
+        message: Submission message shown on the leaderboard.
+        fetch_lb_score: Poll for the public LB score after uploading.
+        fetch_timeout: Seconds to wait for Kaggle to score the submission.
+
+    Returns:
+        Dict with ``lb_score`` key if a score was retrieved, otherwise empty.
+
+    Raises:
+        ValueError: If validation fails — call is a no-op for MLflow/Kaggle.
+    """
+    import mlflow
+
+    errors = validate_submission(submission, sample, id_col, target_col)
+    if errors:
+        raise ValueError("Submission validation failed:\n" + "\n".join(f"  {e}" for e in errors))
+
+    if mlflow.active_run() is not None:
+        mlflow.log_artifact(str(file_path), artifact_path="submission")
+
+    if competition is None:
+        return {}
+
+    upload(file_path, message, competition)
+
+    if not fetch_lb_score:
+        return {}
+
+    score = fetch_score(competition, timeout=fetch_timeout)
+    if score is not None and mlflow.active_run() is not None:
+        mlflow.log_metric("lb_score", score)
+    return {"lb_score": score} if score is not None else {}
+
+
+def check_feature_parity(
+    expected: list[str],
+    df: pd.DataFrame,
+) -> list[str]:
+    """Check that all model training features are present in an inference DataFrame.
+
+    Returns a list of error strings, one per missing feature (empty = all clear).
+    Missing features cause silent wrong predictions; call this before predict_batch.
+
+    Args:
+        expected: Feature names the model was trained on (e.g. loto.features).
+        df: DataFrame that will be passed to the model at inference time.
+
+    Returns:
+        List of error strings. Empty list means all features are present.
+    """
+    # KG-013: train/test feature parity
+    return [f"missing feature: {f!r}" for f in expected if f not in df.columns]
+
+
 def validate_submission(
     sub: pd.DataFrame,
     sample: pd.DataFrame,

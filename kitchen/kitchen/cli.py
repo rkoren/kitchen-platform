@@ -1180,6 +1180,72 @@ def experiments_compare(
 
 
 # ---------------------------------------------------------------------------
+# Leaderboard command
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def leaderboard(
+    metric: Annotated[
+        str, typer.Option("--metric", "-m", help="Primary metric to rank by")
+    ] = "loto_brier",
+    experiment: Annotated[
+        str | None, typer.Option("--experiment", "-e", help="Experiment name")
+    ] = None,
+    params_file: Annotated[
+        str, typer.Option("--params", help="params.yaml to read experiment from")
+    ] = "params.yaml",
+    higher_is_better: Annotated[
+        bool, typer.Option("--higher-is-better", help="Rank highest first (default: lowest first)")
+    ] = False,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Max runs to show")] = 20,
+) -> None:
+    """Rank runs by a metric; shows full run_id and lb_score for easy replay.
+
+    Defaults to loto_brier (lower=better) for competition use. The full run_id
+    is shown so it can be copied directly into flows/submit.py --run-id.
+    """
+    import mlflow.tracking
+
+    exp_name = _resolve_experiment(experiment, params_file)
+    client = mlflow.tracking.MlflowClient()
+    exp = client.get_experiment_by_name(exp_name)
+    if exp is None:
+        typer.echo(f"Experiment {exp_name!r} not found.", err=True)
+        raise typer.Exit(1)
+
+    order = "DESC" if higher_is_better else "ASC"
+    runs = client.search_runs(
+        experiment_ids=[exp.experiment_id],
+        filter_string=f"metrics.{metric} > -99999",
+        order_by=[f"metrics.{metric} {order}"],
+        max_results=limit,
+    )
+    if not runs:
+        typer.echo(f"No runs with metric {metric!r} found in {exp_name!r}.")
+        return
+
+    direction = "higher=better" if higher_is_better else "lower=better"
+    typer.echo(f"\nExperiment: {exp_name}  |  {metric} ({direction})\n")
+
+    id_w = 32
+    header = f"{'#':<4}  {'RUN ID':<{id_w}}  {'VARIANT':<12}  {metric:>12}  {'lb_score':>10}  STARTED"
+    typer.echo(header)
+    typer.echo("-" * len(header))
+
+    for i, run in enumerate(runs):
+        rank = "★" if i == 0 else str(i + 1)
+        run_id = run.info.run_id
+        variant = run.data.tags.get("model_variant", "")[:12]
+        primary = _fmt_metric(run.data.metrics.get(metric))
+        lb = _fmt_metric(run.data.metrics.get("lb_score"))
+        started = _time_ago(run.info.start_time) if run.info.start_time else "-"
+        typer.echo(f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}  {lb:>10}  {started}")
+
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
 # Ingest command
 # ---------------------------------------------------------------------------
 
