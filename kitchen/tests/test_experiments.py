@@ -251,6 +251,77 @@ class TestLeaderboard:
         assert result.exit_code == 0
         assert "from-yaml" in result.output
 
+    # --- champion marker (LML-003) ---
+
+    def _invoke_with_champion(self, runs, champion_run_id, *extra_args):
+        with patch("mlflow.tracking.MlflowClient") as mock_client_cls:
+            client = mock_client_cls.return_value
+            client.get_experiment_by_name.return_value = _make_exp()
+            client.search_runs.return_value = runs
+            mv = MagicMock()
+            mv.run_id = champion_run_id
+            client.get_model_version_by_alias.return_value = mv
+            return runner.invoke(
+                app, ["leaderboard", "--experiment", "cbb-tournament", *extra_args]
+            )
+
+    def test_champion_marked_when_not_rank1(self):
+        """[C] marks the champion row even when it's not the top metric run."""
+        champion_id = "b" * 32
+        top_id = "a" * 32
+        runs = [
+            _make_run(top_id, metrics={"loto_brier": 0.164}),
+            _make_run(champion_id, metrics={"loto_brier": 0.172}),
+        ]
+        result = self._invoke_with_champion(runs, champion_id)
+        assert result.exit_code == 0
+        top_line = next(l for l in result.output.splitlines() if top_id in l)
+        champ_line = next(l for l in result.output.splitlines() if champion_id in l)
+        assert "★" in top_line
+        assert "[C]" in champ_line
+        assert "[C]" not in top_line
+
+    def test_champion_and_rank1_combined_marker(self):
+        """★[C] appears when champion is also the metric-rank-1 run."""
+        champion_id = "a" * 32
+        runs = [
+            _make_run(champion_id, metrics={"loto_brier": 0.164}),
+            _make_run("b" * 32, metrics={"loto_brier": 0.172}),
+        ]
+        result = self._invoke_with_champion(runs, champion_id)
+        assert result.exit_code == 0
+        champ_line = next(l for l in result.output.splitlines() if champion_id in l)
+        assert "★[C]" in champ_line
+
+    def test_no_registered_model_graceful_fallback(self):
+        """Registry lookup failure → normal leaderboard with ★, no crash, no [C]."""
+        import mlflow.exceptions
+
+        runs = [_make_run("a" * 32, metrics={"loto_brier": 0.164})]
+        with patch("mlflow.tracking.MlflowClient") as mock_client_cls:
+            client = mock_client_cls.return_value
+            client.get_experiment_by_name.return_value = _make_exp()
+            client.search_runs.return_value = runs
+            client.get_model_version_by_alias.side_effect = mlflow.exceptions.MlflowException(
+                "not found"
+            )
+            result = runner.invoke(
+                app, ["leaderboard", "--experiment", "cbb-tournament"]
+            )
+        assert result.exit_code == 0
+        assert "★" in result.output
+        assert "[C]" not in result.output
+
+    def test_champion_footer_shows_model_name(self):
+        """Footer references the model name passed via --model-name."""
+        champion_id = "a" * 32
+        runs = [_make_run(champion_id, metrics={"loto_brier": 0.164})]
+        result = self._invoke_with_champion(
+            runs, champion_id, "--model-name", "my-cbb-model"
+        )
+        assert result.exit_code == 0
+        assert "my-cbb-model@champion" in result.output
+
 
 # ---------------------------------------------------------------------------
 # promote
