@@ -1357,6 +1357,56 @@ def _write(path: Path, content: str, overwrite: bool) -> None:
     typer.echo(f"  create {path}")
 
 
+def _write_to_git_branch(content: str, file_path: str, branch: str, commit_msg: str) -> str:
+    """Write content to file_path on branch using git plumbing. Returns commit SHA.
+
+    Never touches the working tree or index — safe to call from any checkout state.
+    Uses a temporary index file isolated via GIT_INDEX_FILE so it doesn't disturb
+    the caller's staged changes.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    GIT_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+    blob_sha = subprocess.check_output(
+        ["git", "hash-object", "-w", "--stdin"], input=content.encode()
+    ).decode().strip()
+
+    idx_fd, idx_path = tempfile.mkstemp(prefix="kitchen-push-")
+    os.close(idx_fd)
+    try:
+        env = {**os.environ, "GIT_INDEX_FILE": idx_path}
+        branch_ref = f"refs/heads/{branch}"
+        branch_exists = (
+            subprocess.run(
+                ["git", "rev-parse", "--verify", branch_ref], capture_output=True
+            ).returncode == 0
+        )
+        if branch_exists:
+            subprocess.run(["git", "read-tree", branch], env=env, check=True, capture_output=True)
+        else:
+            subprocess.run(
+                ["git", "read-tree", GIT_EMPTY_TREE], env=env, check=True, capture_output=True
+            )
+        subprocess.run(
+            ["git", "update-index", "--add", "--cacheinfo", f"100644,{blob_sha},{file_path}"],
+            env=env,
+            check=True,
+        )
+        tree_sha = subprocess.check_output(["git", "write-tree"], env=env).decode().strip()
+        commit_cmd = ["git", "commit-tree", tree_sha, "-m", commit_msg]
+        if branch_exists:
+            parent_sha = subprocess.check_output(["git", "rev-parse", branch]).decode().strip()
+            commit_cmd += ["-p", parent_sha]
+        commit_sha = subprocess.check_output(commit_cmd).decode().strip()
+        subprocess.run(["git", "update-ref", branch_ref, commit_sha], check=True)
+        return commit_sha
+    finally:
+        os.unlink(idx_path)
+
+
 # ---------------------------------------------------------------------------
 # Experiments sub-commands
 # ---------------------------------------------------------------------------
@@ -2357,6 +2407,154 @@ def promote(
     promote_model(model_name, version, alias=alias)
     typer.echo(f"Promoted   : {model_name} v{version} → {alias}")
     typer.echo(f"Load with  : mlflow.sklearn.load_model('models:/{model_name}@{alias}')")
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
+# Push command
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def push(
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
+    metrics_file: Annotated[
+        str, typer.Option("--metrics", help="Path to metrics.json")
+    ] = "metrics.json",
+    run_id_override: Annotated[
+        str | None, typer.Option("--run-id", help="Override the MLflow run ID stored in metrics.json")
+    ] = None,
+    model_name: Annotated[
+        str | None, typer.Option("--model-name", help="Registered model name for champion lookup")
+    ] = None,
+    branch: Annotated[
+        str, typer.Option("--branch", help="Branch to write results to")
+    ] = "results",
+    push_to_remote: Annotated[
+        bool, typer.Option("--push/--no-push", help="Push branch to remote after writing")
+    ] = False,
+    remote: Annotated[
+        str, typer.Option("--remote", help="Git remote name")
+    ] = "origin",
+    message: Annotated[
+        str | None, typer.Option("--message", "-m", help="Custom commit message")
+    ] = None,
+) -> None:
+    """Publish current run metrics to the results branch as results/<sha>.json.
+
+    Reads metrics.json and writes a snapshot to results/<git-sha>.json on the
+    results branch using git plumbing — never touches the working tree or index.
+    Optionally pushes to remote.
+    """
+    import json
+    import os
+    import subprocess
+    from datetime import datetime, timezone
+
+    from kitchen.tracking import configure_from_env
+
+    configure_from_env()
+
+    # --- Resolve git SHA ---
+    try:
+        git_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception as exc:
+        typer.echo(f"error: could not determine git HEAD SHA: {exc}", err=True)
+        raise typer.Exit(1)
+
+    # --- Load metrics ---
+    metrics_path = Path(metrics_file)
+    if not metrics_path.exists():
+        typer.echo(f"error: {metrics_file!r} not found — run training first.", err=True)
+        raise typer.Exit(1)
+
+    try:
+        metrics: dict = json.loads(metrics_path.read_text())
+    except Exception as exc:
+        typer.echo(f"error: could not read {metrics_file}: {exc}", err=True)
+        raise typer.Exit(1)
+
+    # --- Resolve experiment and model ---
+    exp_name: str | None = None
+    params_path = Path(params_file)
+    if params_path.exists():
+        try:
+            from kitchen.config import KitchenConfig
+
+            cfg = KitchenConfig.from_yaml(str(params_path))
+            exp_name = cfg.experiment
+            if model_name is None:
+                model_name = os.environ.get("MLFLOW_MODEL_NAME", f"{exp_name}-model")
+        except Exception:
+            pass
+
+    if model_name is None:
+        model_name = os.environ.get("MLFLOW_MODEL_NAME", "")
+
+    # --- Resolve run_id ---
+    run_id: str | None = run_id_override or metrics.get("run_id")
+
+    # --- Champion lookup ---
+    is_champion = False
+    if run_id and model_name:
+        try:
+            import mlflow.tracking
+
+            client = mlflow.tracking.MlflowClient()
+            mv = client.get_model_version_by_alias(model_name, "champion")
+            is_champion = mv.run_id == run_id
+        except Exception:
+            pass
+
+    # --- lb_score ---
+    lb_score: float | None = metrics.pop("kaggle_public_score", None)
+    if isinstance(lb_score, str):
+        try:
+            lb_score = float(lb_score)
+        except ValueError:
+            lb_score = None
+
+    # --- Build payload ---
+    payload: dict = {
+        "sha": git_sha,
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        "run_id": run_id or "",
+        "metrics": {k: v for k, v in metrics.items() if k != "run_id"},
+        "lb_score": lb_score,
+        "champion": is_champion,
+    }
+
+    content = json.dumps(payload, indent=2) + "\n"
+    dest_path = f"results/{git_sha[:8]}.json"
+    commit_message = message or f"push: {git_sha[:8]} ({exp_name or 'unknown'})"
+
+    try:
+        commit_sha = _write_to_git_branch(content, dest_path, branch, commit_message)
+    except Exception as exc:
+        typer.echo(f"error: git write failed: {exc}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"\nPushed results to branch '{branch}'")
+    typer.echo(f"  file   : {dest_path}")
+    typer.echo(f"  commit : {commit_sha[:8]}")
+    if is_champion:
+        typer.echo("  status : champion")
+
+    if push_to_remote:
+        try:
+            subprocess.run(
+                ["git", "push", remote, f"refs/heads/{branch}:refs/heads/{branch}"],
+                check=True,
+            )
+            typer.echo(f"  remote : pushed to {remote}/{branch}")
+        except subprocess.CalledProcessError as exc:
+            typer.echo(f"error: push to remote failed: {exc}", err=True)
+            raise typer.Exit(1)
+
     typer.echo()
 
 
