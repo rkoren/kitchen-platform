@@ -22,6 +22,7 @@ site/
 # MLflow
 mlruns/
 mlartifacts/
+mlflow.db
 
 # Terraform — generated output and state (never commit state)
 **/.terraform/
