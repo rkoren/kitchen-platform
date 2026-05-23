@@ -275,8 +275,8 @@ class TestLeaderboard:
         ]
         result = self._invoke_with_champion(runs, champion_id)
         assert result.exit_code == 0
-        top_line = next(l for l in result.output.splitlines() if top_id in l)
-        champ_line = next(l for l in result.output.splitlines() if champion_id in l)
+        top_line = next(line for line in result.output.splitlines() if top_id in line)
+        champ_line = next(line for line in result.output.splitlines() if champion_id in line)
         assert "★" in top_line
         assert "[C]" in champ_line
         assert "[C]" not in top_line
@@ -290,7 +290,7 @@ class TestLeaderboard:
         ]
         result = self._invoke_with_champion(runs, champion_id)
         assert result.exit_code == 0
-        champ_line = next(l for l in result.output.splitlines() if champion_id in l)
+        champ_line = next(line for line in result.output.splitlines() if champion_id in line)
         assert "★[C]" in champ_line
 
     def test_no_registered_model_graceful_fallback(self):

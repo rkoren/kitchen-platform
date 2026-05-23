@@ -6,8 +6,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from kitchen.modeling import classification_metrics, regression_metrics, train_val_split
-
+from kitchen.modeling import (
+    classification_metrics,
+    regression_metrics,
+    train_val_split,
+)
 
 # ---------------------------------------------------------------------------
 # train_val_split
