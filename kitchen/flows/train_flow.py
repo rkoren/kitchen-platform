@@ -3,8 +3,8 @@ from prefect import flow, task
 
 from kitchen.ingest import source_from_params
 from kitchen.store import DataStore
-from kitchen.tracking import Tracker
 from kitchen.submit import log_submission as _log_submission
+from kitchen.tracking import Tracker
 
 
 @task(name="ingest")
