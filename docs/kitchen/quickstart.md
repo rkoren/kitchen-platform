@@ -1,5 +1,7 @@
 # Quickstart
 
+> **Live example:** [rkoren/spaceship-titanic](https://github.com/rkoren/spaceship-titanic) — a complete kitchen-platform competition project with CI, GitHub Pages dashboard, and MLflow tracking.
+
 ## Prerequisites
 
 - Python 3.11+
