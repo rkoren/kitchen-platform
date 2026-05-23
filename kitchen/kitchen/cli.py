@@ -1118,6 +1118,30 @@ jobs:
           issue-number: $${{ github.event.pull_request.number }}
           body: $${{ env.KITCHEN_REPORT }}
           edit-mode: replace
+
+  deploy-pages:
+    needs: train-evaluate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: $${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy
+        uses: actions/deploy-pages@v4
+      - name: Link dashboard in summary
+        run: echo "**Dashboard:** $${{ steps.deploy.outputs.page_url }}" >> $$GITHUB_STEP_SUMMARY
 """
 
 _CI_WORKFLOW_KAGGLE = """\
@@ -1237,6 +1261,30 @@ jobs:
           issue-number: $${{ github.event.pull_request.number }}
           body: $${{ env.KITCHEN_REPORT }}
           edit-mode: replace
+
+  deploy-pages:
+    needs: train-evaluate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: $${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy
+        uses: actions/deploy-pages@v4
+      - name: Link dashboard in summary
+        run: echo "**Dashboard:** $${{ steps.deploy.outputs.page_url }}" >> $$GITHUB_STEP_SUMMARY
 """
 
 _DASHBOARD_HTML = """\
@@ -1264,7 +1312,7 @@ _DASHBOARD_HTML = """\
   <div id="chart-wrap"><canvas id="chart"></canvas></div>
   <table>
     <thead>
-      <tr><th>SHA</th><th>Timestamp</th><th>Run ID</th><th>LB Score</th><th>Metrics</th></tr>
+      <tr><th>SHA</th><th>Timestamp</th><th>Run ID</th><th>LB Score</th><th>&#916; LB</th><th>Metrics</th></tr>
     </thead>
     <tbody id="runs-body"></tbody>
   </table>
@@ -1317,21 +1365,44 @@ _DASHBOARD_HTML = """\
             options: { responsive: true, plugins: { legend: { display: false } } }
           });
 
+          var champ = runs.find(function (r) { return r.champion; });
+
           var tbody = document.getElementById('runs-body');
           runs.forEach(function (run) {
             var tr = document.createElement('tr');
             if (run.champion) { tr.className = 'champion'; }
+
             [
               run.sha.slice(0, 8),
               fmtTime(run.timestamp),
               run.run_id || '',
-              run.lb_score !== null && run.lb_score !== undefined ? run.lb_score : '\\u2014',
-              fmtMetrics(run.metrics || {})
+              run.lb_score !== null && run.lb_score !== undefined ? run.lb_score : '\\u2014'
             ].forEach(function (val) {
               var td = document.createElement('td');
               td.textContent = val;
               tr.appendChild(td);
             });
+
+            var deltaTd = document.createElement('td');
+            if (run.champion) {
+              deltaTd.textContent = '\\u2605';
+            } else if (
+              champ &&
+              champ.lb_score !== null && champ.lb_score !== undefined &&
+              run.lb_score !== null && run.lb_score !== undefined
+            ) {
+              var delta = run.lb_score - champ.lb_score;
+              deltaTd.textContent = (delta >= 0 ? '+' : '') + delta.toFixed(4);
+              deltaTd.style.color = delta >= 0 ? '#16a34a' : '#dc2626';
+            } else {
+              deltaTd.textContent = '\\u2014';
+            }
+            tr.appendChild(deltaTd);
+
+            var metricsTd = document.createElement('td');
+            metricsTd.textContent = fmtMetrics(run.metrics || {});
+            tr.appendChild(metricsTd);
+
             tbody.appendChild(tr);
           });
         })
@@ -2794,6 +2865,7 @@ def init(
         if source == "kaggle":
             ci_note = "\n  # CI: add KAGGLE_USERNAME and KAGGLE_KEY as GitHub Actions secrets"
         ci_note += "\n  # CI workflow scaffolded → .github/workflows/train-evaluate.yml"
+        ci_note += "\n  # Dashboard: in repo Settings → Pages, set source to 'GitHub Actions'"
 
     typer.echo(f"""
 Done. Next steps:
@@ -2809,8 +2881,6 @@ Done. Next steps:
   kitchen experiments compare METRIC  # rank runs by metric
   kitchen promote METRIC              # promote best run to the registry
 {submit_step}{ci_note}
-  # Dashboard: enable GitHub Pages (Settings → Pages → deploy from /docs on main)
-  #   then run `kitchen push` after each evaluate to populate the results branch
 """)
 
 
