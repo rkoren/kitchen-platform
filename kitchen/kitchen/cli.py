@@ -1032,7 +1032,7 @@ jobs:
   train-evaluate:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
 
     env:
@@ -1057,6 +1057,15 @@ jobs:
 
       - name: Evaluate
         run: kitchen run evaluate
+
+      - name: Push results
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git fetch origin results:results 2>/dev/null || true
+          kitchen push --push
 
       - name: Download base metrics
         if: github.event_name == 'pull_request'
@@ -1129,7 +1138,7 @@ jobs:
   train-evaluate:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
 
     env:
@@ -1167,6 +1176,15 @@ jobs:
           KAGGLE_USERNAME: $${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: $${{ secrets.KAGGLE_KEY }}
         run: kitchen submit --wait
+
+      - name: Push results
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git fetch origin results:results 2>/dev/null || true
+          kitchen push --push
 
       - name: Download base metrics
         if: github.event_name == 'pull_request'
@@ -1219,6 +1237,111 @@ jobs:
           issue-number: $${{ github.event.pull_request.number }}
           body: $${{ env.KITCHEN_REPORT }}
           edit-mode: replace
+"""
+
+_DASHBOARD_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>$name &mdash; Results Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #f9fafb; color: #111; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    #chart-wrap { max-width: 860px; margin-bottom: 2rem; }
+    table { border-collapse: collapse; width: 100%; max-width: 860px; font-size: 0.875rem; }
+    th, td { padding: 0.35rem 0.75rem; border: 1px solid #e2e8f0; text-align: left; }
+    th { background: #f1f5f9; }
+    tr.champion { background: #fef9c3; font-weight: 600; }
+    #status { color: #6b7280; margin-bottom: 1rem; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>$name &mdash; Results Dashboard</h1>
+  <p id="status">Loading&hellip;</p>
+  <div id="chart-wrap"><canvas id="chart"></canvas></div>
+  <table>
+    <thead>
+      <tr><th>SHA</th><th>Timestamp</th><th>Run ID</th><th>LB Score</th><th>Metrics</th></tr>
+    </thead>
+    <tbody id="runs-body"></tbody>
+  </table>
+  <script>
+    (function () {
+      var loc = window.location;
+      var owner = loc.hostname.split('.')[0];
+      var repo = loc.pathname.replace(/^\\//, '').split('/')[0] || '$name';
+      var apiUrl = 'https://api.github.com/repos/' + owner + '/' + repo + '/contents/results?ref=results';
+
+      function fmtTime(ts) {
+        return ts ? new Date(ts).toLocaleString() : '';
+      }
+
+      function fmtMetrics(m) {
+        return Object.keys(m).sort().map(function (k) { return k + ': ' + m[k]; }).join(', ');
+      }
+
+      fetch(apiUrl)
+        .then(function (r) {
+          if (!r.ok) { throw new Error('HTTP ' + r.status + ' — is the results branch pushed?'); }
+          return r.json();
+        })
+        .then(function (files) {
+          if (!Array.isArray(files)) { throw new Error('Unexpected API response'); }
+          var jsonFiles = files.filter(function (f) { return f.name.endsWith('.json'); });
+          document.getElementById('status').textContent = 'Fetching ' + jsonFiles.length + ' result(s)\\u2026';
+          return Promise.all(jsonFiles.map(function (f) {
+            return fetch(f.download_url).then(function (r) { return r.json(); });
+          }));
+        })
+        .then(function (runs) {
+          runs.sort(function (a, b) { return a.timestamp < b.timestamp ? -1 : 1; });
+          document.getElementById('status').textContent = runs.length + ' run(s) loaded.';
+
+          var ctx = document.getElementById('chart').getContext('2d');
+          new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: runs.map(function (r) { return r.sha.slice(0, 8); }),
+              datasets: [{
+                label: 'LB Score',
+                data: runs.map(function (r) { return r.lb_score; }),
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59,130,246,0.08)',
+                tension: 0.2,
+                spanGaps: true
+              }]
+            },
+            options: { responsive: true, plugins: { legend: { display: false } } }
+          });
+
+          var tbody = document.getElementById('runs-body');
+          runs.forEach(function (run) {
+            var tr = document.createElement('tr');
+            if (run.champion) { tr.className = 'champion'; }
+            [
+              run.sha.slice(0, 8),
+              fmtTime(run.timestamp),
+              run.run_id || '',
+              run.lb_score !== null && run.lb_score !== undefined ? run.lb_score : '\\u2014',
+              fmtMetrics(run.metrics || {})
+            ].forEach(function (val) {
+              var td = document.createElement('td');
+              td.textContent = val;
+              tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+          });
+        })
+        .catch(function (err) {
+          document.getElementById('status').textContent = 'Error: ' + err.message;
+        });
+    })();
+  </script>
+</body>
+</html>
 """
 
 # ---------------------------------------------------------------------------
@@ -2646,6 +2769,7 @@ def init(
         (root / "data" / "raw" / ".gitkeep", ""),
         (root / "data" / "processed" / ".gitkeep", ""),
         (root / "submissions" / ".gitkeep", ""),
+        (root / "docs" / "index.html", r(_DASHBOARD_HTML, name, class_name)),
     ]
 
     if ci:
@@ -2685,6 +2809,8 @@ Done. Next steps:
   kitchen experiments compare METRIC  # rank runs by metric
   kitchen promote METRIC              # promote best run to the registry
 {submit_step}{ci_note}
+  # Dashboard: enable GitHub Pages (Settings → Pages → deploy from /docs on main)
+  #   then run `kitchen push` after each evaluate to populate the results branch
 """)
 
 
