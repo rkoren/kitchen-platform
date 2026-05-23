@@ -1124,7 +1124,111 @@ def test_init_dashboard_created_without_ci_flag(tmp_path, monkeypatch):
     assert (tmp_path / "my-comp" / _DASHBOARD_PATH).exists()
 
 
-def test_init_output_mentions_github_pages(tmp_path, monkeypatch):
+def test_init_output_mentions_github_pages_when_ci(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    assert "GitHub Actions" in result.output
+
+
+def test_init_output_no_pages_note_without_ci(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
-    assert "GitHub Pages" in result.output
+    assert "GitHub Actions" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Deploy Pages job (GP-003)
+# ---------------------------------------------------------------------------
+
+
+def test_init_ci_has_deploy_pages_job(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    assert "deploy-pages:" in raw
+
+
+def test_init_ci_deploy_pages_gated_on_main(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    import yaml
+    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    job = data["jobs"]["deploy-pages"]
+    assert "push" in job["if"]
+    assert "refs/heads/main" in job["if"]
+
+
+def test_init_ci_deploy_pages_uses_deploy_action(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    assert "actions/deploy-pages@" in raw
+
+
+def test_init_ci_deploy_pages_has_pages_write_permission(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    import yaml
+    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    perms = data["jobs"]["deploy-pages"]["permissions"]
+    assert perms.get("pages") == "write"
+
+
+def test_init_ci_kaggle_has_deploy_pages_job(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "titanic"],
+        catch_exceptions=False,
+    )
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    assert "deploy-pages:" in raw
+
+
+# ---------------------------------------------------------------------------
+# Dashboard delta column (LML-007)
+# ---------------------------------------------------------------------------
+
+
+def test_init_dashboard_has_delta_column_header(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
+    assert "Δ" in html or "&#916;" in html or "&Delta;" in html
+
+
+def test_init_dashboard_delta_js_uses_champion(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
+    assert "champ" in html
+    assert "toFixed" in html
+
+
+# ---------------------------------------------------------------------------
+# Dashboard URL in job summary (GP-005)
+# ---------------------------------------------------------------------------
+
+
+def test_init_ci_deploy_pages_links_summary(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    import yaml
+    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = data["jobs"]["deploy-pages"]["steps"]
+    summary_steps = [s for s in steps if "GITHUB_STEP_SUMMARY" in str(s.get("run", ""))]
+    assert summary_steps, "No step writes to GITHUB_STEP_SUMMARY in deploy-pages job"
+
+
+def test_init_ci_kaggle_deploy_pages_links_summary(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "titanic"],
+        catch_exceptions=False,
+    )
+    import yaml
+    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = data["jobs"]["deploy-pages"]["steps"]
+    summary_steps = [s for s in steps if "GITHUB_STEP_SUMMARY" in str(s.get("run", ""))]
+    assert summary_steps, "No step writes to GITHUB_STEP_SUMMARY in deploy-pages job (kaggle)"
