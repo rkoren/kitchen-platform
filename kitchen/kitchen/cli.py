@@ -83,6 +83,42 @@ def ui(
         typer.echo("\nStopped.")
 
 
+@app.command(name="open")
+def open_dashboard(
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
+) -> None:
+    """Open the GitHub Pages dashboard in your browser.
+
+    Reads dashboard_url from params.yaml, then falls back to the DASHBOARD_URL
+    environment variable. If neither is set, opens the MLflow UI instead.
+    """
+    import os
+    import webbrowser
+
+    import yaml
+
+    url: str | None = None
+    params_path = Path(params_file)
+    if params_path.exists():
+        raw = yaml.safe_load(params_path.read_text()) or {}
+        url = raw.get("dashboard_url")
+
+    if not url:
+        url = os.environ.get("DASHBOARD_URL")
+
+    if url:
+        typer.echo(f"Opening dashboard → {url}")
+        webbrowser.open(url)
+    else:
+        typer.echo(
+            "No dashboard_url found in params.yaml or DASHBOARD_URL env var. "
+            "Falling back to MLflow UI."
+        )
+        ui()
+
+
 @app.command()
 def status(
     params_file: Annotated[
@@ -431,6 +467,8 @@ mlflow:
 
 run_name: baseline
 metrics_file: metrics.json
+
+# dashboard_url: https://<owner>.github.io/<repo>/  # set to open via `kitchen open`
 
 # thresholds:               # optional: fail CI if a metric violates its constraint
 #   val_accuracy: 0.80      # plain float = lower bound (>= 0.80)
@@ -988,17 +1026,19 @@ def generate(params_file: str = "params.yaml") -> None:
             f"No champion model found for {MODEL_NAME!r}. "
             "Run flows/promote.py first."
         )
-    model = mlflow.pyfunc.load_model(uri)
-
-    # TODO: uncomment and adapt one of these prediction styles:
+    # TODO: choose the loader that matches your model flavour, then delete the others:
     #
-    # Binary classification — hard label (e.g. True/False, 0/1):
+    # XGBoost (model_flavour = "xgboost" in src/train/run.py):
+    # import xgboost as xgb
+    # model = mlflow.xgboost.load_model(uri)
+    # pred = model.predict(xgb.DMatrix(test_df))
+    #
+    # scikit-learn (model_flavour = "sklearn"):
+    # model = mlflow.sklearn.load_model(uri)
     # pred = model.predict(test_df)
     #
-    # Binary classification — probability (e.g. for log-loss competitions):
-    # pred = model.predict(test_df)  # returns probabilities for pyfunc models
-    #
-    # Regression:
+    # Generic / pyfunc fallback:
+    # model = mlflow.pyfunc.load_model(uri)
     # pred = model.predict(test_df)
 
     sub = pd.DataFrame({ID_COL: test_raw[ID_COL], TARGET_COL: pred})
