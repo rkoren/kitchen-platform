@@ -1,12 +1,20 @@
 """kitchen CLI — scaffold, validate, and manage competition projects.
 
 Usage:
-    kitchen init <name>                 # create ./<name>/ with full project scaffold
-    kitchen init <name> --here          # scaffold into current directory
-    kitchen validate [params.yaml]      # validate a params.yaml against KitchenConfig
-    kitchen experiments list            # list recent runs in an experiment
-    kitchen experiments compare METRIC  # rank runs by a metric
-    kitchen promote METRIC              # promote best run to the model registry
+    kitchen init <name>                          # scaffold a new project
+    kitchen check                                # pre-flight env/credential check
+    kitchen run train                            # features → train → log to MLflow
+    kitchen run train --auto-promote \
+        --promote-metric <m> [--lower-is-better] # train + auto-promote if new run wins
+    kitchen run evaluate                         # evaluate champion model
+    kitchen run monitor [--local report.html]    # generate drift report
+    kitchen leaderboard                          # rank runs; [C]=champion ★=metric leader
+    kitchen promote METRIC                       # manually promote best run
+    kitchen ui                                   # open MLflow UI in browser
+    kitchen experiments list                     # list recent runs
+    kitchen experiments compare METRIC           # rank runs by a metric
+    kitchen submit                               # submit to Kaggle
+    kitchen report                               # markdown metrics summary
 """
 
 from __future__ import annotations
@@ -26,6 +34,52 @@ app = typer.Typer(help="kitchen ML platform CLI", add_completion=False, no_args_
 def version() -> None:
     """Print the kitchen version."""
     typer.echo(f"kitchen {_pkg_version('kitchen')}")
+
+
+@app.command()
+def ui(
+    port: Annotated[int, typer.Option("--port", "-p", help="Port for the local MLflow UI")] = 5000,
+) -> None:
+    """Open the MLflow tracking UI in your browser.
+
+    For a remote tracking URI (http/https), opens the URL directly.
+    For a local SQLite URI, starts `mlflow ui` and opens localhost.
+    """
+    import os
+    import subprocess
+    import threading
+    import webbrowser
+
+    from kitchen.tracking import configure_from_env
+
+    configure_from_env()
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "sqlite:///mlruns.db")
+
+    if tracking_uri.startswith(("http://", "https://")):
+        typer.echo(f"Opening {tracking_uri}")
+        webbrowser.open(tracking_uri)
+        return
+
+    url = f"http://localhost:{port}"
+    typer.echo(f"MLflow UI → {url}")
+    typer.echo(f"Tracking  → {tracking_uri}")
+    typer.echo("Press Ctrl+C to stop.\n")
+
+    def _open_after_delay() -> None:
+        import time
+
+        time.sleep(1.5)
+        webbrowser.open(url)
+
+    threading.Thread(target=_open_after_delay, daemon=True).start()
+
+    try:
+        subprocess.run(
+            ["mlflow", "ui", "--backend-store-uri", tracking_uri, "--port", str(port)],
+            check=False,
+        )
+    except KeyboardInterrupt:
+        typer.echo("\nStopped.")
 
 
 @app.command()
@@ -1040,6 +1094,76 @@ def _fmt_metric(value: float | None) -> str:
     return "-" if value is None else f"{value:.4f}"
 
 
+def _try_auto_promote(
+    params_file: str,
+    metric: str,
+    lower_is_better: bool,
+    model_name: str | None,
+) -> None:
+    """Compare the latest run against the current champion; promote if it wins."""
+    import os
+
+    import mlflow.tracking
+
+    from kitchen.config import KitchenConfig
+    from kitchen.registry import promote_model, register_model
+    from kitchen.tracking import configure_from_env
+
+    configure_from_env()
+    cfg = KitchenConfig.from_yaml(params_file)
+    exp_name = cfg.experiment
+    resolved_model = model_name or os.environ.get("MLFLOW_MODEL_NAME", f"{exp_name}-model")
+
+    client = mlflow.tracking.MlflowClient()
+    exp = client.get_experiment_by_name(exp_name)
+    if exp is None:
+        typer.echo(f"auto-promote: experiment {exp_name!r} not found.", err=True)
+        return
+
+    new_runs = client.search_runs(
+        experiment_ids=[exp.experiment_id],
+        filter_string=f"metrics.{metric} > -99999",
+        order_by=["start_time DESC"],
+        max_results=1,
+    )
+    if not new_runs:
+        typer.echo(f"auto-promote: no runs with metric {metric!r} in {exp_name!r}.")
+        return
+
+    new_run = new_runs[0]
+    new_score = new_run.data.metrics.get(metric)
+    if new_score is None:
+        typer.echo(f"auto-promote: metric {metric!r} missing from latest run.")
+        return
+
+    # Look up current champion score (None if no champion yet).
+    champ_score: float | None = None
+    try:
+        mv = client.get_model_version_by_alias(resolved_model, "champion")
+        champ_run = client.get_run(mv.run_id)
+        champ_score = champ_run.data.metrics.get(metric)
+    except Exception:
+        pass
+
+    if champ_score is None:
+        wins, reason = True, "no current champion"
+    elif lower_is_better:
+        wins = new_score < champ_score
+        reason = f"{new_score:.6f} < {champ_score:.6f} (lower=better)"
+    else:
+        wins = new_score > champ_score
+        reason = f"{new_score:.6f} > {champ_score:.6f} (higher=better)"
+
+    typer.echo()
+    if wins:
+        version = register_model(new_run.info.run_id, "model", resolved_model)
+        promote_model(resolved_model, version, alias="champion")
+        typer.echo(f"auto-promote: {new_run.info.run_id[:8]} → champion  ({reason})")
+        typer.echo(f"             {resolved_model} v{version} @ champion")
+    else:
+        typer.echo(f"auto-promote: skipped — new run did not beat champion  ({reason})")
+
+
 def _to_class_name(name: str) -> str:
     return "".join(w.capitalize() for w in re.split(r"[-_\s]+", name))
 
@@ -1199,12 +1323,21 @@ def leaderboard(
         bool, typer.Option("--higher-is-better", help="Rank highest first (default: lowest first)")
     ] = False,
     limit: Annotated[int, typer.Option("--limit", "-n", help="Max runs to show")] = 20,
+    model_name: Annotated[
+        str | None,
+        typer.Option("--model-name", help="Registered model name to resolve champion alias"),
+    ] = None,
 ) -> None:
     """Rank runs by a metric; shows full run_id and lb_score for easy replay.
 
     Defaults to loto_brier (lower=better) for competition use. The full run_id
     is shown so it can be copied directly into flows/submit.py --run-id.
+
+    [C] marks the promoted champion from the model registry. ★ marks the
+    top-ranked run by metric (they may differ if a newer run hasn't been promoted yet).
     """
+    import os
+
     import mlflow.tracking
 
     exp_name = _resolve_experiment(experiment, params_file)
@@ -1225,6 +1358,17 @@ def leaderboard(
         typer.echo(f"No runs with metric {metric!r} found in {exp_name!r}.")
         return
 
+    # Resolve the champion run_id from the model registry (best-effort — no crash if absent).
+    resolved_model_name = model_name or os.environ.get(
+        "MLFLOW_MODEL_NAME", f"{exp_name}-model"
+    )
+    champion_run_id: str | None = None
+    try:
+        mv = client.get_model_version_by_alias(resolved_model_name, "champion")
+        champion_run_id = mv.run_id
+    except Exception:
+        pass
+
     direction = "higher=better" if higher_is_better else "lower=better"
     typer.echo(f"\nExperiment: {exp_name}  |  {metric} ({direction})\n")
 
@@ -1234,8 +1378,17 @@ def leaderboard(
     typer.echo("-" * len(header))
 
     for i, run in enumerate(runs):
-        rank = "★" if i == 0 else str(i + 1)
         run_id = run.info.run_id
+        is_champion = run_id == champion_run_id
+        is_top = i == 0
+        if is_champion and is_top:
+            rank = "★[C]"
+        elif is_champion:
+            rank = "[C]"
+        elif is_top:
+            rank = "★"
+        else:
+            rank = str(i + 1)
         variant = run.data.tags.get("model_variant", "")[:12]
         primary = _fmt_metric(run.data.metrics.get(metric))
         lb = _fmt_metric(run.data.metrics.get("lb_score"))
@@ -1243,6 +1396,8 @@ def leaderboard(
         typer.echo(f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}  {lb:>10}  {started}")
 
     typer.echo()
+    if champion_run_id:
+        typer.echo(f"[C] = current champion  (models:/{resolved_model_name}@champion)")
 
 
 # ---------------------------------------------------------------------------
@@ -1448,9 +1603,33 @@ def run_train(
     params_file: Annotated[
         str, typer.Option("--params", help="Path to params.yaml")
     ] = "params.yaml",
+    auto_promote: Annotated[
+        bool,
+        typer.Option("--auto-promote", help="Promote after training if new run beats the champion"),
+    ] = False,
+    promote_metric: Annotated[
+        str | None,
+        typer.Option("--promote-metric", help="Metric to compare for auto-promote (required with --auto-promote)"),
+    ] = None,
+    lower_is_better: Annotated[
+        bool,
+        typer.Option("--lower-is-better/--higher-is-better", help="Metric direction for promotion comparison"),
+    ] = False,
+    promote_model_name: Annotated[
+        str | None,
+        typer.Option("--model-name", help="Registered model name for auto-promote (defaults to <experiment>-model)"),
+    ] = None,
 ) -> None:
-    """Run the full train pipeline: features → train → log to MLflow."""
+    """Run the full train pipeline: features → train → log to MLflow.
+
+    With --auto-promote, compares the new run against the current champion on
+    --promote-metric and promotes automatically if it wins.
+    """
     import sys
+
+    if auto_promote and not promote_metric:
+        typer.echo("error: --promote-metric is required when using --auto-promote", err=True)
+        raise typer.Exit(1)
 
     path = Path(params_file)
     if not path.exists():
@@ -1475,6 +1654,9 @@ def run_train(
             err=True,
         )
         raise typer.Exit(1)
+
+    if auto_promote:
+        _try_auto_promote(params_file, promote_metric, lower_is_better, promote_model_name)  # type: ignore[arg-type]
 
 
 @run_app.command("evaluate")

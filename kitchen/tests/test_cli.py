@@ -349,6 +349,129 @@ def test_run_train_missing_src_module(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# kitchen run train --auto-promote (LML-004)
+# ---------------------------------------------------------------------------
+
+
+def _fake_pipeline_noop(params_file="params.yaml"):
+    pass
+
+
+def _auto_promote_invoke(
+    tmp_path, monkeypatch, extra_args, champion_score=None, new_score=0.15, metric="loto_brier"
+):
+    """Helper: set up a fake pipeline + MLflow client and invoke run train with extra_args."""
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: cbb\n")
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+
+    new_run = MagicMock()
+    new_run.info.run_id = "newrun" + "0" * 26
+    new_run.data.metrics = {metric: new_score}
+
+    def make_client():
+        client = MagicMock()
+        client.get_experiment_by_name.return_value.experiment_id = "1"
+        client.search_runs.return_value = [new_run]
+        if champion_score is not None:
+            mv = MagicMock()
+            mv.run_id = "champrun" + "0" * 24
+            champ_run = MagicMock()
+            champ_run.data.metrics = {metric: champion_score}
+            client.get_model_version_by_alias.return_value = mv
+            client.get_run.return_value = champ_run
+        else:
+            import mlflow.exceptions
+            client.get_model_version_by_alias.side_effect = mlflow.exceptions.MlflowException("no alias")
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+        patch("kitchen.registry.register_model", return_value="3") as mock_reg,
+        patch("kitchen.registry.promote_model") as mock_prom,
+    ):
+        result = runner.invoke(app, ["run", "train", *extra_args], catch_exceptions=False)
+
+    return result, mock_reg, mock_prom
+
+
+def test_auto_promote_requires_metric(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: cbb\n")
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+    result = runner.invoke(app, ["run", "train", "--auto-promote"])
+    assert result.exit_code != 0
+    assert "promote-metric" in result.output
+
+
+def test_auto_promote_no_champion_promotes(tmp_path, monkeypatch):
+    result, mock_reg, mock_prom = _auto_promote_invoke(
+        tmp_path, monkeypatch,
+        ["--auto-promote", "--promote-metric", "loto_brier", "--lower-is-better"],
+        champion_score=None,
+        new_score=0.164,
+    )
+    assert result.exit_code == 0
+    mock_reg.assert_called_once()
+    mock_prom.assert_called_once()
+    assert "champion" in result.output
+    assert "no current champion" in result.output
+
+
+def test_auto_promote_beats_champion_promotes(tmp_path, monkeypatch):
+    result, mock_reg, mock_prom = _auto_promote_invoke(
+        tmp_path, monkeypatch,
+        ["--auto-promote", "--promote-metric", "loto_brier", "--lower-is-better"],
+        champion_score=0.172,  # current champion
+        new_score=0.160,       # new run is better (lower)
+    )
+    assert result.exit_code == 0
+    mock_reg.assert_called_once()
+    mock_prom.assert_called_once()
+    assert "→ champion" in result.output
+
+
+def test_auto_promote_loses_to_champion_skips(tmp_path, monkeypatch):
+    result, mock_reg, mock_prom = _auto_promote_invoke(
+        tmp_path, monkeypatch,
+        ["--auto-promote", "--promote-metric", "loto_brier", "--lower-is-better"],
+        champion_score=0.155,  # champion is already better
+        new_score=0.170,
+    )
+    assert result.exit_code == 0
+    mock_reg.assert_not_called()
+    mock_prom.assert_not_called()
+    assert "skipped" in result.output
+
+
+def test_auto_promote_higher_is_better(tmp_path, monkeypatch):
+    result, mock_reg, mock_prom = _auto_promote_invoke(
+        tmp_path, monkeypatch,
+        ["--auto-promote", "--promote-metric", "val_auc", "--higher-is-better"],
+        champion_score=0.80,
+        new_score=0.85,  # higher is better, new run wins
+        metric="val_auc",
+    )
+    assert result.exit_code == 0
+    mock_reg.assert_called_once()
+    mock_prom.assert_called_once()
+
+
+def test_auto_promote_not_set_no_promote(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: cbb\n")
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+    from unittest.mock import patch
+    with patch("kitchen.registry.register_model") as mock_reg:
+        result = runner.invoke(app, ["run", "train"])
+    assert result.exit_code == 0
+    mock_reg.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # kitchen run monitor
 # ---------------------------------------------------------------------------
 
