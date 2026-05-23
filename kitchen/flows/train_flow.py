@@ -3,6 +3,7 @@ from prefect import flow, task
 
 from kitchen.ingest import source_from_params
 from kitchen.store import DataStore
+from kitchen.submit import log_submission as _log_submission
 from kitchen.tracking import Tracker
 
 
@@ -43,6 +44,51 @@ def evaluate_model(model: object, params: dict, store: DataStore) -> dict:
             "Project must implement src/evaluate/run.py with an evaluate(model, params, store) function"
         ) from e
     return evaluate(model, params, store)
+
+
+@task(name="submit")
+def submit_submission(model: object, params: dict, store: DataStore) -> dict[str, float]:
+    """Generate a submission, validate it, log as an MLflow artifact, and optionally upload.
+
+    Expects the project to implement ``src/submit/run.py`` with::
+
+        def generate(model, params, store) -> tuple[pd.DataFrame, Path]:
+            ...  # build submission DataFrame, write to disk, return (df, path)
+
+    The ``submission`` section of params.yaml configures upload behaviour::
+
+        submission:
+          sample_file: SampleSubmissionStage1.csv   # relative to data/raw/
+          id_col: ID
+          target_col: Pred
+          competition: march-machine-learning-mania-2026  # omit to skip upload
+          message: "my run description"
+          fetch_lb_score: false   # true to poll Kaggle after uploading
+    """
+    import pandas as pd
+
+    try:
+        from src.submit.run import generate  # project-defined
+    except ImportError as e:
+        raise RuntimeError(
+            "Project must implement src/submit/run.py with a"
+            " generate(model, params, store) -> (df, path) function"
+        ) from e
+
+    sub_df, sub_path = generate(model, params, store)
+    sub_cfg = params.get("submission", {})
+    sample_file = sub_cfg.get("sample_file", "SampleSubmissionStage1.csv")
+    sample = pd.read_csv(store.raw_dir / sample_file)
+    return _log_submission(
+        submission=sub_df,
+        sample=sample,
+        file_path=sub_path,
+        id_col=sub_cfg.get("id_col", "ID"),
+        target_col=sub_cfg.get("target_col", "Pred"),
+        competition=sub_cfg.get("competition"),
+        message=sub_cfg.get("message", ""),
+        fetch_lb_score=sub_cfg.get("fetch_lb_score", False),
+    )
 
 
 @flow(name="train")

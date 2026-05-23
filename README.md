@@ -73,6 +73,7 @@ pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirecto
 | `kitchen.store` | `DataStore` — typed paths and parquet/CSV I/O |
 | `kitchen.tracking` | `Tracker` — MLflow wrapper with nested param flattening |
 | `kitchen.steps` | `FeatureBuilder`, `Trainer`, `Evaluator` ABCs |
+| `kitchen.submit` | Validate, log, upload, and score Kaggle submissions |
 | `kitchen.serve` | FastAPI + Mangum app; plug in a `predictor.py` |
 | `flows/` | Prefect `train` and `monitor` flows |
 
@@ -85,7 +86,8 @@ my-kaggle-project/
 ├── src/
 │   ├── features/run.py    # def build(params, store) -> None
 │   ├── train/run.py       # def train(params, store, tracker) -> model
-│   └── evaluate/run.py    # def evaluate(model, params, store) -> dict
+│   ├── evaluate/run.py    # def evaluate(model, params, store) -> dict
+│   └── submit/run.py      # def generate(model, params, store) -> (df, path)
 ├── predictor.py           # def predict(payload: dict) -> dict
 ├── params.yaml
 ├── infra.yaml
@@ -152,7 +154,17 @@ monitor:
   current_file: current.parquet
   report_bucket: my-mlflow-artifacts
   report_key: monitoring/drift_report.html
+
+submission:
+  sample_file: SampleSubmissionStage1.csv   # relative to data/raw/
+  id_col: ID
+  target_col: Pred
+  competition: my-competition               # Kaggle slug; omit to skip upload
+  message: "baseline run"
+  fetch_lb_score: false                     # true to poll for public LB score after upload
 ```
+
+The submission step (`kitchen.submit.log_submission`) validates the CSV against the sample submission, attaches it as an artifact to the active MLflow run, and (when `competition` is set) uploads to Kaggle and optionally polls for the public leaderboard score — logging it as `lb_score` on the same run. This closes the loop: every MLflow run records LOTO Brier, the submission file, and the actual LB score together.
 
 ---
 
