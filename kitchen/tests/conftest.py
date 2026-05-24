@@ -61,7 +61,9 @@ def _end_mlflow_run():
     # var ourselves below so that subsequent tests see the exact same env they
     # started with — not one that has MLFLOW_TRACKING_URI injected by this teardown.
     try:
-        from mlflow.tracking._tracking_service import utils as _ts_utils  # pylint: disable=import-outside-toplevel
+        from mlflow.tracking._tracking_service import (
+            utils as _ts_utils,  # pylint: disable=import-outside-toplevel
+        )
         _ts_utils._tracking_uri = original_uri  # pylint: disable=protected-access
     except Exception:  # pylint: disable=broad-exception-caught
         mlflow.set_tracking_uri(original_uri)  # fallback if internals change
