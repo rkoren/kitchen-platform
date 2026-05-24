@@ -461,10 +461,17 @@ model:
   test_size: 0.2
   random_state: 42
   # Add model-specific hyperparams here, e.g.:
-  # xgb:
-  #   n_estimators: 500
+  # xgb:                       # --template baseline-xgb / binary-cls
+  #   n_estimators: 300
   #   max_depth: 6
   #   learning_rate: 0.05
+  # lr:                        # --template baseline-lr
+  #   C: 1.0
+  #   max_iter: 1000
+  # rf:                        # --template baseline-rf
+  #   n_estimators: 300
+  #   max_depth: null
+  #   min_samples_leaf: 1
 
 mlflow:
   tracking_uri: sqlite:///mlruns.db
@@ -531,7 +538,7 @@ model:
   target: target        # TODO: match submission.target_col
   test_size: 0.2
   random_state: 42
-  # XGBoost — uncomment if using --template baseline-xgb:
+  # XGBoost — uncomment if using --template baseline-xgb or binary-cls:
   # xgb:
   #   n_estimators: 300
   #   max_depth: 6
@@ -542,6 +549,11 @@ model:
   # lr:
   #   C: 1.0
   #   max_iter: 1000
+  # Random Forest — uncomment if using --template baseline-rf:
+  # rf:
+  #   n_estimators: 300
+  #   max_depth: null
+  #   min_samples_leaf: 1
 
 mlflow:
   tracking_uri: sqlite:///mlruns.db
@@ -707,6 +719,101 @@ def train(params: dict, store: DataStore, tracker: Tracker) -> object:
     return ${class_name}Trainer().run(store, tracker, params)
 """
 
+_TRAIN_RUN_RF = """\
+\"\"\"Model training for $name — Random Forest baseline.
+
+Defaults to classification (RandomForestClassifier).
+For regression: swap RandomForestClassifier → RandomForestRegressor.
+\"\"\"
+from __future__ import annotations
+
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from kitchen.steps import Trainer
+from kitchen.store import DataStore
+from kitchen.tracking import Tracker
+
+
+class ${class_name}Trainer(Trainer):
+    model_flavour = "sklearn"
+
+    def fit(self, df: pd.DataFrame, params: dict) -> RandomForestClassifier:
+        target = params["model"]["target"]
+        features = [c for c in df.columns if c != target]
+        X, y = df[features], df[target]
+
+        p = params["model"].get("rf", {})
+        model = RandomForestClassifier(
+            n_estimators=p.get("n_estimators", 300),
+            max_depth=p.get("max_depth", None),
+            min_samples_leaf=p.get("min_samples_leaf", 1),
+            random_state=params["model"].get("random_state", 42),
+            n_jobs=-1,
+        )
+        model.fit(X, y)
+        return model
+
+
+def train(params: dict, store: DataStore, tracker: Tracker) -> object:
+    return ${class_name}Trainer().run(store, tracker, params)
+"""
+
+_TRAIN_RUN_BINARY_CLS = """\
+\"\"\"Model training for $name — binary classification (XGBoost baseline).
+
+Splits features into train/val, fits XGBClassifier, then logs validation
+metrics (val_accuracy, val_f1, val_log_loss, val_roc_auc) to the active
+MLflow run.  The run is opened by Trainer.run() before fit() is called, so
+mlflow.log_metrics() here is always inside a live run.
+
+Swap XGBClassifier for any sklearn-compatible estimator.
+\"\"\"
+from __future__ import annotations
+
+import mlflow
+import pandas as pd
+import xgboost as xgb
+from kitchen.modeling import classification_metrics, train_val_split
+from kitchen.steps import Trainer
+from kitchen.store import DataStore
+from kitchen.tracking import Tracker
+
+
+class ${class_name}Trainer(Trainer):
+    model_flavour = "xgboost"
+
+    def fit(self, df: pd.DataFrame, params: dict) -> xgb.XGBClassifier:
+        target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        train_df, val_df = train_val_split(df, target_col=target, seed=seed)
+        features = [c for c in df.columns if c != target]
+        X_train, y_train = train_df[features], train_df[target]
+        X_val, y_val = val_df[features], val_df[target]
+
+        p = params["model"].get("xgb", {})
+        model = xgb.XGBClassifier(
+            n_estimators=p.get("n_estimators", 300),
+            max_depth=p.get("max_depth", 6),
+            learning_rate=p.get("learning_rate", 0.05),
+            subsample=p.get("subsample", 0.8),
+            colsample_bytree=p.get("colsample_bytree", 0.8),
+            random_state=seed,
+            eval_metric="logloss",
+        )
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_val)
+        y_proba = model.predict_proba(X_val)[:, 1]  # col 1 = P(class=1) for 0/1 labels
+        val_metrics = classification_metrics(y_val, y_pred, y_proba=y_proba)
+        mlflow.log_metrics({"val_" + k: v for k, v in val_metrics.items()})
+        return model
+
+
+def train(params: dict, store: DataStore, tracker: Tracker) -> object:
+    return ${class_name}Trainer().run(store, tracker, params)
+"""
+
 _EVALUATE_RUN = """\
 \"\"\"Evaluation for $name.\"\"\"
 from __future__ import annotations
@@ -720,6 +827,56 @@ class ${class_name}Evaluator(Evaluator):
     def evaluate(self, model: object, df: pd.DataFrame) -> dict[str, float]:
         \"\"\"Return metric_name -> value. Logged to MLflow and written to metrics.json.\"\"\"
         raise NotImplementedError
+
+
+def evaluate(model: object, params: dict, store: DataStore) -> dict[str, float]:
+    return ${class_name}Evaluator().run(model, store, params)
+"""
+
+_EVALUATE_RUN_BINARY_CLS = """\
+\"\"\"Evaluation for $name — binary classification.
+
+Scores the model on a held-out validation split using the same seed as
+training so the val partition is consistent across runs.
+Reports accuracy, f1, log_loss, and roc_auc.
+
+Note: predict_proba()[:, 1] assumes class labels are 0 and 1 (sklearn default
+ordering). If your target uses other labels, inspect model.classes_ first.
+\"\"\"
+from __future__ import annotations
+
+import pandas as pd
+from kitchen.modeling import classification_metrics, train_val_split
+from kitchen.steps import Evaluator
+from kitchen.store import DataStore
+
+
+class ${class_name}Evaluator(Evaluator):
+    \"\"\"Binary classification evaluator.
+
+    Overrides run() to stash params as an instance attribute so that
+    evaluate() can access the target column and random seed — the base class
+    does not forward params to evaluate().
+    \"\"\"
+
+    def run(self, model: object, store: DataStore, params: dict) -> dict[str, float]:
+        self._params = params  # stash so evaluate() can read target + seed
+        return super().run(model, store, params)
+
+    def evaluate(self, model: object, df: pd.DataFrame) -> dict[str, float]:
+        params = self._params
+        target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        _, val_df = train_val_split(df, target_col=target, seed=seed)
+        features = [c for c in val_df.columns if c != target]
+        X_val, y_val = val_df[features], val_df[target]
+
+        y_pred = model.predict(X_val)
+        y_proba = (
+            model.predict_proba(X_val)[:, 1] if hasattr(model, "predict_proba") else None
+        )
+        return classification_metrics(y_val, y_pred, y_proba=y_proba)
 
 
 def evaluate(model: object, params: dict, store: DataStore) -> dict[str, float]:
@@ -1392,22 +1549,68 @@ _DASHBOARD_HTML = """\
           runs.sort(function (a, b) { return a.timestamp < b.timestamp ? -1 : 1; });
           document.getElementById('status').textContent = runs.length + ' run(s) loaded.';
 
-          var ctx = document.getElementById('chart').getContext('2d');
-          new Chart(ctx, {
-            type: 'line',
-            data: {
-              labels: runs.map(function (r) { return r.sha.slice(0, 8); }),
-              datasets: [{
-                label: 'LB Score',
-                data: runs.map(function (r) { return r.lb_score; }),
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59,130,246,0.08)',
-                tension: 0.2,
-                spanGaps: true
-              }]
-            },
-            options: { responsive: true, plugins: { legend: { display: false } } }
+          // Show LB Score chart and columns only when at least one run has an lb_score.
+          // For non-Kaggle projects (or before any submission), fall back to the first
+          // numeric local metric so the chart remains useful.
+          var hasLbScore = runs.some(function (r) {
+            return r.lb_score !== null && r.lb_score !== undefined;
           });
+
+          var chartLabel, chartData, showLegend;
+          if (hasLbScore) {
+            chartLabel = 'LB Score';
+            chartData = runs.map(function (r) { return r.lb_score; });
+            showLegend = false;
+          } else {
+            var metricKey = null;
+            runs.forEach(function (r) {
+              if (metricKey) { return; }
+              var m = r.metrics || {};
+              Object.keys(m).sort().forEach(function (k) {
+                if (!metricKey && typeof m[k] === 'number') { metricKey = k; }
+              });
+            });
+            if (metricKey) {
+              chartLabel = metricKey;
+              chartData = runs.map(function (r) {
+                var v = (r.metrics || {})[metricKey];
+                return typeof v === 'number' ? v : null;
+              });
+              showLegend = true;
+            } else {
+              document.getElementById('chart-wrap').style.display = 'none';
+              chartLabel = null;
+              chartData = [];
+              showLegend = false;
+            }
+          }
+
+          if (chartLabel) {
+            var ctx = document.getElementById('chart').getContext('2d');
+            new Chart(ctx, {
+              type: 'line',
+              data: {
+                labels: runs.map(function (r) { return r.sha.slice(0, 8); }),
+                datasets: [{
+                  label: chartLabel,
+                  data: chartData,
+                  borderColor: '#3b82f6',
+                  backgroundColor: 'rgba(59,130,246,0.08)',
+                  tension: 0.2,
+                  spanGaps: true
+                }]
+              },
+              options: { responsive: true, plugins: { legend: { display: showLegend } } }
+            });
+          }
+
+          // Hide LB Score and Δ LB header columns when no LB data is present.
+          if (!hasLbScore) {
+            var headerCells = document.querySelectorAll('thead tr th');
+            [3, 4].forEach(function (i) {
+              if (headerCells[i]) { headerCells[i].style.display = 'none'; }
+            });
+          }
 
           var champ = runs.find(function (r) { return r.champion; });
 
@@ -1419,29 +1622,35 @@ _DASHBOARD_HTML = """\
             [
               run.sha.slice(0, 8),
               fmtTime(run.timestamp),
-              run.run_id || '',
-              run.lb_score !== null && run.lb_score !== undefined ? run.lb_score : '\\u2014'
+              run.run_id || ''
             ].forEach(function (val) {
               var td = document.createElement('td');
               td.textContent = val;
               tr.appendChild(td);
             });
 
-            var deltaTd = document.createElement('td');
-            if (run.champion) {
-              deltaTd.textContent = '\\u2605';
-            } else if (
-              champ &&
-              champ.lb_score !== null && champ.lb_score !== undefined &&
-              run.lb_score !== null && run.lb_score !== undefined
-            ) {
-              var delta = run.lb_score - champ.lb_score;
-              deltaTd.textContent = (delta >= 0 ? '+' : '') + delta.toFixed(4);
-              deltaTd.style.color = delta >= 0 ? '#16a34a' : '#dc2626';
-            } else {
-              deltaTd.textContent = '\\u2014';
+            if (hasLbScore) {
+              var lbTd = document.createElement('td');
+              lbTd.textContent = run.lb_score !== null && run.lb_score !== undefined
+                ? run.lb_score : '\\u2014';
+              tr.appendChild(lbTd);
+
+              var deltaTd = document.createElement('td');
+              if (run.champion) {
+                deltaTd.textContent = '\\u2605';
+              } else if (
+                champ &&
+                champ.lb_score !== null && champ.lb_score !== undefined &&
+                run.lb_score !== null && run.lb_score !== undefined
+              ) {
+                var delta = run.lb_score - champ.lb_score;
+                deltaTd.textContent = (delta >= 0 ? '+' : '') + delta.toFixed(4);
+                deltaTd.style.color = delta >= 0 ? '#16a34a' : '#dc2626';
+              } else {
+                deltaTd.textContent = '\\u2014';
+              }
+              tr.appendChild(deltaTd);
             }
-            tr.appendChild(deltaTd);
 
             var metricsTd = document.createElement('td');
             metricsTd.textContent = fmtMetrics(run.metrics || {});
@@ -2813,7 +3022,7 @@ def init(
     template: str = typer.Option(
         "none",
         "--template",
-        help="Starter template for src/train/run.py: none, baseline-xgb, baseline-lr",
+        help="Starter template: none, baseline-xgb, baseline-lr, baseline-rf, binary-cls",
     ),
     ci: bool = typer.Option(
         False, "--ci", help="Scaffold a .github/workflows/train-evaluate.yml CI workflow"
@@ -2837,7 +3046,7 @@ def init(
         typer.echo("error: --competition is required when --source kaggle", err=True)
         raise typer.Exit(1)
 
-    valid_templates = {"none", "baseline-xgb", "baseline-lr"}
+    valid_templates = {"none", "baseline-xgb", "baseline-lr", "baseline-rf", "binary-cls"}
     if template not in valid_templates:
         typer.echo(
             f"error: invalid template {template!r} — choose from: {', '.join(sorted(valid_templates))}",
@@ -2855,9 +3064,14 @@ def init(
     params_tmpl = _PARAMS_YAML_KAGGLE if source == "kaggle" else _PARAMS_YAML
     params_extra = {"competition": competition} if source == "kaggle" else {}
 
-    train_tmpl = {"baseline-xgb": _TRAIN_RUN_XGB, "baseline-lr": _TRAIN_RUN_LR}.get(
-        template, _TRAIN_RUN
-    )
+    train_tmpl = {
+        "baseline-xgb": _TRAIN_RUN_XGB,
+        "baseline-lr": _TRAIN_RUN_LR,
+        "baseline-rf": _TRAIN_RUN_RF,
+        "binary-cls": _TRAIN_RUN_BINARY_CLS,
+    }.get(template, _TRAIN_RUN)
+
+    eval_tmpl = _EVALUATE_RUN_BINARY_CLS if template == "binary-cls" else _EVALUATE_RUN
 
     files: list[tuple[Path, str]] = [
         (root / "CLAUDE.md", r(_CLAUDE_MD, name, class_name)),
@@ -2872,7 +3086,7 @@ def init(
         (root / "src" / "train" / "__init__.py", ""),
         (root / "src" / "train" / "run.py", r(train_tmpl, name, class_name)),
         (root / "src" / "evaluate" / "__init__.py", ""),
-        (root / "src" / "evaluate" / "run.py", r(_EVALUATE_RUN, name, class_name)),
+        (root / "src" / "evaluate" / "run.py", r(eval_tmpl, name, class_name)),
         (root / "src" / "tests" / "__init__.py", ""),
         (root / "src" / "tests" / "test_features.py", r(_TEST_FEATURES, name, class_name)),
         (root / "experiments" / "__init__.py", ""),
