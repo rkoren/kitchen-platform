@@ -89,3 +89,8 @@ ignore = ["E501"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[dependency-groups]
+dev = [
+    "pylint>=4.0.5",
+]

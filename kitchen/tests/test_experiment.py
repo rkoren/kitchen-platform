@@ -7,7 +7,7 @@ from kitchen.experiment import ExperimentConfig, log_config
 
 def test_experiment_config_defaults():
     config = ExperimentConfig(name="baseline")
-    assert config.params == {}
+    assert not config.params
     assert config.description == ""
 
 

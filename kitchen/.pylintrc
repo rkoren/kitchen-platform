@@ -1,0 +1,28 @@
+[MESSAGES CONTROL]
+# Lazy imports inside Typer command functions are intentional — they keep CLI
+# startup fast when heavy deps (mlflow, pandas, etc.) aren't always needed.
+# Structural thresholds are relaxed because kitchen/cli.py is a deliberately
+# monolithic CLI; splitting it would add churn without a clear benefit yet.
+disable=
+    import-outside-toplevel,
+    too-few-public-methods,
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+    too-many-nested-blocks,
+    too-many-return-statements,
+    # CLI and tracking error handlers use bare Exception intentionally — they
+    # catch all errors at command boundaries to surface friendly messages.
+    broad-exception-caught,
+
+[DESIGN]
+max-args        = 10
+max-positional-arguments = 10
+
+[FORMAT]
+max-line-length = 100
+
+[TYPECHECK]
+# src.* modules only exist inside scaffolded project dirs, not in the kitchen
+# package itself — suppress the resulting import-error false positives.
+ignored-modules = src

@@ -35,7 +35,7 @@ data:
 
 
 def _fake_download(files):
-    def _download(self, out_dir: Path):
+    def _download(_, out_dir: Path):
         out_dir.mkdir(parents=True, exist_ok=True)
         return files
 
@@ -143,6 +143,52 @@ def test_ingest_local(tmp_path, monkeypatch):
         result = runner.invoke(app, ["ingest"])
     assert result.exit_code == 0
     assert "raw.csv" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Default destination is data/raw/ (regression guard for DataStore path)
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_default_dest_is_data_raw(tmp_path, monkeypatch):
+    """Without --out, ingest must write to <cwd>/data/raw/ via DataStore.raw_dir."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(S3_PARAMS)
+
+    captured: dict = {}
+
+    def _capture(_, out_dir):
+        captured["out_dir"] = out_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return ["file.csv"]
+
+    with patch("kitchen.ingest.S3Source.download", _capture):
+        result = runner.invoke(app, ["ingest"])
+
+    assert result.exit_code == 0
+    assert captured["out_dir"] == tmp_path / "data" / "raw"
+
+
+def test_ingest_kaggle_default_dest_is_data_raw(tmp_path, monkeypatch):
+    """Kaggle source without --out must also land in data/raw/."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(KAGGLE_PARAMS)
+
+    captured: dict = {}
+
+    def _capture(_, out_dir):
+        captured["out_dir"] = out_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return ["train.csv", "test.csv"]
+
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.ingest.KaggleSource.download", _capture),
+    ):
+        result = runner.invoke(app, ["ingest"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"})
+
+    assert result.exit_code == 0
+    assert captured["out_dir"] == tmp_path / "data" / "raw"
 
 
 # ---------------------------------------------------------------------------

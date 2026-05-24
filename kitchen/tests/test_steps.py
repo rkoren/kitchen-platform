@@ -49,7 +49,7 @@ def test_feature_builder_run_passes_params_to_build():
     assert received.get("custom_key") == "custom_val"
 
 
-def test_feature_builder_run_calls_store(tmp_path):
+def test_feature_builder_run_calls_store():
     store = MagicMock()
     store.load_csv.return_value = pd.DataFrame({"x": [1, 2]})
     DoubleFeatures().run(
@@ -184,7 +184,7 @@ def test_trainer_run_logs_feature_importances_for_xgboost(tmp_path):
     class XGBLikeModel:
         """Minimal stand-in for an XGBoost Booster."""
 
-        def get_score(self, importance_type="gain"):
+        def get_score(self, importance_type="gain"):  # pylint: disable=unused-argument
             return {"feature_a": 1.5, "feature_b": 0.8}
 
     class XGBLikeTrainer(Trainer):

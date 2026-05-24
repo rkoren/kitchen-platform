@@ -154,5 +154,5 @@ class Evaluator(ABC):
         df = store.load_parquet(_resolve(params, "processed_file", "features.parquet"))
         metrics = self.evaluate(model, df)
         metrics_path = Path(_resolve(params, "metrics_file", "metrics.json"))
-        metrics_path.write_text(json.dumps(metrics, indent=2))
+        metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
         return metrics

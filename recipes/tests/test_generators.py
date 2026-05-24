@@ -224,7 +224,7 @@ def test_lambda_environment_variables():
     assert "my-table" in out
 
 
-_IMAGE_LAMBDA = dict(ecr_repo="my-repo")  # minimal valid image Lambda for fixture reuse
+_IMAGE_LAMBDA = {"ecr_repo": "my-repo"}  # minimal valid image Lambda for fixture reuse
 
 
 def test_lambda_no_environment_block_when_empty():

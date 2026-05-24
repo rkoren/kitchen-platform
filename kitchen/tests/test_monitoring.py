@@ -1,4 +1,5 @@
 """Tests for DriftReport."""
+# pylint: disable=redefined-outer-name,protected-access  # fixture injection + testing private members
 
 from unittest.mock import MagicMock, patch
 

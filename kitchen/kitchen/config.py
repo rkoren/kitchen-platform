@@ -125,6 +125,6 @@ class KitchenConfig(BaseModel):
         """Load and validate a params.yaml file."""
         import yaml
 
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         return cls(**raw)

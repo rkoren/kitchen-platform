@@ -1,4 +1,5 @@
 """Tests for kitchen.flows.monitor_flow."""
+# pylint: disable=redefined-outer-name  # standard pytest fixture injection pattern
 
 from unittest.mock import MagicMock, patch
 
@@ -126,7 +127,7 @@ def test_pipeline_wiring(frames, tmp_path):
         patch("kitchen.flows.monitor_flow._run_drift_report", return_value=fake_report),
         patch(
             "kitchen.flows.monitor_flow._save_report",
-            side_effect=lambda r, cfg: _save_report.fn(r, cfg),
+            side_effect=_save_report.fn,
         ),
     ):
         result = monitor_pipeline.fn(params_file=params_file)
@@ -149,7 +150,7 @@ def test_local_path_override_bypasses_params_config(frames, tmp_path):
         patch("kitchen.flows.monitor_flow._run_drift_report", return_value=fake_report),
         patch(
             "kitchen.flows.monitor_flow._save_report",
-            side_effect=lambda r, cfg: _save_report.fn(r, cfg),
+            side_effect=_save_report.fn,
         ),
     ):
         result = monitor_pipeline.fn(
@@ -180,7 +181,7 @@ def test_local_path_override_wins_over_params_local_path(frames, tmp_path):
         patch("kitchen.flows.monitor_flow._run_drift_report", return_value=fake_report),
         patch(
             "kitchen.flows.monitor_flow._save_report",
-            side_effect=lambda r, cfg: _save_report.fn(r, cfg),
+            side_effect=_save_report.fn,
         ),
     ):
         result = monitor_pipeline.fn(

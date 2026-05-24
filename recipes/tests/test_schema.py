@@ -1,6 +1,9 @@
 """Tests for YAML spec schema validation."""
 
+from pathlib import Path
+
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from recipes.schema import ECRSpec, IAMRoleSpec, LambdaSpec, RecipeSpec, S3Spec
@@ -239,10 +242,6 @@ def test_valid_cross_references_pass():
 
 
 def test_example_lambda_api_yaml_validates():
-    from pathlib import Path
-
-    import yaml
-
     example = Path(__file__).parent.parent / "examples" / "lambda-api.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)

@@ -8,12 +8,17 @@ Verifies that a fresh scaffold:
 - contains no maintainer-specific names
 - leaves intentional TODO boundaries as NotImplementedError (not silent pass-throughs)
 """
+# pylint: disable=redefined-outer-name  # standard pytest fixture injection pattern
 
 from __future__ import annotations
 
+import builtins
 import importlib.util
 import sys
+from unittest.mock import MagicMock, patch
 
+import mlflow.exceptions
+import pandas as pd
 import pytest
 import yaml
 from typer.testing import CliRunner
@@ -51,7 +56,7 @@ EXPECTED_FILES = [
 
 
 @pytest.fixture()
-def project(tmp_path):
+def project():
     """Run `kitchen init my-competition` in a temp dir and return the project root."""
     result = runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)
     # CliRunner doesn't change the real cwd, so files land in cwd/my-competition.
@@ -148,14 +153,14 @@ def test_feature_builder_raises_not_implemented(scaffold, monkeypatch):
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    import pandas as pd
 
     cls_name = "MyCompetitionFeatures"
     features_cls = getattr(mod, cls_name, None)
     if features_cls is None:
         pytest.skip(f"Class {cls_name} not found — name derivation may differ")
+    assert features_cls is not None  # pragma: no branch — skip() raises above
     with pytest.raises(NotImplementedError):
-        features_cls().build(pd.DataFrame(), params={})
+        features_cls().build(pd.DataFrame(), params={})  # pylint: disable=not-callable
 
 
 def test_init_here_flag(tmp_path, monkeypatch):
@@ -185,6 +190,58 @@ def test_init_overwrite_flag(tmp_path, monkeypatch):
     sentinel.write_text("# modified")
     runner.invoke(app, ["init", "my-competition", "--overwrite"], catch_exceptions=False)
     assert sentinel.read_text() != "# modified", "--overwrite should replace existing files"
+
+
+# ---------------------------------------------------------------------------
+# kitchen open (LML-008)
+# ---------------------------------------------------------------------------
+
+
+def test_open_reads_dashboard_url_from_params(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\ndashboard_url: https://user.github.io/repo/\n")
+    with patch("webbrowser.open") as mock_open:
+        result = runner.invoke(app, ["open"], catch_exceptions=False)
+    assert result.exit_code == 0
+    mock_open.assert_called_once_with("https://user.github.io/repo/")
+    assert "https://user.github.io/repo/" in result.output
+
+
+def test_open_reads_dashboard_url_from_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DASHBOARD_URL", "https://org.github.io/proj/")
+    with patch("webbrowser.open") as mock_open:
+        result = runner.invoke(app, ["open"], catch_exceptions=False)
+    assert result.exit_code == 0
+    mock_open.assert_called_once_with("https://org.github.io/proj/")
+
+
+def test_open_params_url_takes_precedence_over_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\ndashboard_url: https://params.example.com/\n")
+    monkeypatch.setenv("DASHBOARD_URL", "https://env.example.com/")
+    with patch("webbrowser.open") as mock_open:
+        runner.invoke(app, ["open"], catch_exceptions=False)
+    mock_open.assert_called_once_with("https://params.example.com/")
+
+
+def test_open_fallback_to_ui_when_no_url(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "https://mlflow.example.com")
+    with patch("webbrowser.open") as mock_open:
+        result = runner.invoke(app, ["open"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert "Falling back" in result.output
+    mock_open.assert_called_once_with("https://mlflow.example.com")
+
+
+def test_open_no_url_no_params_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "https://mlflow.example.com")
+    with patch("webbrowser.open"):
+        result = runner.invoke(app, ["open"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert "Falling back" in result.output
 
 
 # --- kitchen init name validation ---
@@ -353,16 +410,14 @@ def test_run_train_missing_src_module(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _fake_pipeline_noop(params_file="params.yaml"):
+def _fake_pipeline_noop(params_file="params.yaml"):  # pylint: disable=unused-argument
     pass
 
 
-def _auto_promote_invoke(
+def _auto_promote_invoke(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     tmp_path, monkeypatch, extra_args, champion_score=None, new_score=0.15, metric="loto_brier"
 ):
     """Helper: set up a fake pipeline + MLflow client and invoke run train with extra_args."""
-    from unittest.mock import MagicMock, patch
-
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text("experiment: cbb\n")
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
@@ -383,7 +438,6 @@ def _auto_promote_invoke(
             client.get_model_version_by_alias.return_value = mv
             client.get_run.return_value = champ_run
         else:
-            import mlflow.exceptions
             client.get_model_version_by_alias.side_effect = mlflow.exceptions.MlflowException("no alias")
         return client
 
@@ -464,7 +518,6 @@ def test_auto_promote_not_set_no_promote(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text("experiment: cbb\n")
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
-    from unittest.mock import patch
     with patch("kitchen.registry.register_model") as mock_reg:
         result = runner.invoke(app, ["run", "train"])
     assert result.exit_code == 0
@@ -506,7 +559,7 @@ def test_run_monitor_local_flag(tmp_path, monkeypatch):
 
     calls = []
 
-    def fake_pipeline(params_file="params.yaml", local_path_override=None):
+    def fake_pipeline(params_file="params.yaml", local_path_override=None):  # pylint: disable=unused-argument
         calls.append(local_path_override)
         return local_path_override
 
@@ -541,7 +594,7 @@ def _make_evaluate_mocks(monkeypatch, model=None, metrics=None, load_raises=None
     """Wire up the three external boundaries for run evaluate tests."""
     fake_model = model or object()
 
-    def fake_load(uri):
+    def fake_load(_uri):
         if load_raises:
             raise load_raises
         return fake_model
@@ -571,7 +624,7 @@ def test_run_evaluate_default_uri_from_experiment(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
 
-    fake_evaluate, calls, fake_model = _make_evaluate_mocks(monkeypatch)
+    fake_evaluate, _, _ = _make_evaluate_mocks(monkeypatch)
 
     src = tmp_path / "src" / "evaluate"
     src.mkdir(parents=True)
@@ -581,8 +634,6 @@ def test_run_evaluate_default_uri_from_experiment(tmp_path, monkeypatch):
     )
 
     # Bypass actual import with a direct monkeypatch on the CLI's lazy import path
-    import sys
-
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = fake_evaluate
     monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
@@ -596,9 +647,7 @@ def test_run_evaluate_custom_model_uri(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
 
-    fake_evaluate, calls, _ = _make_evaluate_mocks(monkeypatch)
-
-    import sys
+    fake_evaluate, _, _ = _make_evaluate_mocks(monkeypatch)
 
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = fake_evaluate
@@ -614,8 +663,6 @@ def test_run_evaluate_custom_alias(tmp_path, monkeypatch):
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
 
     fake_evaluate, _, _ = _make_evaluate_mocks(monkeypatch)
-
-    import sys
 
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = fake_evaluate
@@ -634,8 +681,6 @@ def test_run_evaluate_prints_metrics(tmp_path, monkeypatch):
         monkeypatch, metrics={"val_brier": 0.18, "val_accuracy": 0.72}
     )
 
-    import sys
-
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = fake_evaluate
     monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
@@ -651,8 +696,6 @@ def test_run_evaluate_model_load_failure(tmp_path, monkeypatch):
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
 
     _make_evaluate_mocks(monkeypatch, load_raises=Exception("registry not found"))
-
-    import sys
 
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = lambda m, p, s: {}
@@ -680,8 +723,6 @@ def test_run_evaluate_missing_src_module(tmp_path, monkeypatch):
 
     # `from src.evaluate.run import evaluate` uses builtins.__import__, not
     # importlib.import_module, so we must intercept at the builtin level.
-    import builtins
-
     real_import = builtins.__import__
 
     def blocking_import(name, *args, **kwargs):
@@ -1151,7 +1192,6 @@ def test_init_ci_has_deploy_pages_job(tmp_path, monkeypatch):
 def test_init_ci_deploy_pages_gated_on_main(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    import yaml
     data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
     job = data["jobs"]["deploy-pages"]
     assert "push" in job["if"]
@@ -1168,7 +1208,6 @@ def test_init_ci_deploy_pages_uses_deploy_action(tmp_path, monkeypatch):
 def test_init_ci_deploy_pages_has_pages_write_permission(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    import yaml
     data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
     perms = data["jobs"]["deploy-pages"]["permissions"]
     assert perms.get("pages") == "write"
@@ -1213,7 +1252,6 @@ def test_init_dashboard_delta_js_uses_champion(tmp_path, monkeypatch):
 def test_init_ci_deploy_pages_links_summary(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    import yaml
     data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
     steps = data["jobs"]["deploy-pages"]["steps"]
     summary_steps = [s for s in steps if "GITHUB_STEP_SUMMARY" in str(s.get("run", ""))]
@@ -1227,7 +1265,6 @@ def test_init_ci_kaggle_deploy_pages_links_summary(tmp_path, monkeypatch):
         ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "titanic"],
         catch_exceptions=False,
     )
-    import yaml
     data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
     steps = data["jobs"]["deploy-pages"]["steps"]
     summary_steps = [s for s in steps if "GITHUB_STEP_SUMMARY" in str(s.get("run", ""))]

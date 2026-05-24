@@ -1,9 +1,11 @@
 """Tests for kitchen.registry — MLflow Model Registry helpers."""
+# pylint: disable=invalid-name  # MockClient is a conventional name for mocked classes in tests
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import mlflow.exceptions
 import pytest
 
 from kitchen.registry import get_best_run, get_production_uri, promote_model, register_model
@@ -152,8 +154,6 @@ def test_get_production_uri_returns_uri_when_alias_exists():
 
 
 def test_get_production_uri_returns_none_when_alias_missing():
-    import mlflow.exceptions
-
     with patch("mlflow.tracking.MlflowClient") as MockClient:
         MockClient.return_value.get_model_version_by_alias.side_effect = (
             mlflow.exceptions.MlflowException("not found")

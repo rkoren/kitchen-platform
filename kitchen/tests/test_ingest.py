@@ -15,7 +15,7 @@ def _make_zip(path: Path, filenames: list[str]) -> None:
 # --- KaggleSource ---
 
 
-def _mock_kaggle(tmp_path, monkeypatch):
+def _mock_kaggle(_tmp_path, monkeypatch):
     mock_module = MagicMock()
     mock_module.api.competition_download_files.side_effect = lambda *a, **kw: None
     monkeypatch.setitem(sys.modules, "kaggle", mock_module)

@@ -48,7 +48,7 @@ def _train(params: dict) -> None:
 @flow(name="kitchen-train")
 def train_pipeline(params_file: str = "params.yaml") -> None:
     """Run a single training pass: features → train → log to MLflow."""
-    with open(params_file) as f:
+    with open(params_file, encoding="utf-8") as f:
         params = yaml.safe_load(f)
     _build(params)
     _train(params)

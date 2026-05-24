@@ -95,7 +95,7 @@ def test_parity_missing_multiple():
     df = pd.DataFrame({"a": [1]})
     errors = check_feature_parity(["a", "b", "c"], df)
     assert len(errors) == 2
-    missing = {e for e in errors}
+    missing = set(errors)
     assert any("'b'" in e for e in missing)
     assert any("'c'" in e for e in missing)
 
@@ -128,7 +128,7 @@ def _df(rows):
 
 def test_validate_ok():
     errors = validate_submission(_df(VALID_SUB), _df(SAMPLE), "Id", "Pred")
-    assert errors == []
+    assert not errors
 
 
 def test_validate_missing_id_col():
@@ -195,7 +195,7 @@ def test_log_submission_logs_artifact_to_active_run(tmp_path):
         client = mlflow.tracking.MlflowClient()
         artifacts = client.list_artifacts(run.info.run_id, "submission")
 
-    assert result == {}
+    assert not result
     assert any(a.path == "submission/sub.csv" for a in artifacts)
 
 
@@ -206,7 +206,7 @@ def test_log_submission_no_active_run_skips_artifact(tmp_path):
     sub.to_csv(path, index=False)
     # No mlflow.start_run() — should not raise, just skips artifact logging
     result = log_submission(sub, sample, path, id_col="Id")
-    assert result == {}
+    assert not result
 
 
 def test_log_submission_uploads_when_competition_set(tmp_path):
@@ -219,7 +219,7 @@ def test_log_submission_uploads_when_competition_set(tmp_path):
         result = log_submission(sub, sample, path, id_col="Id", competition="test-comp", message="v1")
 
     mock_upload.assert_called_once_with(path, "v1", "test-comp")
-    assert result == {}
+    assert not result
 
 
 def test_log_submission_fetches_and_logs_lb_score(tmp_path):
@@ -261,7 +261,7 @@ def test_log_submission_no_fetch_when_flag_false(tmp_path):
         result = log_submission(sub, sample, path, id_col="Id", competition="test-comp", fetch_lb_score=False)
 
     mock_fetch.assert_not_called()
-    assert result == {}
+    assert not result
 
 
 def test_log_submission_score_none_excluded_from_result(tmp_path):
@@ -276,7 +276,7 @@ def test_log_submission_score_none_excluded_from_result(tmp_path):
     ):
         result = log_submission(sub, sample, path, id_col="Id", competition="test-comp", fetch_lb_score=True)
 
-    assert result == {}
+    assert not result
 
 
 # ---------------------------------------------------------------------------

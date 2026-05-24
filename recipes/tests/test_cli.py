@@ -158,7 +158,7 @@ def test_refresh_tf_files_writes_provider(tmp_path):
 # ── apply ─────────────────────────────────────────────────────────────────────
 
 
-def test_apply_missing_spec_exits_nonzero(tmp_path):
+def test_apply_missing_spec_exits_nonzero():
     result = runner.invoke(
         app, ["apply", "no-such-file.yaml", "--state-bucket", "my-bucket", "--yes"]
     )

@@ -33,7 +33,7 @@ def _make_mv(run_id: str, version: str = "3") -> MagicMock:
     return mv
 
 
-def _invoke(
+def _invoke(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     *extra_args: str,
     runs: list | None = None,
     champion_run_id: str | None = None,
@@ -51,7 +51,7 @@ def _invoke(
         tags=champion_tags or {},
     )
 
-    def _side_effect_alias(model_name, alias):
+    def _side_effect_alias(_model_name, _alias):
         if registry_error:
             raise mlflow.exceptions.MlflowException("not found")
         if champion_run_id is None:
