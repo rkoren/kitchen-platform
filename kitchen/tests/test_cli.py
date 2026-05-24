@@ -868,6 +868,61 @@ def test_init_binary_cls_template_evaluate(tmp_path, monkeypatch):
     assert "_params" in eval_src
 
 
+def test_init_multiclass_cls_template_train(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "multiclass-cls"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    assert "XGBClassifier" in train_src
+    assert "multi:softprob" in train_src
+    assert "train_val_split" in train_src
+    assert 'average="macro"' in train_src
+
+
+def test_init_multiclass_cls_template_evaluate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "multiclass-cls"],
+        catch_exceptions=False,
+    )
+    eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
+    assert "classification_metrics" in eval_src
+    assert 'average="macro"' in eval_src
+    assert "NotImplementedError" not in eval_src
+
+
+def test_init_regression_template_train(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "regression"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    assert "XGBRegressor" in train_src
+    assert "regression_metrics" in train_src
+    assert "stratify=False" in train_src
+
+
+def test_init_regression_template_evaluate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "regression"],
+        catch_exceptions=False,
+    )
+    eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
+    assert "regression_metrics" in eval_src
+    assert "stratify=False" in eval_src
+    assert "NotImplementedError" not in eval_src
+
+
 def test_init_default_train_template_unchanged(scaffold):
     train_src = (scaffold / "src" / "train" / "run.py").read_text()
     assert "NotImplementedError" in train_src
