@@ -66,7 +66,7 @@ def _run_tf(args: list[str], workspace: Path) -> int:
         )
         return 1
 
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
         [tf] + args,
         cwd=workspace,
         stdout=subprocess.PIPE,

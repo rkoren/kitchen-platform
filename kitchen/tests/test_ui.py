@@ -51,7 +51,7 @@ def test_ui_remote_https_opens_browser():
 
 
 def test_ui_local_sqlite_starts_mlflow_server():
-    result, mock_subprocess, mock_thread, _ = _invoke_ui(
+    result, mock_subprocess, _, _ = _invoke_ui(
         {"MLFLOW_TRACKING_URI": "sqlite:///mlruns.db"}
     )
     assert result.exit_code == 0
@@ -63,7 +63,7 @@ def test_ui_local_sqlite_starts_mlflow_server():
 
 
 def test_ui_local_sqlite_uses_correct_port():
-    result, mock_subprocess, _, _ = _invoke_ui(
+    _, mock_subprocess, _, _ = _invoke_ui(
         {"MLFLOW_TRACKING_URI": "sqlite:///mlruns.db"}
     )
     cmd = mock_subprocess.call_args[0][0]

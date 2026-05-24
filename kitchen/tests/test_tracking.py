@@ -75,7 +75,7 @@ def test_configure_sets_tracking_uri():
         mock_mlflow.set_tracking_uri.assert_called_once_with("http://mlflow:5000")
 
 
-def test_configure_sets_artifact_bucket_env(monkeypatch):
+def test_configure_sets_artifact_bucket_env(monkeypatch):  # pylint: disable=unused-argument
     with patch("kitchen.tracking.mlflow"):
         configure("./mlruns", artifact_bucket="my-bucket")
         assert os.environ["MLFLOW_ARTIFACT_BUCKET"] == "my-bucket"

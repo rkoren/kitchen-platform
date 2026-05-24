@@ -1,4 +1,5 @@
 """Tests for kitchen.modeling: train_val_split, classification_metrics, regression_metrics."""
+# pylint: disable=redefined-outer-name  # standard pytest fixture injection pattern
 
 from __future__ import annotations
 
@@ -44,8 +45,8 @@ def test_split_custom_val_size(binary_df):
 
 
 def test_split_reproducible(binary_df):
-    train_a, val_a = train_val_split(binary_df, target_col="target", seed=7)
-    train_b, val_b = train_val_split(binary_df, target_col="target", seed=7)
+    train_a, _ = train_val_split(binary_df, target_col="target", seed=7)
+    train_b, _ = train_val_split(binary_df, target_col="target", seed=7)
     pd.testing.assert_frame_equal(train_a.reset_index(drop=True), train_b.reset_index(drop=True))
 
 

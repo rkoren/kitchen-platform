@@ -1,4 +1,5 @@
 """Tests for `kitchen push` command (LML-005)."""
+# pylint: disable=redefined-outer-name  # standard pytest fixture injection pattern
 
 from __future__ import annotations
 
@@ -197,7 +198,7 @@ def test_push_reads_experiment_from_params_yaml(git_repo):
 # ---------------------------------------------------------------------------
 
 
-def test_push_no_metrics_file(git_repo):
+def test_push_no_metrics_file(git_repo):  # pylint: disable=unused-argument
     with patch("kitchen.tracking.configure_from_env"):
         result = runner.invoke(app, ["push"])
     assert result.exit_code != 0

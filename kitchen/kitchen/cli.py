@@ -18,6 +18,10 @@ Usage:
     kitchen report                               # markdown metrics summary
 """
 
+# pylint: disable=too-many-arguments,too-many-positional-arguments,redefined-outer-name
+# (structural limits and fixture-name shadowing are suppressed via .pylintrc; these three
+# remain at function granularity because they're the most targeted suppressions here)
+
 from __future__ import annotations
 
 import re
@@ -102,7 +106,7 @@ def open_dashboard(
     url: str | None = None
     params_path = Path(params_file)
     if params_path.exists():
-        raw = yaml.safe_load(params_path.read_text()) or {}
+        raw = yaml.safe_load(params_path.read_text(encoding="utf-8")) or {}
         url = raw.get("dashboard_url")
 
     if not url:
@@ -1566,10 +1570,10 @@ def _try_auto_promote(
 
     typer.echo()
     if wins:
-        version = register_model(new_run.info.run_id, "model", resolved_model)
-        promote_model(resolved_model, version, alias="champion")
+        reg_version = register_model(new_run.info.run_id, "model", resolved_model)
+        promote_model(resolved_model, reg_version, alias="champion")
         typer.echo(f"auto-promote: {new_run.info.run_id[:8]} → champion  ({reason})")
-        typer.echo(f"             {resolved_model} v{version} @ champion")
+        typer.echo(f"             {resolved_model} v{reg_version} @ champion")
     else:
         typer.echo(f"auto-promote: skipped — new run did not beat champion  ({reason})")
 
@@ -1602,7 +1606,7 @@ def _write_to_git_branch(content: str, file_path: str, branch: str, commit_msg: 
     import subprocess
     import tempfile
 
-    GIT_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    git_empty_tree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
     blob_sha = subprocess.check_output(
         ["git", "hash-object", "-w", "--stdin"], input=content.encode()
@@ -1615,14 +1619,14 @@ def _write_to_git_branch(content: str, file_path: str, branch: str, commit_msg: 
         branch_ref = f"refs/heads/{branch}"
         branch_exists = (
             subprocess.run(
-                ["git", "rev-parse", "--verify", branch_ref], capture_output=True
+                ["git", "rev-parse", "--verify", branch_ref], capture_output=True, check=False
             ).returncode == 0
         )
         if branch_exists:
             subprocess.run(["git", "read-tree", branch], env=env, check=True, capture_output=True)
         else:
             subprocess.run(
-                ["git", "read-tree", GIT_EMPTY_TREE], env=env, check=True, capture_output=True
+                ["git", "read-tree", git_empty_tree], env=env, check=True, capture_output=True
             )
         subprocess.run(
             ["git", "update-index", "--add", "--cacheinfo", f"100644,{blob_sha},{file_path}"],
@@ -1704,9 +1708,9 @@ def experiments_list(
     for run in runs:
         run_id = run.info.run_id[:8]
         name = (run.info.run_name or "")[:20]
-        status = (run.info.status or "")[:10]
+        run_status = (run.info.status or "")[:10]
         started = _time_ago(run.info.start_time) if run.info.start_time else "-"
-        row = f"{run_id:<10}  {name:<20}  {status:<10}  {started:<12}"
+        row = f"{run_id:<10}  {name:<20}  {run_status:<10}  {started:<12}"
         for k in metric_keys:
             row += f"  {_fmt_metric(run.data.metrics.get(k)):>{col_w}}"
         typer.echo(row)
@@ -1933,9 +1937,9 @@ def _write_kaggle_score(score: float, metrics_file: str = "metrics.json") -> Non
 
     path = Path(metrics_file)
     try:
-        metrics = json.loads(path.read_text()) if path.exists() else {}
+        metrics = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         metrics["kaggle_public_score"] = score
-        path.write_text(json.dumps(metrics, indent=2) + "\n")
+        path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     except Exception:
         pass
 
@@ -2150,7 +2154,7 @@ def run_evaluate(
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         params = yaml.safe_load(f)
 
     if model_uri is None:
@@ -2164,16 +2168,16 @@ def run_evaluate(
 
     configure_from_env()
 
-    _LOADERS = {"sklearn": "mlflow.sklearn", "xgboost": "mlflow.xgboost", "pyfunc": "mlflow.pyfunc"}
-    if flavor not in _LOADERS:
+    _loaders = {"sklearn": "mlflow.sklearn", "xgboost": "mlflow.xgboost", "pyfunc": "mlflow.pyfunc"}
+    if flavor not in _loaders:
         typer.echo(
-            f"error: unknown flavor {flavor!r} — choose from: {', '.join(_LOADERS)}", err=True
+            f"error: unknown flavor {flavor!r} — choose from: {', '.join(_loaders)}", err=True
         )
         raise typer.Exit(1)
 
     import importlib
 
-    loader = importlib.import_module(_LOADERS[flavor])
+    loader = importlib.import_module(_loaders[flavor])
     try:
         model = loader.load_model(model_uri)
     except Exception as exc:
@@ -2374,7 +2378,7 @@ def report(
     params_file: Annotated[
         str, typer.Option("--params", help="Path to params.yaml")
     ] = "params.yaml",
-    format: Annotated[
+    output_format: Annotated[
         str, typer.Option("--format", help="Output format: github, plain")
     ] = "github",
     compare: Annotated[
@@ -2390,7 +2394,7 @@ def report(
         raise typer.Exit(1)
 
     try:
-        metrics = json.loads(metrics_path.read_text())
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         typer.echo(f"error: could not parse {metrics_file}: {exc}", err=True)
         raise typer.Exit(1)
@@ -2402,7 +2406,7 @@ def report(
             typer.echo(f"error: compare file {compare} not found", err=True)
             raise typer.Exit(1)
         try:
-            base_metrics = json.loads(compare_path.read_text())
+            base_metrics = json.loads(compare_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             typer.echo(f"error: could not parse {compare}: {exc}", err=True)
             raise typer.Exit(1)
@@ -2437,7 +2441,7 @@ def report(
         else None
     )
 
-    if format == "github":
+    if output_format == "github":
         typer.echo(f"## Kitchen Report — `{experiment}`")
         if run_name:
             typer.echo(f"\n**Run:** `{run_name}`\n")
@@ -2522,7 +2526,7 @@ def report(
                     typer.echo(f"  {key}: {value}")
 
     if kaggle_score is not None:
-        if format == "github":
+        if output_format == "github":
             if base_kaggle_score is not None:
                 delta = kaggle_score - base_kaggle_score
                 typer.echo(
@@ -2563,7 +2567,7 @@ def report(
                     bound = f"{spec.max:.6f}"
                     failures.append((name, actual, f"<= {bound}"))
         if failures:
-            if format == "github":
+            if output_format == "github":
                 typer.echo("\n### Threshold Violations\n")
                 typer.echo("| Metric | Constraint | Actual |")
                 typer.echo("| --- | --- | --- |")
@@ -2636,9 +2640,9 @@ def promote(
         typer.echo("\nDry run — skipping registration and promotion.")
         return
 
-    version = register_model(run_id, "model", model_name)
-    typer.echo(f"\nRegistered : {model_name} v{version}")
-    promote_model(model_name, version, alias=alias)
+    reg_version = register_model(run_id, "model", model_name)
+    typer.echo(f"\nRegistered : {model_name} v{reg_version}")
+    promote_model(model_name, reg_version, alias=alias)
     typer.echo(f"Promoted   : {model_name} v{version} → {alias}")
     typer.echo(f"Load with  : mlflow.sklearn.load_model('models:/{model_name}@{alias}')")
     typer.echo()
@@ -2707,7 +2711,7 @@ def push(
         raise typer.Exit(1)
 
     try:
-        metrics: dict = json.loads(metrics_path.read_text())
+        metrics: dict = json.loads(metrics_path.read_text(encoding="utf-8"))
     except Exception as exc:
         typer.echo(f"error: could not read {metrics_file}: {exc}", err=True)
         raise typer.Exit(1)

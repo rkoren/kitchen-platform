@@ -15,7 +15,7 @@ PARAMS_PATH = Path("params.yaml")
 
 
 def main() -> None:
-    params = yaml.safe_load(PARAMS_PATH.read_text())["data"]
+    params = yaml.safe_load(PARAMS_PATH.read_text(encoding="utf-8"))["data"]
     store = DataStore()
     source = source_from_params(params)
     files = source.download(store.raw_dir)

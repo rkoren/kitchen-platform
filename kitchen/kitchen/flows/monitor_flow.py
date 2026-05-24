@@ -81,7 +81,7 @@ def _save_report(report: DriftReport, monitor_cfg: dict) -> str:
 @flow(name="kitchen-monitor")
 def monitor_pipeline(params_file: str = "params.yaml", local_path_override: str | None = None) -> str:
     """Run drift detection: load reference + current data, generate Evidently report, save/upload."""
-    with open(params_file) as f:
+    with open(params_file, encoding="utf-8") as f:
         params = yaml.safe_load(f)
 
     monitor_cfg = params.get("monitor", {})
