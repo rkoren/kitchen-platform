@@ -821,6 +821,53 @@ def test_init_invalid_template(tmp_path, monkeypatch):
     assert "invalid template" in result.output
 
 
+def test_init_baseline_rf_template(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "baseline-rf"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    assert "RandomForestClassifier" in train_src
+    assert "sklearn.ensemble" in train_src
+    # evaluate stub is unchanged for model-only templates
+    eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
+    assert "NotImplementedError" in eval_src
+
+
+def test_init_binary_cls_template_train(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "binary-cls"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    assert "XGBClassifier" in train_src
+    assert "train_val_split" in train_src
+    assert "classification_metrics" in train_src
+    assert "mlflow.log_metrics" in train_src
+
+
+def test_init_binary_cls_template_evaluate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "binary-cls"],
+        catch_exceptions=False,
+    )
+    eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
+    assert "classification_metrics" in eval_src
+    assert "train_val_split" in eval_src
+    # evaluate should not have the stub — it has a real implementation
+    assert "NotImplementedError" not in eval_src
+    # params stash pattern is present
+    assert "_params" in eval_src
+
+
 def test_init_default_train_template_unchanged(scaffold):
     train_src = (scaffold / "src" / "train" / "run.py").read_text()
     assert "NotImplementedError" in train_src
