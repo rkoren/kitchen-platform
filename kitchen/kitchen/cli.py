@@ -883,6 +883,209 @@ def evaluate(model: object, params: dict, store: DataStore) -> dict[str, float]:
     return ${class_name}Evaluator().run(model, store, params)
 """
 
+_TRAIN_RUN_MULTICLASS_CLS = """\
+\"\"\"Model training for $name — multiclass classification (XGBoost baseline).
+
+Splits features into train/val, fits XGBClassifier with multi:softprob
+objective, logs validation metrics (val_accuracy, val_f1, val_roc_auc) to the
+active MLflow run.  The run is opened by Trainer.run() before fit() is called.
+
+Set params.model.num_classes to the number of classes (XGBoost ≥1.6 can infer
+it, but setting it explicitly is safer).
+\"\"\"
+from __future__ import annotations
+
+import mlflow
+import pandas as pd
+import xgboost as xgb
+from kitchen.modeling import classification_metrics, train_val_split
+from kitchen.steps import Trainer
+from kitchen.store import DataStore
+from kitchen.tracking import Tracker
+
+
+class ${class_name}Trainer(Trainer):
+    model_flavour = "xgboost"
+
+    def fit(self, df: pd.DataFrame, params: dict) -> xgb.XGBClassifier:
+        target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        train_df, val_df = train_val_split(df, target_col=target, seed=seed)
+        features = [c for c in df.columns if c != target]
+        X_train, y_train = train_df[features], train_df[target]
+        X_val, y_val = val_df[features], val_df[target]
+
+        p = params["model"].get("xgb", {})
+        model = xgb.XGBClassifier(
+            objective="multi:softprob",
+            n_estimators=p.get("n_estimators", 300),
+            max_depth=p.get("max_depth", 6),
+            learning_rate=p.get("learning_rate", 0.05),
+            subsample=p.get("subsample", 0.8),
+            colsample_bytree=p.get("colsample_bytree", 0.8),
+            random_state=seed,
+            eval_metric="mlogloss",
+        )
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_val)
+        y_proba = model.predict_proba(X_val)  # full probability matrix for roc_auc (ovr)
+        val_metrics = classification_metrics(y_val, y_pred, y_proba=y_proba, average="macro")
+        mlflow.log_metrics({"val_" + k: v for k, v in val_metrics.items()})
+        return model
+
+
+def train(params: dict, store: DataStore, tracker: Tracker) -> object:
+    return ${class_name}Trainer().run(store, tracker, params)
+"""
+
+_EVALUATE_RUN_MULTICLASS_CLS = """\
+\"\"\"Evaluation for $name — multiclass classification.
+
+Scores the model on a held-out validation split using the same seed as
+training so the val partition is consistent across runs.
+Reports accuracy, macro-f1, and macro roc_auc (one-vs-rest).
+\"\"\"
+from __future__ import annotations
+
+import pandas as pd
+from kitchen.modeling import classification_metrics, train_val_split
+from kitchen.steps import Evaluator
+from kitchen.store import DataStore
+
+
+class ${class_name}Evaluator(Evaluator):
+    \"\"\"Multiclass classification evaluator.
+
+    Overrides run() to stash params as an instance attribute so that
+    evaluate() can access the target column and random seed — the base class
+    does not forward params to evaluate().
+    \"\"\"
+
+    def run(self, model: object, store: DataStore, params: dict) -> dict[str, float]:
+        self._params = params  # stash so evaluate() can read target + seed
+        return super().run(model, store, params)
+
+    def evaluate(self, model: object, df: pd.DataFrame) -> dict[str, float]:
+        params = self._params
+        target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        _, val_df = train_val_split(df, target_col=target, seed=seed)
+        features = [c for c in val_df.columns if c != target]
+        X_val, y_val = val_df[features], val_df[target]
+
+        y_pred = model.predict(X_val)
+        y_proba = (
+            model.predict_proba(X_val) if hasattr(model, "predict_proba") else None
+        )
+        return classification_metrics(y_val, y_pred, y_proba=y_proba, average="macro")
+
+
+def evaluate(model: object, params: dict, store: DataStore) -> dict[str, float]:
+    return ${class_name}Evaluator().run(model, store, params)
+"""
+
+_TRAIN_RUN_REGRESSION = """\
+\"\"\"Model training for $name — regression (XGBoost baseline).
+
+Splits features into train/val, fits XGBRegressor, logs validation metrics
+(val_rmse, val_mae, val_r2) to the active MLflow run.
+The run is opened by Trainer.run() before fit() is called.
+
+For lower-is-better metrics use `kitchen run train --lower-is-better`.
+\"\"\"
+from __future__ import annotations
+
+import mlflow
+import pandas as pd
+import xgboost as xgb
+from kitchen.modeling import regression_metrics, train_val_split
+from kitchen.steps import Trainer
+from kitchen.store import DataStore
+from kitchen.tracking import Tracker
+
+
+class ${class_name}Trainer(Trainer):
+    model_flavour = "xgboost"
+
+    def fit(self, df: pd.DataFrame, params: dict) -> xgb.XGBRegressor:
+        target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        # stratify=False: regression targets are continuous, not class labels
+        train_df, val_df = train_val_split(df, target_col=target, seed=seed, stratify=False)
+        features = [c for c in df.columns if c != target]
+        X_train, y_train = train_df[features], train_df[target]
+        X_val, y_val = val_df[features], val_df[target]
+
+        p = params["model"].get("xgb", {})
+        model = xgb.XGBRegressor(
+            n_estimators=p.get("n_estimators", 300),
+            max_depth=p.get("max_depth", 6),
+            learning_rate=p.get("learning_rate", 0.05),
+            subsample=p.get("subsample", 0.8),
+            colsample_bytree=p.get("colsample_bytree", 0.8),
+            random_state=seed,
+        )
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_val)
+        val_metrics = regression_metrics(y_val, y_pred)
+        mlflow.log_metrics({"val_" + k: v for k, v in val_metrics.items()})
+        return model
+
+
+def train(params: dict, store: DataStore, tracker: Tracker) -> object:
+    return ${class_name}Trainer().run(store, tracker, params)
+"""
+
+_EVALUATE_RUN_REGRESSION = """\
+\"\"\"Evaluation for $name — regression.
+
+Scores the model on a held-out validation split using the same seed as
+training so the val partition is consistent across runs.
+Reports rmse, mae, and r2.
+\"\"\"
+from __future__ import annotations
+
+import pandas as pd
+from kitchen.modeling import regression_metrics, train_val_split
+from kitchen.steps import Evaluator
+from kitchen.store import DataStore
+
+
+class ${class_name}Evaluator(Evaluator):
+    \"\"\"Regression evaluator.
+
+    Overrides run() to stash params as an instance attribute so that
+    evaluate() can access the target column and random seed — the base class
+    does not forward params to evaluate().
+    \"\"\"
+
+    def run(self, model: object, store: DataStore, params: dict) -> dict[str, float]:
+        self._params = params  # stash so evaluate() can read target + seed
+        return super().run(model, store, params)
+
+    def evaluate(self, model: object, df: pd.DataFrame) -> dict[str, float]:
+        params = self._params
+        target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        # stratify=False: regression targets are continuous, not class labels
+        _, val_df = train_val_split(df, target_col=target, seed=seed, stratify=False)
+        features = [c for c in val_df.columns if c != target]
+        X_val, y_val = val_df[features], val_df[target]
+
+        y_pred = model.predict(X_val)
+        return regression_metrics(y_val, y_pred)
+
+
+def evaluate(model: object, params: dict, store: DataStore) -> dict[str, float]:
+    return ${class_name}Evaluator().run(model, store, params)
+"""
+
 _TEST_FEATURES = """\
 \"\"\"Tests for $name feature engineering.\"\"\"
 import pandas as pd
@@ -3022,7 +3225,7 @@ def init(
     template: str = typer.Option(
         "none",
         "--template",
-        help="Starter template: none, baseline-xgb, baseline-lr, baseline-rf, binary-cls",
+        help="Starter template: none, baseline-xgb, baseline-lr, baseline-rf, binary-cls, multiclass-cls, regression",
     ),
     ci: bool = typer.Option(
         False, "--ci", help="Scaffold a .github/workflows/train-evaluate.yml CI workflow"
@@ -3046,7 +3249,7 @@ def init(
         typer.echo("error: --competition is required when --source kaggle", err=True)
         raise typer.Exit(1)
 
-    valid_templates = {"none", "baseline-xgb", "baseline-lr", "baseline-rf", "binary-cls"}
+    valid_templates = {"none", "baseline-xgb", "baseline-lr", "baseline-rf", "binary-cls", "multiclass-cls", "regression"}
     if template not in valid_templates:
         typer.echo(
             f"error: invalid template {template!r} — choose from: {', '.join(sorted(valid_templates))}",
@@ -3069,9 +3272,15 @@ def init(
         "baseline-lr": _TRAIN_RUN_LR,
         "baseline-rf": _TRAIN_RUN_RF,
         "binary-cls": _TRAIN_RUN_BINARY_CLS,
+        "multiclass-cls": _TRAIN_RUN_MULTICLASS_CLS,
+        "regression": _TRAIN_RUN_REGRESSION,
     }.get(template, _TRAIN_RUN)
 
-    eval_tmpl = _EVALUATE_RUN_BINARY_CLS if template == "binary-cls" else _EVALUATE_RUN
+    eval_tmpl = {
+        "binary-cls": _EVALUATE_RUN_BINARY_CLS,
+        "multiclass-cls": _EVALUATE_RUN_MULTICLASS_CLS,
+        "regression": _EVALUATE_RUN_REGRESSION,
+    }.get(template, _EVALUATE_RUN)
 
     files: list[tuple[Path, str]] = [
         (root / "CLAUDE.md", r(_CLAUDE_MD, name, class_name)),
