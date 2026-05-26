@@ -26,7 +26,6 @@ dependencies = [
     # CLI
     "typer>=0.9",
     # Data
-    "dvc[s3]>=3.0",
     "pandas>=2.0",
     "pyarrow>=14.0",
     # ML
@@ -52,6 +51,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dvc = [
+    "dvc[s3]>=3.0",
+]
 serve = [
     "fastapi>=0.110",
     "mangum>=0.17",

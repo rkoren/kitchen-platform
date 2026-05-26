@@ -1371,3 +1371,191 @@ def test_init_ci_kaggle_deploy_pages_links_summary(tmp_path, monkeypatch):
     steps = data["jobs"]["deploy-pages"]["steps"]
     summary_steps = [s for s in steps if "GITHUB_STEP_SUMMARY" in str(s.get("run", ""))]
     assert summary_steps, "No step writes to GITHUB_STEP_SUMMARY in deploy-pages job (kaggle)"
+
+
+# ---------------------------------------------------------------------------
+# kitchen check — DVC context-aware behaviour (DVC-010)
+# ---------------------------------------------------------------------------
+
+
+def test_check_dvc_ok_when_binary_found(tmp_path, monkeypatch):
+    """When the dvc binary is found, check reports ✓ regardless of dvc.yaml."""
+    monkeypatch.chdir(tmp_path)
+    with patch("shutil.which", side_effect=lambda name: "/usr/bin/dvc" if name == "dvc" else None):
+        result = runner.invoke(app, ["check"], catch_exceptions=False)
+    assert "✓ dvc" in result.output
+
+
+def test_check_dvc_hard_fail_when_dvc_yaml_present_but_binary_missing(tmp_path, monkeypatch):
+    """When dvc.yaml exists but the dvc binary is absent, check hard-fails (✗)."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "dvc.yaml").write_text("stages: {}\n")
+    with patch("shutil.which", side_effect=lambda name: None):
+        result = runner.invoke(app, ["check"], catch_exceptions=False)
+    assert "✗ dvc" in result.output
+    assert "pip install kitchen[dvc]" in result.output
+
+
+def test_check_dvc_soft_warn_when_no_dvc_yaml_and_binary_missing(tmp_path, monkeypatch):
+    """When dvc.yaml is absent and the dvc binary is missing, check soft-warns (~) not hard-fails."""
+    monkeypatch.chdir(tmp_path)
+    # No dvc.yaml in tmp_path
+    with patch("shutil.which", side_effect=lambda name: None):
+        result = runner.invoke(app, ["check"], catch_exceptions=False)
+    assert "~ dvc" in result.output
+    assert "✗ dvc" not in result.output
+    assert "pip install kitchen[dvc]" in result.output
+
+
+def test_check_dvc_soft_warn_symbol_is_tilde_not_cross(tmp_path, monkeypatch):
+    """The soft DVC warning uses ~ (not ✗) so it doesn't inflate the hard-fail count."""
+    monkeypatch.chdir(tmp_path)
+    # No dvc.yaml → soft-warn path. Other tools may also be absent; we only care about DVC symbol.
+    with patch("shutil.which", side_effect=lambda name: None):
+        result = runner.invoke(app, ["check"], catch_exceptions=False)
+    assert "~ dvc" in result.output
+    assert "✗ dvc" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen init --with-dvc (DVC-002)
+# ---------------------------------------------------------------------------
+
+
+def _init_with_dvc(tmp_path, monkeypatch, extra_args=None):
+    """Helper: run kitchen init --with-dvc with dvc binary mocked away."""
+    monkeypatch.chdir(tmp_path)
+    args = ["init", "my-project", "--with-dvc"] + (extra_args or [])
+    with (
+        patch("shutil.which", return_value="/usr/bin/dvc"),
+        patch("subprocess.run"),  # prevent real dvc init from running in tests
+    ):
+        return runner.invoke(app, args, catch_exceptions=False)
+
+
+def test_init_with_dvc_creates_dvc_yaml(tmp_path, monkeypatch):
+    """--with-dvc scaffolds dvc.yaml in the project root."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    assert (tmp_path / "my-project" / "dvc.yaml").exists()
+
+
+def test_init_with_dvc_creates_dvcignore(tmp_path, monkeypatch):
+    """--with-dvc scaffolds .dvcignore in the project root."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    assert (tmp_path / "my-project" / ".dvcignore").exists()
+
+
+def test_init_with_dvc_non_kaggle_has_all_three_stages(tmp_path, monkeypatch):
+    """Non-Kaggle dvc.yaml has features, train, and evaluate stages."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "features:" in content
+    assert "train:" in content
+    assert "evaluate:" in content
+
+
+def test_init_with_dvc_non_kaggle_no_submit_stage(tmp_path, monkeypatch):
+    """Non-Kaggle dvc.yaml does not have a submit stage."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "submit:" not in content
+
+
+def test_init_with_dvc_non_kaggle_ingest_is_commented(tmp_path, monkeypatch):
+    """Non-Kaggle dvc.yaml includes an ingest placeholder that is commented out."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "# ingest:" in content
+
+
+def test_init_with_dvc_kaggle_has_submit_stage(tmp_path, monkeypatch):
+    """Kaggle dvc.yaml includes a submit stage."""
+    _init_with_dvc(
+        tmp_path, monkeypatch, ["--source", "kaggle", "--competition", "titanic"]
+    )
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "submit:" in content
+
+
+def test_init_with_dvc_kaggle_no_ingest_placeholder(tmp_path, monkeypatch):
+    """Kaggle dvc.yaml does not include a commented ingest block (data is fixed by slug)."""
+    _init_with_dvc(
+        tmp_path, monkeypatch, ["--source", "kaggle", "--competition", "titanic"]
+    )
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "# ingest:" not in content
+
+
+def test_init_with_dvc_features_stage_uses_python_cmd(tmp_path, monkeypatch):
+    """The features stage uses `python src/features/run.py` (no kitchen run features yet)."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "cmd: python src/features/run.py" in content
+
+
+def test_init_with_dvc_train_stage_uses_kitchen_run(tmp_path, monkeypatch):
+    """The train stage uses `kitchen run train` as its cmd."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "cmd: kitchen run train" in content
+
+
+def test_init_with_dvc_evaluate_stage_uses_kitchen_run(tmp_path, monkeypatch):
+    """The evaluate stage uses `kitchen run evaluate` as its cmd."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "cmd: kitchen run evaluate" in content
+
+
+def test_init_with_dvc_metrics_json_cache_false(tmp_path, monkeypatch):
+    """metrics.json is declared with cache: false so MLflow owns metric history."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "metrics.json" in content
+    assert "cache: false" in content
+
+
+def test_init_with_dvc_params_sections_declared(tmp_path, monkeypatch):
+    """features and model params sections are declared in dvc.yaml stages."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "- features" in content
+    assert "- model" in content
+
+
+def test_init_with_dvc_dvc_config_written(tmp_path, monkeypatch):
+    """.dvc/config is written with an S3 remote placeholder after dvc init."""
+    monkeypatch.chdir(tmp_path)
+    project = tmp_path / "my-project"
+    with (
+        patch("shutil.which", return_value="/usr/bin/dvc"),
+        patch("subprocess.run"),
+    ):
+        runner.invoke(app, ["init", "my-project", "--with-dvc"], catch_exceptions=False)
+    config_path = project / ".dvc" / "config"
+    assert config_path.exists()
+    config_text = config_path.read_text()
+    assert "s3remote" in config_text
+    assert "s3://YOUR-BUCKET/dvc" in config_text
+
+
+def test_init_with_dvc_fails_fast_if_binary_missing(tmp_path, monkeypatch):
+    """--with-dvc exits with error if the dvc binary is not installed."""
+    monkeypatch.chdir(tmp_path)
+    with patch("shutil.which", return_value=None):
+        result = runner.invoke(app, ["init", "my-project", "--with-dvc"])
+    assert result.exit_code != 0
+    assert "pip install kitchen[dvc]" in result.output
+
+
+def test_init_without_dvc_no_dvc_yaml(tmp_path, monkeypatch):
+    """Without --with-dvc, no dvc.yaml is created."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-project"], catch_exceptions=False)
+    assert not (tmp_path / "my-project" / "dvc.yaml").exists()
+
+
+def test_init_with_dvc_output_mentions_remote(tmp_path, monkeypatch):
+    """The next-steps output includes a dvc remote modify instruction."""
+    result = _init_with_dvc(tmp_path, monkeypatch)
+    assert "dvc remote modify" in result.output

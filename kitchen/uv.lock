@@ -4477,7 +4477,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
-    { name = "dvc", extra = ["s3"] },
     { name = "evidently" },
     { name = "fastapi" },
     { name = "kaggle" },
@@ -4502,6 +4501,9 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+dvc = [
+    { name = "dvc", extra = ["s3"] },
+]
 serve = [
     { name = "fastapi" },
     { name = "mangum" },
@@ -4515,7 +4517,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.34" },
-    { name = "dvc", extras = ["s3"], specifier = ">=3.0" },
+    { name = "dvc", extras = ["s3"], marker = "extra == 'dvc'", specifier = ">=3.0" },
     { name = "evidently", specifier = ">=0.7" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "fastapi", marker = "extra == 'serve'", specifier = ">=0.110" },
@@ -4538,7 +4540,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.29" },
     { name = "xgboost", specifier = ">=2.0" },
 ]
-provides-extras = ["serve", "dev"]
+provides-extras = ["dvc", "serve", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pylint", specifier = ">=4.0.5" }]

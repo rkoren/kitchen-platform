@@ -4,7 +4,7 @@ Usage::
 
     from kitchen.store import DataStore
 
-    store = DataStore()                    # root = cwd (where dvc.yaml lives)
+    store = DataStore()                    # root = cwd (where dvc.yaml lives, if using DVC)
     df = store.load_csv("teams.csv")       # reads from data/raw/
     store.save_parquet(df, "teams.parquet") # writes to data/processed/
     df = store.load_parquet("teams.parquet")
@@ -25,7 +25,7 @@ _STAGE_COMMAND = {
 
 class DataStore:
     def __init__(self, root: Path | str | None = None) -> None:
-        """Root defaults to cwd — the directory where dvc.yaml lives."""
+        """Root defaults to cwd — the directory where dvc.yaml lives (if using DVC)."""
         if root is not None:
             resolved = Path(root)
             if not resolved.is_dir():
