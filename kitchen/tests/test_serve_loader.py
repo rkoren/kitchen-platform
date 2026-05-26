@@ -17,7 +17,6 @@ import pytest
 
 from kitchen.serve.loader import ENV_KEY, PredictorLoadError, load_predictor
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
