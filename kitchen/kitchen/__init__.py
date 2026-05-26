@@ -1,13 +1,17 @@
 from kitchen import evaluate, experiment, registry, tracking
 from kitchen.config import KitchenConfig
 from kitchen.modeling import (
+    blend_predictions,
     classification_metrics,
     clip_predictions,
     clip_proba,
     cross_validate,
+    make_stack_features,
+    rank_average,
     regression_metrics,
     set_seed,
     train_val_split,
+    voting_predict,
 )
 from kitchen.monitoring import DriftReport
 from kitchen.steps import Evaluator, FeatureBuilder, Trainer
@@ -22,15 +26,19 @@ __all__ = [
     "KitchenConfig",
     "Tracker",
     "Trainer",
+    "blend_predictions",
     "classification_metrics",
     "clip_predictions",
     "clip_proba",
     "cross_validate",
-    "evaluate",
-    "experiment",
-    "registry",
+    "make_stack_features",
+    "rank_average",
     "regression_metrics",
     "set_seed",
     "tracking",
     "train_val_split",
+    "voting_predict",
+    "evaluate",
+    "experiment",
+    "registry",
 ]

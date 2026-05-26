@@ -1,0 +1,284 @@
+"""Tests for kitchen.flows.train_flow — _build, _train, and train_pipeline.
+
+Tasks are called via their ``.fn()`` accessor to bypass the Prefect runtime
+(same pattern used in test_monitor_flow.py).  Project modules ``src.features.run``
+and ``src.train.run`` are injected into ``sys.modules`` so the dynamic imports
+inside each task resolve without a real project directory present.
+"""
+
+from __future__ import annotations
+
+import sys
+from unittest.mock import MagicMock, patch
+
+import pytest
+import yaml
+
+from kitchen.flows.train_flow import (
+    EXPERIMENT,
+    _build,
+    _train,
+    train_pipeline,
+)
+
+# ---------------------------------------------------------------------------
+# Shared params fixture
+# ---------------------------------------------------------------------------
+
+PARAMS = {"experiment": "test-exp", "features": {"raw_file": "train.csv"}, "model": {}}
+
+
+# ---------------------------------------------------------------------------
+# Module injection helpers
+# ---------------------------------------------------------------------------
+
+
+def _inject_features(monkeypatch, raises=None):
+    """Inject a fake src.features.run; return list that records build() calls."""
+    calls: list[tuple] = []
+
+    def fake_build(params, store):
+        if raises is not None:
+            raise raises
+        calls.append((params, store))
+
+    fake_mod = type(sys)("src.features.run")
+    fake_mod.build = fake_build
+    monkeypatch.setitem(sys.modules, "src.features.run", fake_mod)
+    return calls
+
+
+def _inject_train_mod(monkeypatch, raises=None):
+    """Inject a fake src.train.run; return list that records train() calls."""
+    calls: list[tuple] = []
+
+    def fake_train(params, store, tracker):
+        if raises is not None:
+            raise raises
+        calls.append((params, store, tracker))
+
+    fake_mod = type(sys)("src.train.run")
+    fake_mod.train = fake_train
+    monkeypatch.setitem(sys.modules, "src.train.run", fake_mod)
+    return calls
+
+
+# ---------------------------------------------------------------------------
+# Fixture: patch all Prefect/kitchen infra for _train
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def train_env():
+    """Patches that let _train.fn() run without a live Prefect context or MLflow."""
+    mock_logger = MagicMock()
+    mock_tracker_cls = MagicMock()
+    with (
+        patch("kitchen.flows.train_flow.get_run_logger", return_value=mock_logger),
+        patch("kitchen.flows.train_flow.configure_from_env") as mock_configure,
+        patch("kitchen.flows.train_flow.init_experiment") as mock_init,
+        patch("kitchen.flows.train_flow.Tracker", mock_tracker_cls),
+    ):
+        yield {
+            "logger": mock_logger,
+            "configure_from_env": mock_configure,
+            "init_experiment": mock_init,
+            "Tracker": mock_tracker_cls,
+        }
+
+
+# ---------------------------------------------------------------------------
+# _build
+# ---------------------------------------------------------------------------
+
+
+def test_build_calls_project_build(monkeypatch):
+    """_build.fn() calls build(params, store) from src.features.run."""
+    calls = _inject_features(monkeypatch)
+    _build.fn(PARAMS)
+    assert len(calls) == 1
+
+
+def test_build_passes_params_unchanged(monkeypatch):
+    """_build forwards the params dict to build() without modification."""
+    calls = _inject_features(monkeypatch)
+    _build.fn(PARAMS)
+    received_params, _ = calls[0]
+    assert received_params is PARAMS
+
+
+def test_build_passes_datastore_instance(monkeypatch):
+    """_build passes a DataStore instance as the second argument to build()."""
+    from kitchen.store import DataStore
+
+    calls = _inject_features(monkeypatch)
+    _build.fn(PARAMS)
+    _, store = calls[0]
+    assert isinstance(store, DataStore)
+
+
+def test_build_missing_module_raises(monkeypatch):
+    """_build raises ModuleNotFoundError when src.features.run is absent."""
+    monkeypatch.delitem(sys.modules, "src.features.run", raising=False)
+    with pytest.raises((ImportError, ModuleNotFoundError)):
+        _build.fn(PARAMS)
+
+
+def test_build_propagates_build_exception(monkeypatch):
+    """Exceptions raised by the project's build() are not swallowed."""
+    _inject_features(monkeypatch, raises=RuntimeError("feature error"))
+    with pytest.raises(RuntimeError, match="feature error"):
+        _build.fn(PARAMS)
+
+
+# ---------------------------------------------------------------------------
+# _train
+# ---------------------------------------------------------------------------
+
+
+def test_train_calls_project_train(monkeypatch, train_env):
+    """_train.fn() calls train(params, store, tracker) from src.train.run."""
+    calls = _inject_train_mod(monkeypatch)
+    _train.fn(PARAMS)
+    assert len(calls) == 1
+
+
+def test_train_passes_params_unchanged(monkeypatch, train_env):
+    """_train forwards params to the project's train() without modification."""
+    calls = _inject_train_mod(monkeypatch)
+    _train.fn(PARAMS)
+    received_params, _, _ = calls[0]
+    assert received_params is PARAMS
+
+
+def test_train_passes_datastore_instance(monkeypatch, train_env):
+    """_train passes a DataStore instance as the second argument to train()."""
+    from kitchen.store import DataStore
+
+    calls = _inject_train_mod(monkeypatch)
+    _train.fn(PARAMS)
+    _, store, _ = calls[0]
+    assert isinstance(store, DataStore)
+
+
+def test_train_passes_tracker_instance(monkeypatch, train_env):
+    """_train passes the Tracker constructed from the experiment name to train()."""
+    calls = _inject_train_mod(monkeypatch)
+    _train.fn(PARAMS)
+    _, _, tracker = calls[0]
+    # Tracker() was called — the mock instance was passed through
+    train_env["Tracker"].assert_called_once()
+    assert tracker is train_env["Tracker"].return_value
+
+
+def test_train_experiment_name_from_params(monkeypatch, train_env):
+    """_train uses params['experiment'] as the MLflow experiment name."""
+    _inject_train_mod(monkeypatch)
+    _train.fn(PARAMS)
+    train_env["Tracker"].assert_called_once_with("test-exp")
+    train_env["init_experiment"].assert_called_once_with("test-exp")
+
+
+def test_train_experiment_fallback_to_module_default(monkeypatch, train_env):
+    """_train falls back to the EXPERIMENT constant when params has no 'experiment' key."""
+    _inject_train_mod(monkeypatch)
+    _train.fn({"model": {}})  # no experiment key
+    train_env["Tracker"].assert_called_once_with(EXPERIMENT)
+
+
+def test_train_calls_configure_from_env(monkeypatch, train_env):
+    """_train calls configure_from_env() to wire MLflow tracking URI from the environment."""
+    _inject_train_mod(monkeypatch)
+    _train.fn(PARAMS)
+    train_env["configure_from_env"].assert_called_once()
+
+
+def test_train_calls_init_experiment(monkeypatch, train_env):
+    """_train calls init_experiment() so the MLflow experiment exists before logging."""
+    _inject_train_mod(monkeypatch)
+    _train.fn(PARAMS)
+    train_env["init_experiment"].assert_called_once()
+
+
+def test_train_missing_module_raises(monkeypatch, train_env):
+    """_train raises ModuleNotFoundError when src.train.run is absent."""
+    monkeypatch.delitem(sys.modules, "src.train.run", raising=False)
+    with pytest.raises((ImportError, ModuleNotFoundError)):
+        _train.fn(PARAMS)
+
+
+def test_train_propagates_train_exception(monkeypatch, train_env):
+    """Exceptions raised by the project's train() are not swallowed."""
+    _inject_train_mod(monkeypatch, raises=ValueError("bad params"))
+    with pytest.raises(ValueError, match="bad params"):
+        _train.fn(PARAMS)
+
+
+# ---------------------------------------------------------------------------
+# train_pipeline (wiring)
+# ---------------------------------------------------------------------------
+
+
+def _write_params(tmp_path, params=None):
+    path = tmp_path / "params.yaml"
+    path.write_text(yaml.dump(params or PARAMS))
+    return str(path)
+
+
+def test_pipeline_calls_build_and_train(tmp_path, monkeypatch):
+    """train_pipeline.fn() calls _build then _train."""
+    monkeypatch.chdir(tmp_path)
+    params_file = _write_params(tmp_path)
+    with (
+        patch("kitchen.flows.train_flow._build") as mock_build,
+        patch("kitchen.flows.train_flow._train") as mock_train,
+    ):
+        train_pipeline.fn(params_file=params_file)
+    mock_build.assert_called_once()
+    mock_train.assert_called_once()
+
+
+def test_pipeline_calls_build_before_train(tmp_path, monkeypatch):
+    """_build is always invoked before _train."""
+    monkeypatch.chdir(tmp_path)
+    params_file = _write_params(tmp_path)
+    order: list[str] = []
+    with (
+        patch("kitchen.flows.train_flow._build", side_effect=lambda p: order.append("build")),
+        patch("kitchen.flows.train_flow._train", side_effect=lambda p: order.append("train")),
+    ):
+        train_pipeline.fn(params_file=params_file)
+    assert order == ["build", "train"]
+
+
+def test_pipeline_passes_parsed_params_to_tasks(tmp_path, monkeypatch):
+    """Both _build and _train receive the dict parsed from params.yaml."""
+    monkeypatch.chdir(tmp_path)
+    params_file = _write_params(tmp_path)
+    received: dict[str, dict] = {}
+    with (
+        patch("kitchen.flows.train_flow._build", side_effect=lambda p: received.update({"build": p})),
+        patch("kitchen.flows.train_flow._train", side_effect=lambda p: received.update({"train": p})),
+    ):
+        train_pipeline.fn(params_file=params_file)
+    assert received["build"]["experiment"] == "test-exp"
+    assert received["build"] == received["train"]
+
+
+def test_pipeline_default_reads_params_yaml_from_cwd(tmp_path, monkeypatch):
+    """Without an explicit params_file, train_pipeline reads params.yaml from cwd."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(yaml.dump(PARAMS))
+    with (
+        patch("kitchen.flows.train_flow._build") as mock_build,
+        patch("kitchen.flows.train_flow._train"),
+    ):
+        train_pipeline.fn()  # default params_file="params.yaml"
+    mock_build.assert_called_once()
+
+
+def test_pipeline_missing_params_file_raises(tmp_path, monkeypatch):
+    """train_pipeline.fn() raises when the params file does not exist."""
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises((FileNotFoundError, OSError)):
+        train_pipeline.fn(params_file="nonexistent.yaml")

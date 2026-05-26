@@ -1,4 +1,4 @@
-"""Modeling helpers: splits, metrics, cross-validation, clipping, and seeding.
+"""Modeling helpers: splits, metrics, cross-validation, clipping, seeding, and ensembling.
 
 Quick usage::
 
@@ -10,6 +10,10 @@ Quick usage::
         clip_proba,
         clip_predictions,
         set_seed,
+        blend_predictions,
+        rank_average,
+        voting_predict,
+        make_stack_features,
     )
 
     set_seed(42)                            # reproducible run — call once at entry point
@@ -27,6 +31,16 @@ Quick usage::
         return_proba=True,
     )
     # {'accuracy_mean': 0.82, 'accuracy_std': 0.03, 'f1_mean': ..., ...}
+
+    # Ensemble: blend three model outputs
+    blended = blend_predictions([lgbm_proba, xgb_proba, cat_proba], weights=[0.5, 0.3, 0.2])
+
+    # Stacking: generate OOF features then train a meta-learner
+    oof, test_feats = make_stack_features(
+        [lambda: LogisticRegression(), lambda: RandomForestClassifier()],
+        X_train, y_train, X_test,
+    )
+    meta = LogisticRegression().fit(oof, y_train)
 """
 
 from __future__ import annotations
@@ -351,3 +365,272 @@ def set_seed(seed: int = 42) -> None:
         tf.random.set_seed(seed)
     except ImportError:
         pass
+
+
+# ---------------------------------------------------------------------------
+# M-011: Ensemble helpers
+# ---------------------------------------------------------------------------
+
+
+def _rank_normalize(a: np.ndarray) -> np.ndarray:
+    """Convert a 1-D array to average-rank percentiles in ``(0, 1)``.
+
+    Ties receive the mean of their ordinal ranks.  The result is divided
+    by ``n + 1`` so no value reaches exactly 0 or 1.
+    """
+    n = len(a)
+    sorter = np.argsort(a, kind="stable")
+    ranks = np.empty(n, dtype=float)
+    ranks[sorter] = np.arange(1, n + 1, dtype=float)
+    # Average ranks within each group of identical values
+    sorted_a = a[sorter]
+    change = np.concatenate(([True], sorted_a[1:] != sorted_a[:-1], [True]))
+    boundaries = np.where(change)[0]
+    for i in range(len(boundaries) - 1):
+        start, end = boundaries[i], boundaries[i + 1]
+        ranks[sorter[start:end]] = ranks[sorter[start:end]].mean()
+    return ranks / (n + 1)
+
+
+def blend_predictions(
+    predictions: list[ArrayLike],
+    weights: list[float] | None = None,
+) -> np.ndarray:
+    """Weighted average of a list of prediction arrays.
+
+    The workhorse of competition ensembling: average probabilities or
+    regression outputs from several models.  Works on both 1-D arrays
+    (binary probabilities or regression values) and 2-D matrices
+    (multiclass probability rows).
+
+    Args:
+        predictions: List of arrays, each of the same shape ``(n,)`` or
+            ``(n, k)``.  At least one array must be provided.
+        weights: Optional importance weights for each model.  Need not
+            sum to 1 — they are normalised automatically.  When ``None``
+            all models are weighted equally (simple average).
+
+    Returns:
+        NumPy array of the same shape as each element of *predictions*.
+
+    Raises:
+        ValueError: If *predictions* is empty, arrays differ in shape,
+            or *weights* has a different length than *predictions*.
+
+    Example::
+
+        from kitchen.modeling import blend_predictions
+
+        blended = blend_predictions(
+            [lgbm_proba, xgb_proba, cat_proba],
+            weights=[0.5, 0.3, 0.2],
+        )
+    """
+    if not predictions:
+        raise ValueError("predictions list is empty")
+    arrs = [np.asarray(p, dtype=float) for p in predictions]
+    ref_shape = arrs[0].shape
+    for i, a in enumerate(arrs[1:], 1):
+        if a.shape != ref_shape:
+            raise ValueError(
+                f"predictions[{i}] has shape {a.shape}; expected {ref_shape}"
+            )
+    if weights is None:
+        w = np.ones(len(arrs)) / len(arrs)
+    else:
+        if len(weights) != len(arrs):
+            raise ValueError(
+                f"len(weights)={len(weights)} != len(predictions)={len(arrs)}"
+            )
+        w = np.asarray(weights, dtype=float)
+        total = w.sum()
+        if total <= 0:
+            raise ValueError("weights must sum to a positive value")
+        w = w / total
+    return sum(wi * a for wi, a in zip(w, arrs))  # type: ignore[return-value]
+
+
+def rank_average(
+    predictions: list[ArrayLike],
+    weights: list[float] | None = None,
+) -> np.ndarray:
+    """Rank-normalise each prediction array, then compute a weighted average.
+
+    Converting predictions to percentile ranks before blending is a classic
+    Kaggle technique: it eliminates scale differences between models (e.g.
+    tree outputs vs. calibrated logistic probabilities) and reduces the
+    influence of outlier predictions.
+
+    Each array is ranked with tie-averaging, then divided by ``n + 1`` so
+    the result lives strictly inside ``(0, 1)``.
+
+    Args:
+        predictions: List of 1-D arrays of the same length.
+        weights: Optional importance weights (normalised automatically).
+            ``None`` means equal weights.
+
+    Returns:
+        1-D NumPy array of averaged normalised ranks in ``(0, 1)``.
+
+    Raises:
+        ValueError: If *predictions* is empty, any array is not 1-D, or
+            arrays differ in length.
+
+    Example::
+
+        from kitchen.modeling import rank_average
+
+        blended = rank_average([lgbm_pred, xgb_pred, cat_pred])
+    """
+    if not predictions:
+        raise ValueError("predictions list is empty")
+    arrs = [np.asarray(p, dtype=float) for p in predictions]
+    for i, a in enumerate(arrs):
+        if a.ndim != 1:
+            raise ValueError(
+                f"predictions[{i}] must be 1-D; got shape {a.shape}"
+            )
+    n = len(arrs[0])
+    for i, a in enumerate(arrs[1:], 1):
+        if len(a) != n:
+            raise ValueError(
+                f"predictions[{i}] has length {len(a)}; expected {n}"
+            )
+    ranked = [_rank_normalize(a) for a in arrs]
+    return blend_predictions(ranked, weights=weights)
+
+
+def voting_predict(
+    predictions: list[ArrayLike],
+    threshold: float = 0.5,
+) -> np.ndarray:
+    """Majority vote from a list of binary (0/1) prediction arrays.
+
+    Averages the hard predictions and applies *threshold*.  When the
+    fraction of models voting 1 meets or exceeds *threshold*, the ensemble
+    predicts 1.
+
+    Args:
+        predictions: List of 1-D integer or float arrays with values in
+            ``{0, 1}``.  At least one array must be provided.
+        threshold: Fraction of votes required to predict 1 (default 0.5).
+            With an odd number of models and ``threshold=0.5`` this is a
+            strict majority vote with no ties.
+
+    Returns:
+        1-D integer array with values in ``{0, 1}``.
+
+    Raises:
+        ValueError: If *predictions* is empty or arrays differ in length.
+
+    Example::
+
+        from kitchen.modeling import voting_predict
+
+        final = voting_predict([lgbm_pred, xgb_pred, cat_pred])
+    """
+    if not predictions:
+        raise ValueError("predictions list is empty")
+    arrs = [np.asarray(p, dtype=float) for p in predictions]
+    n = len(arrs[0])
+    for i, a in enumerate(arrs[1:], 1):
+        if len(a) != n:
+            raise ValueError(
+                f"predictions[{i}] has length {len(a)}; expected {n}"
+            )
+    avg = sum(a for a in arrs) / len(arrs)
+    return (avg >= threshold).astype(int)
+
+
+def make_stack_features(
+    estimator_fns: list[Callable[[], Any]],
+    X_train: ArrayLike,
+    y_train: ArrayLike,
+    X_test: ArrayLike,
+    n_splits: int = 5,
+    seed: int = 42,
+    stratify: bool = True,
+    return_proba: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate out-of-fold (OOF) predictions for stacking.
+
+    For each estimator and each fold:
+
+    1. Train on the ``K-1`` in-fold rows.
+    2. Predict on the held-out fold → fills the OOF array without leakage.
+    3. Predict on *X_test* and accumulate; the final test column is the
+       mean across all *K* fold models.
+
+    Train a meta-learner on the returned ``oof_features`` (paired with
+    *y_train*) and use ``test_features`` as its inputs at inference time.
+
+    Args:
+        estimator_fns: List of zero-argument callables, each returning a
+            new unfitted sklearn-compatible estimator.
+        X_train: Training features, shape ``(n_train, p)``.
+        y_train: Training labels, shape ``(n_train,)``.
+        X_test: Test features, shape ``(n_test, p)``.
+        n_splits: Number of CV folds (default 5).
+        seed: Random seed (default 42).
+        stratify: Use ``StratifiedKFold`` (default ``True``); set
+            ``False`` for regression targets.
+        return_proba: When ``True``, call ``predict_proba()`` and extract
+            the positive-class column for binary classifiers.  Set
+            ``True`` when base models are classifiers and you want
+            calibrated probabilities as meta-features.
+
+    Returns:
+        ``(oof_features, test_features)`` where:
+
+        - ``oof_features`` — shape ``(n_train, n_estimators)``, one column
+          per estimator, covering every training row exactly once.
+        - ``test_features`` — shape ``(n_test, n_estimators)``, each
+          column is the mean of that estimator's *K* fold predictions on
+          *X_test*.
+
+    Example::
+
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.ensemble import RandomForestClassifier
+        from kitchen.modeling import make_stack_features
+
+        oof, test_feats = make_stack_features(
+            [lambda: LogisticRegression(), lambda: RandomForestClassifier()],
+            X_train, y_train, X_test,
+            return_proba=True,
+        )
+        meta = LogisticRegression().fit(oof, y_train)
+        preds = meta.predict(test_feats)
+    """
+    from sklearn.model_selection import KFold, StratifiedKFold
+
+    X_tr = np.asarray(X_train, dtype=float)
+    y_tr = np.asarray(y_train)
+    X_te = np.asarray(X_test, dtype=float)
+    n_train, n_test, n_est = X_tr.shape[0], X_te.shape[0], len(estimator_fns)
+
+    oof = np.zeros((n_train, n_est))
+    test_preds = np.zeros((n_test, n_est))
+
+    splitter: KFold | StratifiedKFold = (
+        StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+        if stratify
+        else KFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    )
+
+    for j, est_fn in enumerate(estimator_fns):
+        fold_test = np.zeros((n_test, n_splits))
+        for fold_i, (train_idx, val_idx) in enumerate(splitter.split(X_tr, y_tr)):
+            est = est_fn()
+            est.fit(X_tr[train_idx], y_tr[train_idx])
+            if return_proba and hasattr(est, "predict_proba"):
+                val_proba = est.predict_proba(X_tr[val_idx])
+                oof[val_idx, j] = val_proba[:, 1] if val_proba.shape[1] == 2 else val_proba.max(axis=1)
+                te_proba = est.predict_proba(X_te)
+                fold_test[:, fold_i] = te_proba[:, 1] if te_proba.shape[1] == 2 else te_proba.max(axis=1)
+            else:
+                oof[val_idx, j] = est.predict(X_tr[val_idx])
+                fold_test[:, fold_i] = est.predict(X_te)
+        test_preds[:, j] = fold_test.mean(axis=1)
+
+    return oof, test_preds
