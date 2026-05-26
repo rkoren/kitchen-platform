@@ -1024,7 +1024,6 @@ def test_calibrate_isotonic_method(fitted_lr, cal_data):
 
 def test_calibrate_cv_none_does_not_refit_base_model(fitted_lr, cal_data):
     """cv=None calibrates on provided data without touching the base model's weights."""
-    from sklearn.linear_model import LogisticRegression
 
     X_cal, y_cal = cal_data
     raw_coef = fitted_lr.coef_.copy()

@@ -11,14 +11,12 @@ All tests use ``build_app(bundle)`` to create isolated apps.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
 from kitchen.serve.app import _batch_max_items, build_app
 from kitchen.serve.loader import PredictorBundle, load_predictor_bundle
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -367,7 +367,7 @@ class TestPromote:
         assert "Promoted" in result.output
         assert "champion" in result.output
         # K-016: confirm "Promoted" line contains the numeric version string, not a function repr
-        promoted_line = next(l for l in result.output.splitlines() if "Promoted" in l)
+        promoted_line = next(line for line in result.output.splitlines() if "Promoted" in line)
         assert "v1" in promoted_line, f"Expected version string in: {promoted_line!r}"
         assert "<function" not in promoted_line, f"Bug: function object in: {promoted_line!r}"
 

@@ -12,16 +12,13 @@ touch module-level state from ``kitchen.serve.app``.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from kitchen.serve.app import _collect_metadata, _resolve_git_sha, build_app
 from kitchen.serve.loader import PredictorBundle, load_predictor_bundle
-
 
 # ---------------------------------------------------------------------------
 # Helpers
