@@ -17,6 +17,7 @@ Usage:
     kitchen experiments compare METRIC           # rank runs by a metric
     kitchen submit                               # submit to Kaggle
     kitchen report                               # markdown metrics summary
+    kitchen serve local                          # start FastAPI serving app locally
 """
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments,redefined-outer-name
@@ -466,6 +467,11 @@ model:
   #   n_estimators: 300
   #   max_depth: 6
   #   learning_rate: 0.05
+  # lgbm:                      # --template baseline-lgbm
+  #   n_estimators: 300
+  #   num_leaves: 31
+  #   max_depth: -1
+  #   learning_rate: 0.05
   # lr:                        # --template baseline-lr
   #   C: 1.0
   #   max_iter: 1000
@@ -473,6 +479,14 @@ model:
   #   n_estimators: 300
   #   max_depth: null
   #   min_samples_leaf: 1
+  # tabular-ts:               # --template tabular-ts (chronological split, LightGBM regressor)
+  #   date_col: date          # column to sort by; omit if data is already time-ordered
+  #   val_frac: 0.2           # last val_frac of rows reserved for validation
+  #   lgbm:
+  #     n_estimators: 300
+  #     num_leaves: 31
+  #     max_depth: -1
+  #     learning_rate: 0.05
 
 mlflow:
   tracking_uri: sqlite:///mlruns.db
@@ -546,6 +560,14 @@ model:
   #   learning_rate: 0.05
   #   subsample: 0.8
   #   colsample_bytree: 0.8
+  # LightGBM — uncomment if using --template baseline-lgbm:
+  # lgbm:
+  #   n_estimators: 300
+  #   num_leaves: 31
+  #   max_depth: -1
+  #   learning_rate: 0.05
+  #   subsample: 0.8
+  #   colsample_bytree: 0.8
   # Logistic Regression — uncomment if using --template baseline-lr:
   # lr:
   #   C: 1.0
@@ -555,6 +577,16 @@ model:
   #   n_estimators: 300
   #   max_depth: null
   #   min_samples_leaf: 1
+  # Tabular time series — uncomment if using --template tabular-ts:
+  # date_col: date          # column to sort by; omit if data is already time-ordered
+  # val_frac: 0.2           # last val_frac of rows reserved for validation
+  # lgbm:
+  #   n_estimators: 300
+  #   num_leaves: 31
+  #   max_depth: -1
+  #   learning_rate: 0.05
+  #   subsample: 0.8
+  #   colsample_bytree: 0.8
 
 mlflow:
   tracking_uri: sqlite:///mlruns.db
@@ -678,6 +710,49 @@ class ${class_name}Trainer(Trainer):
             colsample_bytree=p.get("colsample_bytree", 0.8),
             random_state=params["model"].get("random_state", 42),
             eval_metric="logloss",
+        )
+        model.fit(X, y)
+        return model
+
+
+def train(params: dict, store: DataStore, tracker: Tracker) -> object:
+    return ${class_name}Trainer().run(store, tracker, params)
+"""
+
+_TRAIN_RUN_LGBM = """\
+\"\"\"Model training for $name — LightGBM baseline.
+
+Defaults to binary classification (LGBMClassifier, metric=binary_logloss).
+For regression: swap LGBMClassifier → LGBMRegressor.
+For multiclass: set objective="multiclass" and num_class=<N>.
+\"\"\"
+from __future__ import annotations
+
+import lightgbm as lgb
+import pandas as pd
+from kitchen.steps import Trainer
+from kitchen.store import DataStore
+from kitchen.tracking import Tracker
+
+
+class ${class_name}Trainer(Trainer):
+    model_flavour = "lightgbm"
+
+    def fit(self, df: pd.DataFrame, params: dict) -> lgb.LGBMClassifier:
+        target = params["model"]["target"]
+        features = [c for c in df.columns if c != target]
+        X, y = df[features], df[target]
+
+        p = params["model"].get("lgbm", {})
+        model = lgb.LGBMClassifier(
+            n_estimators=p.get("n_estimators", 300),
+            num_leaves=p.get("num_leaves", 31),
+            max_depth=p.get("max_depth", -1),
+            learning_rate=p.get("learning_rate", 0.05),
+            subsample=p.get("subsample", 0.8),
+            colsample_bytree=p.get("colsample_bytree", 0.8),
+            random_state=params["model"].get("random_state", 42),
+            n_jobs=-1,
         )
         model.fit(X, y)
         return model
@@ -1085,6 +1160,206 @@ class ${class_name}Evaluator(Evaluator):
 
 def evaluate(model: object, params: dict, store: DataStore) -> dict[str, float]:
     return ${class_name}Evaluator().run(model, store, params)
+"""
+
+_TRAIN_RUN_TABULAR_TS = """\
+\"\"\"Model training for $name — tabular time series (LightGBM baseline).
+
+Uses a **chronological** train/val split: the last *val_frac* fraction of rows
+(sorted by *date_col* if provided) is held out as validation.  This avoids
+the data leakage that occurs with a random split on time-ordered data.
+
+Defaults to LGBMRegressor (forecasting / demand / energy competitions).
+For classification: swap LGBMRegressor → LGBMClassifier and replace
+regression_metrics with classification_metrics.
+
+Params read from params.yaml under model:
+  target       — target column name (required)
+  date_col     — column to sort by before splitting (omit if data is pre-sorted)
+  val_frac     — fraction of rows reserved for validation, default 0.2
+  random_state — random seed, default 42
+  lgbm:        — LightGBM hyperparams (see commented section in params.yaml)
+\"\"\"
+from __future__ import annotations
+
+import mlflow
+import lightgbm as lgb
+import pandas as pd
+from kitchen.modeling import regression_metrics
+from kitchen.steps import Trainer
+from kitchen.store import DataStore
+from kitchen.tracking import Tracker
+
+
+def _time_split(
+    df: pd.DataFrame,
+    date_col: str | None = None,
+    val_frac: float = 0.2,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    \"\"\"Chronological train/val split — no shuffling.
+
+    Sorts by *date_col* when provided, then holds out the last *val_frac*
+    fraction of rows for validation.  Call with the same arguments in both
+    train.py and evaluate.py so the partitions are consistent across runs.
+    \"\"\"
+    if date_col and date_col in df.columns:
+        df = df.sort_values(date_col).reset_index(drop=True)
+    n_val = max(1, int(len(df) * val_frac))
+    return df.iloc[:-n_val].copy(), df.iloc[-n_val:].copy()
+
+
+class ${class_name}Trainer(Trainer):
+    model_flavour = "lightgbm"
+
+    def fit(self, df: pd.DataFrame, params: dict) -> lgb.LGBMRegressor:
+        mp = params["model"]
+        target = mp["target"]
+        date_col = mp.get("date_col")
+        val_frac = mp.get("val_frac", 0.2)
+
+        train_df, val_df = _time_split(df, date_col=date_col, val_frac=val_frac)
+        features = [c for c in df.columns if c != target]
+        X_train, y_train = train_df[features], train_df[target]
+        X_val, y_val = val_df[features], val_df[target]
+
+        p = mp.get("lgbm", {})
+        model = lgb.LGBMRegressor(
+            n_estimators=p.get("n_estimators", 300),
+            num_leaves=p.get("num_leaves", 31),
+            max_depth=p.get("max_depth", -1),
+            learning_rate=p.get("learning_rate", 0.05),
+            subsample=p.get("subsample", 0.8),
+            colsample_bytree=p.get("colsample_bytree", 0.8),
+            random_state=mp.get("random_state", 42),
+            n_jobs=-1,
+        )
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_val)
+        val_metrics = regression_metrics(y_val, y_pred)
+        mlflow.log_metrics({"val_" + k: v for k, v in val_metrics.items()})
+        return model
+
+
+def train(params: dict, store: DataStore, tracker: Tracker) -> object:
+    return ${class_name}Trainer().run(store, tracker, params)
+"""
+
+_EVALUATE_RUN_TABULAR_TS = """\
+\"\"\"Evaluation for $name — tabular time series.
+
+Scores the model on the chronological validation split using the same
+date_col and val_frac as training, so the partition is consistent.
+Reports rmse, mae, and r2.
+\"\"\"
+from __future__ import annotations
+
+import pandas as pd
+from kitchen.modeling import regression_metrics
+from kitchen.steps import Evaluator
+from kitchen.store import DataStore
+
+
+def _time_split(
+    df: pd.DataFrame,
+    date_col: str | None = None,
+    val_frac: float = 0.2,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    \"\"\"Chronological train/val split — no shuffling.\"\"\"
+    if date_col and date_col in df.columns:
+        df = df.sort_values(date_col).reset_index(drop=True)
+    n_val = max(1, int(len(df) * val_frac))
+    return df.iloc[:-n_val].copy(), df.iloc[-n_val:].copy()
+
+
+class ${class_name}Evaluator(Evaluator):
+    \"\"\"Tabular time series evaluator.
+
+    Overrides run() to stash params as an instance attribute so that
+    evaluate() can access target, date_col, and val_frac — the base class
+    does not forward params to evaluate().
+    \"\"\"
+
+    def run(self, model: object, store: DataStore, params: dict) -> dict[str, float]:
+        self._params = params
+        return super().run(model, store, params)
+
+    def evaluate(self, model: object, df: pd.DataFrame) -> dict[str, float]:
+        mp = self._params["model"]
+        target = mp["target"]
+        date_col = mp.get("date_col")
+        val_frac = mp.get("val_frac", 0.2)
+
+        _, val_df = _time_split(df, date_col=date_col, val_frac=val_frac)
+        features = [c for c in val_df.columns if c != target]
+        X_val, y_val = val_df[features], val_df[target]
+
+        y_pred = model.predict(X_val)
+        return regression_metrics(y_val, y_pred)
+
+
+def evaluate(model: object, params: dict, store: DataStore) -> dict[str, float]:
+    return ${class_name}Evaluator().run(model, store, params)
+"""
+
+_PREDICTOR_PY = """\
+\"\"\"Predictor for $name — plug your trained model in here.
+
+This module is loaded by ``kitchen serve local`` (and the Lambda handler) via
+``kitchen.serve.loader``.  It must expose::
+
+    def predict(payload: dict) -> dict: ...
+
+Optionally export ``RequestModel`` and ``ResponseModel`` (Pydantic
+``BaseModel`` subclasses) to enable typed OpenAPI docs on ``/predict``.
+If either is absent the endpoint accepts and returns raw dicts.
+\"\"\"
+from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Uncomment once your champion model is promoted to the registry:
+# ---------------------------------------------------------------------------
+# import mlflow
+# model = mlflow.sklearn.load_model(\"models:/$name@champion\")
+
+# ---------------------------------------------------------------------------
+# Optional: typed OpenAPI schema (requires pydantic, already a FastAPI dep)
+# ---------------------------------------------------------------------------
+# from pydantic import BaseModel
+#
+# class RequestModel(BaseModel):
+#     feature_a: float
+#     feature_b: str
+#
+# class ResponseModel(BaseModel):
+#     label: int
+#     score: float
+
+# ---------------------------------------------------------------------------
+# Optional: feature list — surfaced on GET /metadata so callers know which
+# input keys the model expects.
+# ---------------------------------------------------------------------------
+# FEATURES: list[str] = [\"feature_a\", \"feature_b\"]
+
+
+def predict(payload: dict) -> dict:
+    \"\"\"Return a prediction for *payload*.
+
+    Args:
+        payload: Arbitrary JSON dict from the caller.  When ``RequestModel``
+                 is configured this will be ``RequestModel.model_dump()``.
+
+    Returns:
+        Prediction result (must be JSON-serialisable).  When ``ResponseModel``
+        is configured FastAPI validates the return value against the schema.
+    \"\"\"
+    # TODO: replace with real model inference, e.g.:
+    #   features = [payload[\"feature_a\"], payload[\"feature_b\"]]
+    #   return {\"label\": int(model.predict([features])[0]), \"score\": 0.0}
+    raise NotImplementedError(
+        \"Implement predict() in src/serve/predictor.py — \"
+        \"see the commented examples above.\"
+    )
 """
 
 _TEST_FEATURES = """\
@@ -2922,23 +3197,66 @@ def check(
     else:
         _warn("dvc", "not installed — run `pip install kitchen[dvc]` to enable data versioning")
 
+    # DVC-012: warn when .dvc/config still has the scaffolded YOUR-BUCKET placeholder.
+    _dvc_config = Path(".dvc/config")
+    if _dvc_config.exists():
+        try:
+            if "YOUR-BUCKET" in _dvc_config.read_text(encoding="utf-8"):
+                _warn(
+                    "DVC remote",
+                    "s3 remote not configured — run: dvc remote modify s3remote url s3://<bucket>/dvc",
+                )
+        except OSError:
+            pass  # unreadable config is not a check failure
+
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "")
     if tracking_uri:
         _ok("MLFLOW_TRACKING_URI", tracking_uri)
     else:
-        _fail("MLFLOW_TRACKING_URI", "set in .env or environment")
+        _warn(
+            "MLFLOW_TRACKING_URI",
+            "not set — defaulting to sqlite:///mlruns.db (add to .env to silence)",
+        )
 
-    try:
-        import boto3
+    # Determine whether this project actually needs AWS credentials before checking.
+    # Hard-fail only when data.source=s3 or mlflow.artifact_bucket is set; skip for
+    # pure Kaggle+SQLite projects that have no AWS dependency.
+    _needs_aws: bool | None = None  # None = unknown (no params.yaml)
+    _params_path_early = Path(params_file)
+    if _params_path_early.exists():
+        try:
+            import yaml as _yaml_aws
 
-        creds = boto3.Session().get_credentials()
-        if creds is not None:
-            creds.get_frozen_credentials()
-            _ok("AWS credentials", "present")
-        else:
-            raise RuntimeError("no credentials found")
-    except Exception:
-        _fail("AWS credentials", "run `aws configure` or set AWS_ACCESS_KEY_ID / AWS_PROFILE")
+            _raw = _yaml_aws.safe_load(_params_path_early.read_text(encoding="utf-8")) or {}
+            _data_cfg = _raw.get("data", {}) or {}
+            _mlflow_cfg = _raw.get("mlflow", {}) or {}
+            _needs_aws = _data_cfg.get("source") == "s3" or bool(_mlflow_cfg.get("artifact_bucket"))
+        except Exception:
+            pass  # parse failure → treat as unknown
+
+    if _needs_aws is not False:
+        # Check creds when project needs AWS (True) or project type is unknown (None).
+        try:
+            import boto3
+
+            creds = boto3.Session().get_credentials()
+            if creds is not None:
+                creds.get_frozen_credentials()
+                _ok("AWS credentials", "present")
+            else:
+                raise RuntimeError("no credentials found")
+        except Exception:
+            if _needs_aws:
+                _fail(
+                    "AWS credentials",
+                    "run `aws configure` or set AWS_ACCESS_KEY_ID / AWS_PROFILE",
+                )
+            else:
+                # Unknown project type — soft-warn, don't block.
+                _warn(
+                    "AWS credentials",
+                    "not found — needed if data.source=s3 or mlflow.artifact_bucket is set",
+                )
 
     kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
     if os.environ.get("KAGGLE_USERNAME") or kaggle_json.exists():
@@ -3271,7 +3589,7 @@ def promote(
     reg_version = register_model(run_id, "model", model_name)
     typer.echo(f"\nRegistered : {model_name} v{reg_version}")
     promote_model(model_name, reg_version, alias=alias)
-    typer.echo(f"Promoted   : {model_name} v{version} → {alias}")
+    typer.echo(f"Promoted   : {model_name} v{reg_version} → {alias}")
     typer.echo(f"Load with  : mlflow.sklearn.load_model('models:/{model_name}@{alias}')")
     typer.echo()
 
@@ -3550,7 +3868,7 @@ def init(
     template: str = typer.Option(
         "none",
         "--template",
-        help="Starter template: none, baseline-xgb, baseline-lr, baseline-rf, binary-cls, multiclass-cls, regression",
+        help="Starter template: none, baseline-xgb, baseline-lgbm, baseline-lr, baseline-rf, binary-cls, multiclass-cls, regression, tabular-ts",
     ),
     ci: bool = typer.Option(
         False, "--ci", help="Scaffold a .github/workflows/train-evaluate.yml CI workflow"
@@ -3577,7 +3895,7 @@ def init(
         typer.echo("error: --competition is required when --source kaggle", err=True)
         raise typer.Exit(1)
 
-    valid_templates = {"none", "baseline-xgb", "baseline-lr", "baseline-rf", "binary-cls", "multiclass-cls", "regression"}
+    valid_templates = {"none", "baseline-xgb", "baseline-lgbm", "baseline-lr", "baseline-rf", "binary-cls", "multiclass-cls", "regression", "tabular-ts"}
     if template not in valid_templates:
         typer.echo(
             f"error: invalid template {template!r} — choose from: {', '.join(sorted(valid_templates))}",
@@ -3607,17 +3925,20 @@ def init(
 
     train_tmpl = {
         "baseline-xgb": _TRAIN_RUN_XGB,
+        "baseline-lgbm": _TRAIN_RUN_LGBM,
         "baseline-lr": _TRAIN_RUN_LR,
         "baseline-rf": _TRAIN_RUN_RF,
         "binary-cls": _TRAIN_RUN_BINARY_CLS,
         "multiclass-cls": _TRAIN_RUN_MULTICLASS_CLS,
         "regression": _TRAIN_RUN_REGRESSION,
+        "tabular-ts": _TRAIN_RUN_TABULAR_TS,
     }.get(template, _TRAIN_RUN)
 
     eval_tmpl = {
         "binary-cls": _EVALUATE_RUN_BINARY_CLS,
         "multiclass-cls": _EVALUATE_RUN_MULTICLASS_CLS,
         "regression": _EVALUATE_RUN_REGRESSION,
+        "tabular-ts": _EVALUATE_RUN_TABULAR_TS,
     }.get(template, _EVALUATE_RUN)
 
     files: list[tuple[Path, str]] = [
@@ -3634,6 +3955,8 @@ def init(
         (root / "src" / "train" / "run.py", r(train_tmpl, name, class_name)),
         (root / "src" / "evaluate" / "__init__.py", ""),
         (root / "src" / "evaluate" / "run.py", r(eval_tmpl, name, class_name)),
+        (root / "src" / "serve" / "__init__.py", ""),
+        (root / "src" / "serve" / "predictor.py", r(_PREDICTOR_PY, name, class_name)),
         (root / "src" / "tests" / "__init__.py", ""),
         (root / "src" / "tests" / "test_features.py", r(_TEST_FEATURES, name, class_name)),
         (root / "experiments" / "__init__.py", ""),
@@ -3726,6 +4049,123 @@ Done. Next steps:
   kitchen promote METRIC              # promote best run to the registry
 {submit_step}{ci_note}{dvc_note}
 """)
+
+
+# ---------------------------------------------------------------------------
+# kitchen serve — start the FastAPI serving app locally
+# ---------------------------------------------------------------------------
+
+serve_app = typer.Typer(help="Serving helpers.", no_args_is_help=True)
+app.add_typer(serve_app, name="serve")
+
+
+@serve_app.command("local")
+def serve_local(
+    port: Annotated[int, typer.Option("--port", "-p", help="Port to bind (default 8080)")] = 8080,
+    predictor_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--predictor-dir",
+            help=(
+                "Directory containing predictor.py. "
+                "Defaults to src/serve/ if it contains predictor.py, else ./"
+            ),
+        ),
+    ] = None,
+    reload: Annotated[
+        bool,
+        typer.Option(
+            "--reload/--no-reload",
+            help="Enable uvicorn auto-reload on code changes (requires watchfiles)",
+        ),
+    ] = True,
+    open_browser: Annotated[
+        bool,
+        typer.Option("--open/--no-open", help="Open /docs in the browser after startup"),
+    ] = True,
+) -> None:
+    """Start the kitchen FastAPI serving app locally with uvicorn.
+
+    Resolves predictor.py in this order:
+      1. --predictor-dir <dir>/predictor.py
+      2. src/serve/predictor.py       (project default location)
+      3. ./predictor.py               (current directory)
+
+    The resolved directory is prepended to PYTHONPATH so the app can
+    import the predictor module at startup. If none of the above
+    locations contain predictor.py the app still starts and returns
+    HTTP 501 until predictor.py is created.
+
+    Press Ctrl+C to stop.
+    """
+    import os
+    import subprocess
+    import sys
+    import threading
+    import webbrowser
+
+    # ── Resolve the directory that contains predictor.py ─────────────────────
+    cwd = Path.cwd()
+    if predictor_dir is not None:
+        pred_dir = Path(predictor_dir).resolve()
+    elif (cwd / "src" / "serve" / "predictor.py").exists():
+        pred_dir = (cwd / "src" / "serve").resolve()
+    elif (cwd / "predictor.py").exists():
+        pred_dir = cwd.resolve()
+    else:
+        # Default: src/serve/ — app returns 501 if predictor.py is absent.
+        pred_dir = (cwd / "src" / "serve").resolve()
+
+    url = f"http://localhost:{port}"
+    typer.echo(f"Serving   → {url}")
+    typer.echo(f"Predictor → {pred_dir}")
+    if reload:
+        typer.echo("Reload    → enabled (watchfiles)")
+    typer.echo("Press Ctrl+C to stop.\n")
+
+    # ── Open /docs after a short delay ───────────────────────────────────────
+    if open_browser:
+        def _open_after_delay() -> None:
+            import time
+
+            time.sleep(1.5)
+            webbrowser.open(f"{url}/docs")
+
+        threading.Thread(target=_open_after_delay, daemon=True).start()
+
+    # ── Prepend pred_dir to PYTHONPATH and set KITCHEN_PREDICTOR_DIR ─────────
+    # PYTHONPATH: backwards-compatible for any code that scans sys.path.
+    # KITCHEN_PREDICTOR_DIR: used by kitchen.serve.loader for deterministic
+    # resolution without a full sys.path scan.
+    existing_pythonpath = os.environ.get("PYTHONPATH", "")
+    new_pythonpath = (
+        f"{pred_dir}{os.pathsep}{existing_pythonpath}"
+        if existing_pythonpath
+        else str(pred_dir)
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": new_pythonpath,
+        "KITCHEN_PREDICTOR_DIR": str(pred_dir),
+    }
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "kitchen.serve.app:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(port),
+    ]
+    if reload:
+        cmd.append("--reload")
+
+    try:
+        subprocess.run(cmd, env=env, check=False)
+    except KeyboardInterrupt:
+        typer.echo("\nStopped.")
 
 
 if __name__ == "__main__":

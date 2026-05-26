@@ -366,6 +366,10 @@ class TestPromote:
         assert "Registered" in result.output
         assert "Promoted" in result.output
         assert "champion" in result.output
+        # K-016: confirm "Promoted" line contains the numeric version string, not a function repr
+        promoted_line = next(l for l in result.output.splitlines() if "Promoted" in l)
+        assert "v1" in promoted_line, f"Expected version string in: {promoted_line!r}"
+        assert "<function" not in promoted_line, f"Bug: function object in: {promoted_line!r}"
 
     def test_shows_current_champion_if_exists(self):
         result, _, _ = self._run_promote(

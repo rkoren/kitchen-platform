@@ -37,6 +37,7 @@ _ARTIFACT_PREFIX = "mlflow-artifacts"
 _FLAVOURS: dict[str, Any] = {
     "sklearn": mlflow.sklearn,
     "xgboost": mlflow.xgboost,
+    "lightgbm": mlflow.lightgbm,
     "pyfunc": mlflow.pyfunc,
 }
 
@@ -47,6 +48,7 @@ _TRACKED_PACKAGES = [
     "pandas",
     "scikit-learn",
     "xgboost",
+    "lightgbm",
     "mlflow",
 ]
 
@@ -164,7 +166,7 @@ class Tracker:
 
     @staticmethod
     def log_model(model: Any, artifact_path: str, flavour: str = "sklearn") -> None:
-        """Persist a model artifact using the named MLflow flavour (sklearn, xgboost, pyfunc)."""
+        """Persist a model artifact using the named MLflow flavour (sklearn, xgboost, lightgbm, pyfunc)."""
         mod = _FLAVOURS.get(flavour)
         if mod is None:
             raise ValueError(f"Unknown flavour: {flavour!r}. Choose from: {list(_FLAVOURS)}")
