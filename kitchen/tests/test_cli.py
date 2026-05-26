@@ -821,6 +821,37 @@ def test_init_invalid_template(tmp_path, monkeypatch):
     assert "invalid template" in result.output
 
 
+def test_init_baseline_lgbm_template(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "baseline-lgbm"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    assert "LGBMClassifier" in train_src
+    assert "lightgbm" in train_src
+    assert 'model_flavour = "lightgbm"' in train_src
+    assert "num_leaves" in train_src
+    # evaluate stub is unchanged for model-only templates
+    eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
+    assert "NotImplementedError" in eval_src
+
+
+def test_init_baseline_lgbm_params_hint(tmp_path, monkeypatch):
+    """params.yaml should contain a commented lgbm: section for user guidance."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "baseline-lgbm"],
+        catch_exceptions=False,
+    )
+    params_src = (tmp_path / "my-comp" / "params.yaml").read_text()
+    assert "lgbm:" in params_src
+    assert "num_leaves" in params_src
+
+
 def test_init_baseline_rf_template(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
@@ -921,6 +952,140 @@ def test_init_regression_template_evaluate(tmp_path, monkeypatch):
     assert "regression_metrics" in eval_src
     assert "stratify=False" in eval_src
     assert "NotImplementedError" not in eval_src
+
+
+def test_init_tabular_ts_template_train(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "tabular-ts"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    assert "LGBMRegressor" in train_src
+    assert "lightgbm" in train_src
+    assert 'model_flavour = "lightgbm"' in train_src
+    assert "regression_metrics" in train_src
+    assert "mlflow.log_metrics" in train_src
+    # time-ordered split — not the random kitchen.modeling helper
+    assert "_time_split" in train_src
+    assert "date_col" in train_src
+    assert "val_frac" in train_src
+    assert "train_val_split" not in train_src  # must NOT use the random helper
+
+
+def test_init_tabular_ts_template_evaluate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "tabular-ts"],
+        catch_exceptions=False,
+    )
+    eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
+    assert "regression_metrics" in eval_src
+    assert "_time_split" in eval_src
+    assert "date_col" in eval_src
+    assert "val_frac" in eval_src
+    # has real implementation, not stub
+    assert "NotImplementedError" not in eval_src
+    # params stash pattern must be present (same as regression/binary-cls)
+    assert "_params" in eval_src
+    assert "train_val_split" not in eval_src  # no random split
+
+
+def test_init_tabular_ts_params_hint(tmp_path, monkeypatch):
+    """params.yaml should contain commented tabular-ts section with date_col and val_frac."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "tabular-ts"],
+        catch_exceptions=False,
+    )
+    params_src = (tmp_path / "my-comp" / "params.yaml").read_text()
+    assert "tabular-ts" in params_src
+    assert "date_col" in params_src
+    assert "val_frac" in params_src
+
+
+def test_init_tabular_ts_kaggle_params_hint(tmp_path, monkeypatch):
+    """Kaggle variant of params.yaml also contains the tabular-ts hint."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        [
+            "init", "my-comp",
+            "--source", "kaggle",
+            "--competition", "my-comp",
+            "--template", "tabular-ts",
+        ],
+        catch_exceptions=False,
+    )
+    params_src = (tmp_path / "my-comp" / "params.yaml").read_text()
+    assert "date_col" in params_src
+    assert "val_frac" in params_src
+
+
+def test_init_tabular_ts_class_name_substituted(tmp_path, monkeypatch):
+    """Both MyCompTrainer and MyCompEvaluator should appear in the generated files."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--template", "tabular-ts"],
+        catch_exceptions=False,
+    )
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
+    assert "MyCompTrainer" in train_src
+    assert "MyCompEvaluator" in eval_src
+
+
+def test_init_scaffolds_src_serve_predictor_py(tmp_path, monkeypatch):
+    """kitchen init creates src/serve/predictor.py with predict() stub — valid Python."""
+    import ast
+
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-proj"], catch_exceptions=False)
+    predictor_path = tmp_path / "my-proj" / "src" / "serve" / "predictor.py"
+    assert predictor_path.exists(), "src/serve/predictor.py must be scaffolded"
+    content = predictor_path.read_text()
+    assert "def predict(payload: dict) -> dict:" in content
+    assert "NotImplementedError" in content
+    # Template escaping smoke-test: the rendered file must be syntactically valid Python.
+    ast.parse(content)
+
+
+def test_init_scaffolds_src_serve_init_py(tmp_path, monkeypatch):
+    """kitchen init creates src/serve/__init__.py."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-proj"], catch_exceptions=False)
+    init_path = tmp_path / "my-proj" / "src" / "serve" / "__init__.py"
+    assert init_path.exists(), "src/serve/__init__.py must be scaffolded"
+
+
+def test_init_predictor_py_has_mlflow_comment(tmp_path, monkeypatch):
+    """Scaffolded predictor.py includes a comment showing how to load the champion model."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-proj"], catch_exceptions=False)
+    content = (tmp_path / "my-proj" / "src" / "serve" / "predictor.py").read_text()
+    assert "mlflow" in content
+
+
+def test_init_predictor_py_has_pydantic_comment(tmp_path, monkeypatch):
+    """Scaffolded predictor.py includes commented RequestModel/ResponseModel examples."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-proj"], catch_exceptions=False)
+    content = (tmp_path / "my-proj" / "src" / "serve" / "predictor.py").read_text()
+    assert "RequestModel" in content
+    assert "ResponseModel" in content
+
+
+def test_init_predictor_py_name_substituted(tmp_path, monkeypatch):
+    """$name is substituted in the predictor.py scaffold."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "cbb-predictor"], catch_exceptions=False)
+    content = (tmp_path / "cbb-predictor" / "src" / "serve" / "predictor.py").read_text()
+    assert "cbb-predictor" in content
 
 
 def test_init_default_train_template_unchanged(scaffold):

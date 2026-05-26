@@ -76,6 +76,65 @@ def test_check_tool_present_shows_version(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# DVC remote placeholder section (DVC-012)
+# ---------------------------------------------------------------------------
+
+
+def test_check_dvc_remote_placeholder_warns(tmp_path, monkeypatch):
+    """Scaffolded .dvc/config with YOUR-BUCKET → warn with actionable fix hint."""
+    dvc_dir = tmp_path / ".dvc"
+    dvc_dir.mkdir()
+    (dvc_dir / "config").write_text(
+        "[core]\n    remote = s3remote\n[remote \"s3remote\"]\n    url = s3://YOUR-BUCKET/dvc\n"
+    )
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = None
+        result = _invoke(
+            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
+        )
+    assert "~ DVC remote" in result.output
+    assert "YOUR-BUCKET" not in result.output  # hint should not reproduce the placeholder
+    assert "dvc remote modify" in result.output
+
+
+def test_check_dvc_remote_configured_no_warning(tmp_path, monkeypatch):
+    """.dvc/config with a real bucket URL should produce no DVC remote warning."""
+    dvc_dir = tmp_path / ".dvc"
+    dvc_dir.mkdir()
+    (dvc_dir / "config").write_text(
+        "[core]\n    remote = s3remote\n[remote \"s3remote\"]\n    url = s3://my-real-bucket/dvc\n"
+    )
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = None
+        result = _invoke(
+            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
+        )
+    assert "DVC remote" not in result.output
+
+
+def test_check_no_dvc_config_no_remote_check(tmp_path, monkeypatch):
+    """No .dvc/config (DVC not initialised) → no DVC remote line at all."""
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = None
+        result = _invoke(
+            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
+        )
+    assert "DVC remote" not in result.output
+
+
+# ---------------------------------------------------------------------------
 # Burners section
 # ---------------------------------------------------------------------------
 
@@ -97,6 +156,7 @@ def test_check_mlflow_uri_present(tmp_path, monkeypatch):
 
 
 def test_check_mlflow_uri_missing(tmp_path, monkeypatch):
+    """Unset MLFLOW_TRACKING_URI should warn (not fail) — the platform defaults to SQLite."""
     with (
         patch("shutil.which", return_value=None),
         patch("boto3.Session") as mock_session,
@@ -104,11 +164,22 @@ def test_check_mlflow_uri_missing(tmp_path, monkeypatch):
     ):
         mock_session.return_value.get_credentials.return_value = None
         result = _invoke(tmp_path, monkeypatch, env={"KAGGLE_USERNAME": "u"})
-    assert "✗ MLFLOW_TRACKING_URI" in result.output
-    assert result.exit_code != 0
+    assert "~ MLFLOW_TRACKING_URI" in result.output
+    assert "sqlite:///mlruns.db" in result.output
+    # Should NOT count as a hard failure
+    assert "✗ MLFLOW_TRACKING_URI" not in result.output
+
+
+S3_PARAMS = (
+    "experiment: test-project\n"
+    "data:\n"
+    "  source: s3\n"
+    "  bucket: my-bucket\n"
+)
 
 
 def test_check_aws_creds_present(tmp_path, monkeypatch):
+    """AWS credentials show ✓ when present and project uses S3."""
     mock_creds = MagicMock()
     with (
         patch("shutil.which", return_value=None),
@@ -117,12 +188,16 @@ def test_check_aws_creds_present(tmp_path, monkeypatch):
     ):
         mock_session.return_value.get_credentials.return_value = mock_creds
         result = _invoke(
-            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
+            tmp_path,
+            monkeypatch,
+            params_content=S3_PARAMS,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
         )
     assert "✓ AWS credentials" in result.output
 
 
 def test_check_aws_creds_missing(tmp_path, monkeypatch):
+    """AWS credentials show ✗ (hard fail) when missing and project uses S3."""
     with (
         patch("shutil.which", return_value=None),
         patch("boto3.Session") as mock_session,
@@ -130,10 +205,54 @@ def test_check_aws_creds_missing(tmp_path, monkeypatch):
     ):
         mock_session.return_value.get_credentials.return_value = None
         result = _invoke(
-            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
+            tmp_path,
+            monkeypatch,
+            params_content=S3_PARAMS,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
         )
     assert "✗ AWS credentials" in result.output
     assert result.exit_code != 0
+
+
+def test_check_aws_skipped_for_kaggle_project(tmp_path, monkeypatch):
+    """Kaggle+SQLite projects have no AWS dependency — the check should not appear."""
+    kaggle_params = (
+        "experiment: test-project\n"
+        "data:\n"
+        "  source: kaggle\n"
+        "  competition: spaceship-titanic\n"
+    )
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = None
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=kaggle_params,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "AWS credentials" not in result.output
+
+
+def test_check_aws_soft_warn_when_no_params_file(tmp_path, monkeypatch):
+    """Without params.yaml the project type is unknown — warn but don't hard-fail."""
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = None
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=None,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "~ AWS credentials" in result.output
+    assert "✗ AWS credentials" not in result.output
 
 
 def test_check_kaggle_env_var(tmp_path, monkeypatch):

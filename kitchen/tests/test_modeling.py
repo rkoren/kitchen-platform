@@ -9,6 +9,7 @@ import pytest
 
 from kitchen.modeling import (
     blend_predictions,
+    calibrate_model,
     classification_metrics,
     clip_predictions,
     clip_proba,
@@ -962,3 +963,85 @@ def test_voting_predict_importable_from_kitchen():
     from kitchen import voting_predict as vp  # noqa: F401
 
     assert callable(vp)
+
+
+# ---------------------------------------------------------------------------
+# calibrate_model (M-012)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def fitted_lr(binary_df):
+    """A LogisticRegression already fitted on 80% of binary_df."""
+    from sklearn.linear_model import LogisticRegression
+
+    train, _ = train_val_split(binary_df, target_col="target")
+    X = train.drop(columns=["target"]).values
+    y = train["target"].values
+    model = LogisticRegression(max_iter=500, random_state=0)
+    model.fit(X, y)
+    return model
+
+
+@pytest.fixture()
+def cal_data(binary_df):
+    """Held-out calibration split (20% of binary_df)."""
+    _, cal = train_val_split(binary_df, target_col="target")
+    X = cal.drop(columns=["target"]).values
+    y = cal["target"].values
+    return X, y
+
+
+def test_calibrate_returns_predict_proba(fitted_lr, cal_data):
+    X_cal, y_cal = cal_data
+    cal_model = calibrate_model(fitted_lr, X_cal, y_cal)
+    assert hasattr(cal_model, "predict_proba")
+    assert hasattr(cal_model, "predict")
+
+
+def test_calibrate_probas_in_unit_interval(fitted_lr, cal_data, binary_df):
+    X_cal, y_cal = cal_data
+    X_all = binary_df.drop(columns=["target"]).values
+    cal_model = calibrate_model(fitted_lr, X_cal, y_cal)
+    proba = cal_model.predict_proba(X_all)
+    assert proba.min() >= 0.0
+    assert proba.max() <= 1.0
+    # Each row sums to 1
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-6)
+
+
+def test_calibrate_sigmoid_method(fitted_lr, cal_data):
+    X_cal, y_cal = cal_data
+    cal_model = calibrate_model(fitted_lr, X_cal, y_cal, method="sigmoid")
+    assert cal_model is not None
+
+
+def test_calibrate_isotonic_method(fitted_lr, cal_data):
+    X_cal, y_cal = cal_data
+    cal_model = calibrate_model(fitted_lr, X_cal, y_cal, method="isotonic")
+    assert hasattr(cal_model, "predict_proba")
+
+
+def test_calibrate_cv_none_does_not_refit_base_model(fitted_lr, cal_data):
+    """cv=None calibrates on provided data without touching the base model's weights."""
+    from sklearn.linear_model import LogisticRegression
+
+    X_cal, y_cal = cal_data
+    raw_coef = fitted_lr.coef_.copy()
+    cal_model = calibrate_model(fitted_lr, X_cal, y_cal, method="sigmoid", cv=None)
+    # Base model coefficients are unchanged
+    np.testing.assert_array_equal(fitted_lr.coef_, raw_coef)
+    # Output shape is correct
+    assert cal_model.predict_proba(X_cal).shape == (len(y_cal), 2)
+
+
+def test_calibrate_invalid_method_raises(fitted_lr, cal_data):
+    X_cal, y_cal = cal_data
+    with pytest.raises(ValueError, match="method must be"):
+        calibrate_model(fitted_lr, X_cal, y_cal, method="platt")
+
+
+def test_calibrate_importable_from_kitchen():
+    from kitchen import calibrate_model as cm  # noqa: F401
+
+    assert callable(cm)

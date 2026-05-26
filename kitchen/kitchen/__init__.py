@@ -2,6 +2,7 @@ from kitchen import evaluate, experiment, registry, tracking
 from kitchen.config import KitchenConfig
 from kitchen.modeling import (
     blend_predictions,
+    calibrate_model,
     classification_metrics,
     clip_predictions,
     clip_proba,
@@ -27,6 +28,7 @@ __all__ = [
     "Tracker",
     "Trainer",
     "blend_predictions",
+    "calibrate_model",
     "classification_metrics",
     "clip_predictions",
     "clip_proba",

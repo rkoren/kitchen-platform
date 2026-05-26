@@ -1,4 +1,4 @@
-"""Modeling helpers: splits, metrics, cross-validation, clipping, seeding, and ensembling.
+"""Modeling helpers: splits, metrics, cross-validation, clipping, seeding, ensembling, and calibration.
 
 Quick usage::
 
@@ -10,6 +10,7 @@ Quick usage::
         clip_proba,
         clip_predictions,
         set_seed,
+        calibrate_model,
         blend_predictions,
         rank_average,
         voting_predict,
@@ -22,6 +23,8 @@ Quick usage::
 
     safe_proba = clip_proba(raw_proba)      # avoid log(0) in log_loss
     safe_pred  = clip_predictions(y_pred, low=0.0, high=1.0)  # regression range guard
+
+    calibrated = calibrate_model(model, X_cal, y_cal)  # Platt scaling on a held-out set
 
     cv = cross_validate(
         df=train_df,
@@ -365,6 +368,92 @@ def set_seed(seed: int = 42) -> None:
         tf.random.set_seed(seed)
     except ImportError:
         pass
+
+
+# ---------------------------------------------------------------------------
+# M-012: Model calibration
+# ---------------------------------------------------------------------------
+
+
+def calibrate_model(
+    model: "Any",
+    X_cal: "ArrayLike",
+    y_cal: "ArrayLike",
+    method: str = "sigmoid",
+    cv: "int | None" = None,
+) -> "Any":
+    """Calibrate a fitted classifier's probability outputs.
+
+    Wraps :class:`sklearn.calibration.CalibratedClassifierCV` to correct
+    systematic over- or under-confidence in predicted probabilities.  This is
+    especially important for competitions scored on log-loss or Brier score
+    (e.g. CBB), where well-calibrated probabilities matter as much as ranking
+    accuracy.
+
+    The default ``cv=None`` fits the calibration layer on the provided
+    *X_cal* / *y_cal* without refitting the base estimator — the standard
+    pattern after a ``Trainer.run()`` call.  Pass an integer (e.g. ``cv=5``) to
+    instead run cross-validated calibration that refits the base estimator on
+    each fold; this is slower but wastes no training data.
+
+    Method guidance:
+
+    * ``"sigmoid"`` (default) — Platt scaling; well-calibrated on small
+      calibration sets (hundreds of samples), works with any classifier.
+    * ``"isotonic"`` — isotonic regression; more flexible but requires >1 000
+      calibration samples to avoid overfitting.
+
+    Args:
+        model: A fitted sklearn-compatible classifier with a ``predict_proba``
+            or ``decision_function`` method.
+        X_cal: Calibration features, shape ``(n, p)``.  Should be a held-out
+            split **not** used during training.
+        y_cal: Calibration labels, shape ``(n,)``.
+        method: Calibration method — ``"sigmoid"`` (Platt, default) or
+            ``"isotonic"``.
+        cv: Cross-validation strategy passed to ``CalibratedClassifierCV``.
+            ``None`` (default) calibrates on the provided data without
+            refitting the base estimator.  Pass an integer for CV-based
+            calibration (refits the estimator on each fold).
+
+    Returns:
+        A fitted :class:`~sklearn.calibration.CalibratedClassifierCV` that
+        exposes ``predict_proba()``, ``predict()``, and ``classes_`` — a
+        drop-in replacement for the original model.
+
+    Raises:
+        ValueError: If *method* is not ``"sigmoid"`` or ``"isotonic"``.
+
+    Example::
+
+        from kitchen.modeling import calibrate_model, classification_metrics, clip_proba
+
+        train_df, cal_df = train_val_split(df, target_col="target", val_size=0.1)
+        val_df, cal_df   = train_val_split(cal_df, target_col="target", val_size=0.5)
+
+        model = XGBClassifier(**params["model"]).fit(
+            train_df.drop("target", axis=1), train_df["target"]
+        )
+        cal_model = calibrate_model(
+            model,
+            cal_df.drop("target", axis=1),
+            cal_df["target"],
+        )
+        proba = clip_proba(cal_model.predict_proba(val_df.drop("target", axis=1))[:, 1])
+        metrics = classification_metrics(
+            val_df["target"],
+            cal_model.predict(val_df.drop("target", axis=1)),
+            y_proba=proba,
+        )
+    """
+    if method not in ("sigmoid", "isotonic"):
+        raise ValueError(f"method must be 'sigmoid' or 'isotonic', got {method!r}")
+
+    from sklearn.calibration import CalibratedClassifierCV
+
+    calibrator = CalibratedClassifierCV(estimator=model, method=method, cv=cv)
+    calibrator.fit(X_cal, y_cal)
+    return calibrator
 
 
 # ---------------------------------------------------------------------------
