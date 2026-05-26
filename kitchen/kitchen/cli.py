@@ -1872,6 +1872,134 @@ _DASHBOARD_HTML = """\
 """
 
 # ---------------------------------------------------------------------------
+# DVC scaffold templates (--with-dvc)
+# ---------------------------------------------------------------------------
+
+_DVC_YAML = """\
+# DVC pipeline for $name.
+# Run `dvc repro` to execute stages in dependency order, skipping unchanged ones.
+#
+# First-time setup:
+#   pip install kitchen[dvc]
+#   dvc remote modify s3remote url s3://YOUR-BUCKET/dvc
+#   dvc push         # upload processed data and models to your S3 remote
+#   dvc pull         # restore on a new machine or CI runner
+stages:
+
+  # Uncomment and customise for script-driven ingest (custom API, S3 bucket, etc.).
+  # For manual downloads, place files in data/raw/ then run `dvc add data/raw/`.
+  # ingest:
+  #   cmd: python src/ingest/run.py
+  #   deps:
+  #     - src/ingest/run.py
+  #   outs:
+  #     - data/raw/
+
+  features:
+    cmd: python src/features/run.py
+    deps:
+      - src/features/run.py
+      - data/raw/
+    params:
+      - features
+    outs:
+      - data/processed/
+
+  train:
+    cmd: kitchen run train
+    deps:
+      - src/train/run.py
+      - data/processed/
+    params:
+      - model
+    outs:
+      - models/
+
+  evaluate:
+    cmd: kitchen run evaluate
+    deps:
+      - src/evaluate/run.py
+      - models/
+      - data/processed/
+    params:
+      - model
+    metrics:
+      - metrics.json:
+          cache: false
+"""
+
+_DVC_YAML_KAGGLE = """\
+# DVC pipeline for $name.
+# Run `dvc repro` to execute stages in dependency order, skipping unchanged ones.
+#
+# First-time setup:
+#   pip install kitchen[dvc]
+#   dvc remote modify s3remote url s3://YOUR-BUCKET/dvc
+#   dvc push         # upload processed data and models to your S3 remote
+#   dvc pull         # restore on a new machine or CI runner
+stages:
+
+  # Kaggle raw data is pinned by competition slug and re-downloaded on demand
+  # via `kitchen ingest` — no DVC tracking needed for data/raw/.
+
+  features:
+    cmd: python src/features/run.py
+    deps:
+      - src/features/run.py
+      - data/raw/
+    params:
+      - features
+    outs:
+      - data/processed/
+
+  train:
+    cmd: kitchen run train
+    deps:
+      - src/train/run.py
+      - data/processed/
+    params:
+      - model
+    outs:
+      - models/
+
+  evaluate:
+    cmd: kitchen run evaluate
+    deps:
+      - src/evaluate/run.py
+      - models/
+      - data/processed/
+    params:
+      - model
+    metrics:
+      - metrics.json:
+          cache: false
+
+  submit:
+    cmd: kitchen submit
+    deps:
+      - models/
+      - data/raw/
+    outs:
+      - submissions/
+"""
+
+_DVCIGNORE = """\
+# DVC will not track files matching these patterns (same syntax as .gitignore).
+__pycache__/
+*.py[cod]
+.venv/
+mlruns/
+mlruns.db
+"""
+
+_DVC_CONFIG = """\
+[core]
+    remote = s3remote
+[remote "s3remote"]
+    url = s3://YOUR-BUCKET/dvc
+"""
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -2681,6 +2809,10 @@ def check(
         suffix = f"  → {hint}" if hint else ""
         typer.echo(f"  ✗ {label:<26}{suffix}")
 
+    def _warn(label: str, hint: str = "") -> None:
+        suffix = f"  → {hint}" if hint else ""
+        typer.echo(f"  ~ {label:<26}{suffix}")
+
     def _bin_version(name: str) -> str:
         try:
             out = subprocess.check_output([name, "--version"], stderr=subprocess.STDOUT, text=True)
@@ -2698,13 +2830,20 @@ def check(
 
     for name, hint in [
         ("terraform", "needed for `recipes generate`"),
-        ("dvc", "needed for data versioning"),
         ("docker", "needed for `kitchen serve`"),
     ]:
         if shutil.which(name):
             _ok(name, _bin_version(name))
         else:
             _fail(name, hint)
+
+    # DVC: hard-fail only if this project uses it (dvc.yaml present); otherwise soft-warn.
+    if shutil.which("dvc"):
+        _ok("dvc", _bin_version("dvc"))
+    elif Path("dvc.yaml").exists():
+        _fail("dvc", "project uses DVC but binary not found — run `pip install kitchen[dvc]`")
+    else:
+        _warn("dvc", "not installed — run `pip install kitchen[dvc]` to enable data versioning")
 
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "")
     if tracking_uri:
@@ -3230,6 +3369,9 @@ def init(
     ci: bool = typer.Option(
         False, "--ci", help="Scaffold a .github/workflows/train-evaluate.yml CI workflow"
     ),
+    with_dvc: bool = typer.Option(
+        False, "--with-dvc", help="Scaffold dvc.yaml, .dvcignore, .dvc/config and run dvc init"
+    ),
 ) -> None:
     """Scaffold a new kitchen competition project."""
     err = _validate_name(name)
@@ -3256,6 +3398,16 @@ def init(
             err=True,
         )
         raise typer.Exit(1)
+
+    if with_dvc:
+        import shutil as _shutil
+
+        if not _shutil.which("dvc"):
+            typer.echo(
+                "error: --with-dvc requires the dvc binary — run `pip install kitchen[dvc]` first",
+                err=True,
+            )
+            raise typer.Exit(1)
 
     class_name = _to_class_name(name)
     root = Path.cwd() if here else Path.cwd() / name
@@ -3316,8 +3468,37 @@ def init(
             (root / ".github" / "workflows" / "train-evaluate.yml", r(ci_tmpl, name, class_name))
         )
 
+    if with_dvc:
+        dvc_tmpl = _DVC_YAML_KAGGLE if source == "kaggle" else _DVC_YAML
+        files.append((root / "dvc.yaml", r(dvc_tmpl, name, class_name)))
+        files.append((root / ".dvcignore", _DVCIGNORE))
+
     for path, content in files:
         _write(path, content, overwrite)
+
+    if with_dvc:
+        import subprocess as _subprocess
+
+        dvc_dir = root / ".dvc"
+        if not dvc_dir.exists():
+            try:
+                _subprocess.run(
+                    ["dvc", "init"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                typer.echo(f"  dvc    initialized DVC repository in {root}")
+            except _subprocess.CalledProcessError as exc:
+                typer.echo(
+                    f"warning: dvc init failed: {exc.stderr.strip() or exc.stdout.strip()}",
+                    err=True,
+                )
+        else:
+            typer.echo("  dvc    DVC already initialized — skipping dvc init")
+        # Write .dvc/config with S3 remote placeholder (always overwrite default from dvc init)
+        _write(dvc_dir / "config", _DVC_CONFIG, overwrite=True)
 
     cd_target = root.name if not here else "."
     if source == "kaggle":
@@ -3334,6 +3515,16 @@ def init(
         ci_note += "\n  # CI workflow scaffolded → .github/workflows/train-evaluate.yml"
         ci_note += "\n  # Dashboard: in repo Settings → Pages, set source to 'GitHub Actions'"
 
+    dvc_note = ""
+    if with_dvc:
+        dvc_note = (
+            "\n  dvc remote modify s3remote url s3://YOUR-BUCKET/dvc"
+            "  # set your S3 remote"
+            "\n  dvc push                            # upload data/processed/ + models/ to S3"
+            "\n  # dvc pull                          # restore on a new machine"
+            "\n  # dvc repro                         # run full pipeline (skips unchanged stages)"
+        )
+
     typer.echo(f"""
 Done. Next steps:
 
@@ -3347,7 +3538,7 @@ Done. Next steps:
   kitchen run evaluate                # load champion model, compute metrics
   kitchen experiments compare METRIC  # rank runs by metric
   kitchen promote METRIC              # promote best run to the registry
-{submit_step}{ci_note}
+{submit_step}{ci_note}{dvc_note}
 """)
 
 

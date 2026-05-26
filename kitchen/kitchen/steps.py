@@ -1,6 +1,6 @@
 """Abstract base classes defining the contract for project-defined pipeline steps.
 
-Project repos implement these and wire them into dvc.yaml stages:
+Project repos implement these and optionally wire them into dvc.yaml stages (requires ``pip install kitchen[dvc]``):
 
     # src/features/run.py
     from kitchen.steps import FeatureBuilder
