@@ -3425,6 +3425,115 @@ def push(
 
 
 # ---------------------------------------------------------------------------
+# kitchen dvc — add DVC scaffolding to an existing project
+# ---------------------------------------------------------------------------
+
+dvc_app = typer.Typer(help="DVC scaffolding helpers.", no_args_is_help=True)
+app.add_typer(dvc_app, name="dvc")
+
+
+@dvc_app.command("init")
+def dvc_init(
+    params_file: Annotated[
+        str,
+        typer.Option("--params", help="Path to params.yaml (used to detect project name and source)"),
+    ] = "params.yaml",
+    kaggle: Annotated[
+        bool,
+        typer.Option(
+            "--kaggle/--no-kaggle",
+            help="Use the Kaggle DVC template (submit stage, no ingest placeholder)",
+        ),
+    ] = False,
+    overwrite: Annotated[
+        bool, typer.Option("--overwrite", help="Overwrite existing dvc.yaml and .dvcignore")
+    ] = False,
+) -> None:
+    """Add DVC scaffolding (dvc.yaml, .dvcignore, .dvc/config) to an existing project.
+
+    Reads params.yaml for the project name and data source. If params.yaml is
+    not found, falls back to the current directory name and the non-Kaggle template
+    (override with --kaggle).
+
+    Requires the dvc binary: pip install kitchen[dvc]
+    """
+    import shutil as _shutil
+    import subprocess as _subprocess
+
+    if not _shutil.which("dvc"):
+        typer.echo(
+            "error: dvc binary not found — run `pip install kitchen[dvc]` first",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Resolve project name and source from params.yaml, or fall back to cwd name.
+    project_name = Path.cwd().name
+    is_kaggle = kaggle
+    p = Path(params_file)
+    if p.exists():
+        import yaml as _yaml
+
+        try:
+            raw = _yaml.safe_load(p.read_text(encoding="utf-8"))
+            project_name = raw.get("experiment", project_name)
+            if not kaggle:
+                is_kaggle = raw.get("data", {}).get("source") == "kaggle"
+        except Exception:
+            pass  # unparseable params.yaml — use defaults
+    else:
+        typer.echo(
+            f"note: {params_file!r} not found — using directory name {project_name!r} and "
+            f"{'kaggle' if is_kaggle else 'non-kaggle'} template. "
+            "Pass --params or --kaggle to override.",
+        )
+
+    root = Path.cwd()
+    class_name = _to_class_name(project_name)
+
+    typer.echo(f"\nAdding DVC scaffolding to {root}\n")
+
+    dvc_tmpl = _DVC_YAML_KAGGLE if is_kaggle else _DVC_YAML
+    files = [
+        (root / "dvc.yaml", _render(dvc_tmpl, project_name, class_name)),
+        (root / ".dvcignore", _DVCIGNORE),
+    ]
+    for path, content in files:
+        _write(path, content, overwrite)
+
+    dvc_dir = root / ".dvc"
+    if not dvc_dir.exists():
+        try:
+            _subprocess.run(
+                ["dvc", "init"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            typer.echo(f"  dvc    initialized DVC repository in {root}")
+        except _subprocess.CalledProcessError as exc:
+            typer.echo(
+                f"warning: dvc init failed: {exc.stderr.strip() or exc.stdout.strip()}",
+                err=True,
+            )
+    else:
+        typer.echo("  dvc    DVC already initialized — skipping dvc init")
+
+    # Write .dvc/config with S3 remote placeholder (always overwrite dvc init default)
+    _write(dvc_dir / "config", _DVC_CONFIG, overwrite=True)
+
+    typer.echo("""
+Done. Next steps:
+
+  dvc remote modify s3remote url s3://YOUR-BUCKET/dvc  # set your S3 remote
+  dvc push                  # upload data/processed/ + models/ to S3
+  # dvc pull               # restore on a new machine
+  # dvc repro              # run the full pipeline (skips unchanged stages)
+""")
+
+
+# ---------------------------------------------------------------------------
 # Command
 # ---------------------------------------------------------------------------
 

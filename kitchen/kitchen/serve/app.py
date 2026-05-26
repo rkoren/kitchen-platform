@@ -9,7 +9,6 @@ If no predictor is found the /predict endpoint returns 501 Not Implemented.
 """
 
 from fastapi import FastAPI, HTTPException
-from mangum import Mangum
 
 app = FastAPI(title="kitchen-serve", version="0.1.0")
 
@@ -31,4 +30,10 @@ def predict(payload: dict) -> dict:
     return _predict_fn(payload)
 
 
-handler = Mangum(app)
+# Lambda handler — only available when mangum is installed (pip install kitchen[serve])
+try:
+    from mangum import Mangum
+
+    handler = Mangum(app)
+except ImportError:
+    handler = None

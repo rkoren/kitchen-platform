@@ -1716,3 +1716,119 @@ def test_run_features_output_mentions_processed_file(tmp_path, monkeypatch):
     result = runner.invoke(app, ["run", "features"], catch_exceptions=False)
     assert result.exit_code == 0
     assert "features.parquet" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen dvc init (DVC-002b)
+# ---------------------------------------------------------------------------
+
+
+def _dvc_init(tmp_path, monkeypatch, extra_args=None, params_content=None):
+    """Helper: run `kitchen dvc init` with dvc binary and subprocess mocked."""
+    monkeypatch.chdir(tmp_path)
+    if params_content is not None:
+        (tmp_path / "params.yaml").write_text(params_content)
+    args = ["dvc", "init"] + (extra_args or [])
+    with (
+        patch("shutil.which", return_value="/usr/bin/dvc"),
+        patch("subprocess.run"),  # prevent real dvc init
+    ):
+        return runner.invoke(app, args, catch_exceptions=False)
+
+
+_PARAMS_LOCAL = """\
+experiment: my-project
+data:
+  source: local
+  path: /data
+"""
+
+_PARAMS_KAGGLE = """\
+experiment: my-competition
+data:
+  source: kaggle
+  competition: spaceship-titanic
+"""
+
+
+def test_dvc_init_creates_dvc_yaml(tmp_path, monkeypatch):
+    """kitchen dvc init writes dvc.yaml into the current directory."""
+    _dvc_init(tmp_path, monkeypatch, params_content=_PARAMS_LOCAL)
+    assert (tmp_path / "dvc.yaml").exists()
+
+
+def test_dvc_init_creates_dvcignore(tmp_path, monkeypatch):
+    """kitchen dvc init writes .dvcignore into the current directory."""
+    _dvc_init(tmp_path, monkeypatch, params_content=_PARAMS_LOCAL)
+    assert (tmp_path / ".dvcignore").exists()
+
+
+def test_dvc_init_creates_dvc_config(tmp_path, monkeypatch):
+    """kitchen dvc init writes .dvc/config with the S3 remote placeholder."""
+    _dvc_init(tmp_path, monkeypatch, params_content=_PARAMS_LOCAL)
+    config = (tmp_path / ".dvc" / "config").read_text()
+    assert "s3remote" in config
+    assert "YOUR-BUCKET" in config
+
+
+def test_dvc_init_non_kaggle_template_by_default(tmp_path, monkeypatch):
+    """Non-kaggle params.yaml → non-kaggle dvc.yaml (ingest placeholder, no submit stage)."""
+    _dvc_init(tmp_path, monkeypatch, params_content=_PARAMS_LOCAL)
+    content = (tmp_path / "dvc.yaml").read_text()
+    assert "# ingest:" in content
+    assert "submit:" not in content
+
+
+def test_dvc_init_kaggle_template_from_params(tmp_path, monkeypatch):
+    """Kaggle source in params.yaml → Kaggle dvc.yaml (submit stage, no ingest placeholder)."""
+    _dvc_init(tmp_path, monkeypatch, params_content=_PARAMS_KAGGLE)
+    content = (tmp_path / "dvc.yaml").read_text()
+    assert "submit:" in content
+    assert "# ingest:" not in content
+
+
+def test_dvc_init_kaggle_flag_overrides_params(tmp_path, monkeypatch):
+    """--kaggle flag forces Kaggle template regardless of params.yaml source."""
+    _dvc_init(tmp_path, monkeypatch, extra_args=["--kaggle"], params_content=_PARAMS_LOCAL)
+    content = (tmp_path / "dvc.yaml").read_text()
+    assert "submit:" in content
+
+
+def test_dvc_init_no_params_falls_back_to_cwd_name(tmp_path, monkeypatch):
+    """Without params.yaml the project name falls back to the cwd directory name."""
+    _dvc_init(tmp_path, monkeypatch)  # no params_content → no params.yaml written
+    content = (tmp_path / "dvc.yaml").read_text()
+    # Template header should contain the directory name (tmp_path.name), not a literal '$name'
+    assert "$name" not in content
+
+
+def test_dvc_init_fails_if_binary_missing(tmp_path, monkeypatch):
+    """kitchen dvc init exits 1 with a helpful message when dvc is not on PATH."""
+    monkeypatch.chdir(tmp_path)
+    with patch("shutil.which", return_value=None):
+        result = runner.invoke(app, ["dvc", "init"])
+    assert result.exit_code != 0
+    assert "pip install kitchen[dvc]" in result.output
+
+
+def test_dvc_init_skips_existing_files_by_default(tmp_path, monkeypatch):
+    """Existing dvc.yaml is not overwritten unless --overwrite is passed."""
+    (tmp_path / "params.yaml").write_text(_PARAMS_LOCAL)
+    sentinel = "# existing content\n"
+    (tmp_path / "dvc.yaml").write_text(sentinel)
+    _dvc_init(tmp_path, monkeypatch, params_content=None)  # params.yaml already written
+    assert (tmp_path / "dvc.yaml").read_text() == sentinel
+
+
+def test_dvc_init_overwrite_replaces_existing_dvc_yaml(tmp_path, monkeypatch):
+    """--overwrite replaces an existing dvc.yaml."""
+    (tmp_path / "dvc.yaml").write_text("# old\n")
+    _dvc_init(tmp_path, monkeypatch, extra_args=["--overwrite"], params_content=_PARAMS_LOCAL)
+    content = (tmp_path / "dvc.yaml").read_text()
+    assert "features:" in content
+
+
+def test_dvc_init_output_mentions_s3_remote(tmp_path, monkeypatch):
+    """Next-steps output tells the user to set the S3 remote URL."""
+    result = _dvc_init(tmp_path, monkeypatch, params_content=_PARAMS_LOCAL)
+    assert "s3://YOUR-BUCKET" in result.output

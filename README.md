@@ -133,7 +133,8 @@ def predict(payload: dict) -> dict:
 #### `params.yaml` schema
 
 ```yaml
-experiment: my-project          # MLflow experiment name
+experiment: my-project          # MLflow experiment name (required)
+run_name: baseline-xgb          # optional label for each MLflow run
 
 data:
   source: kaggle                # kaggle | s3 | local
@@ -156,15 +157,25 @@ monitor:
   report_key: monitoring/drift_report.html
 
 submission:
-  sample_file: SampleSubmissionStage1.csv   # relative to data/raw/
-  id_col: ID
-  target_col: Pred
-  competition: my-competition               # Kaggle slug; omit to skip upload
+  sample_submission: SampleSubmission.csv  # relative to data/raw/
+  id_col: Id
+  target_col: target
+  competition: my-competition              # Kaggle slug; omit to skip upload
   message: "baseline run"
-  fetch_lb_score: false                     # true to poll for public LB score after upload
+
+metrics_file: metrics.json      # output path for `kitchen run evaluate` and `kitchen report`
+
+# CI gate thresholds — kitchen report exits non-zero if any threshold is breached.
+# Use a plain float as a minimum (higher-is-better) or a {min:, max:} object.
+thresholds:
+  val_accuracy: 0.80            # shorthand: fail if val_accuracy < 0.80
+  log_loss:                     # explicit: fail if log_loss > 0.5
+    max: 0.5
 ```
 
-The submission step (`kitchen.submit.log_submission`) validates the CSV against the sample submission, attaches it as an artifact to the active MLflow run, and (when `competition` is set) uploads to Kaggle and optionally polls for the public leaderboard score — logging it as `lb_score` on the same run. This closes the loop: every MLflow run records LOTO Brier, the submission file, and the actual LB score together.
+**Framework-owned fields** (`experiment`, `data`, `mlflow`, `monitor`, `submission`, `run_name`, `metrics_file`, `thresholds`) are validated by `KitchenConfig` when `kitchen validate` or `kitchen run *` commands load `params.yaml`. All other top-level keys (`train`, `features`, `model`, `evaluate`, etc.) are project-defined and passed through without validation.
+
+The submission step (`kitchen.submit.log_submission`) validates the CSV against the sample submission, attaches it as an artifact to the active MLflow run, and (when `competition` is set) uploads to Kaggle — logging the public leaderboard score as `lb_score` on the same run. This closes the loop: every MLflow run records your local metric, the submission file, and the actual LB score together.
 
 ---
 
