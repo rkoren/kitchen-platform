@@ -34,8 +34,9 @@ kitchen init spaceship-titanic \
 |---|---|---|
 | `--source` | `local` | Data source: `local`, `kaggle`, or `s3` |
 | `--competition` | — | Kaggle competition slug (required when `--source kaggle`) |
-| `--template` | `none` | Starter model: `none`, `baseline-xgb`, `baseline-lr` |
+| `--template` | `none` | Starter model: `none`, `baseline-xgb`, `baseline-lr`, `baseline-rf`, `binary-cls`, `multiclass-cls`, `regression` |
 | `--ci` | off | Scaffold `.github/workflows/train-evaluate.yml` |
+| `--with-dvc` | off | Scaffold `dvc.yaml`, `.dvcignore`, `.dvc/config` and run `dvc init` (requires `pip install kitchen[dvc]`) |
 | `--here` | off | Scaffold into the current directory instead of a new subdirectory |
 
 ## Set up credentials
@@ -64,32 +65,44 @@ Data is downloaded to `data/raw/` as configured in `params.yaml`.
 
 ## Implement the three required files
 
-| File | What to implement |
+| File | Function signature |
 |---|---|
-| `src/features/run.py` | `build(raw_df) -> df` — feature engineering |
-| `src/train/run.py` | `fit(df, params) -> model` — model training |
-| `src/evaluate/run.py` | `evaluate(model, df) -> dict` — metrics |
+| `src/features/run.py` | `build(params: dict, store: DataStore) -> None` |
+| `src/train/run.py` | `train(params: dict, store: DataStore, tracker: Tracker) -> model` |
+| `src/evaluate/run.py` | `evaluate(model, params: dict, store: DataStore) -> dict[str, float]` |
 
-The scaffold includes a working stub for each file. If you passed `--template baseline-xgb` or `--template baseline-lr`, `src/train/run.py` already has a runnable baseline.
+The scaffold includes a working stub for each file. If you passed `--template baseline-xgb`, `--template baseline-lr`, or another template, `src/train/run.py` already has a runnable baseline.
 
 ## Run experiments
 
 ```bash
+# Build features — raw data → data/processed/
+kitchen run features
+
 # Train — builds features, fits the model, logs everything to MLflow
 kitchen run train
 
+# Train and auto-promote if this run beats the current champion
+kitchen run train --auto-promote --promote-metric val_accuracy
+
 # Evaluate — loads the champion model, computes metrics, writes metrics.json
 kitchen run evaluate
+```
 
-# Inspect runs
-kitchen experiments compare val_accuracy
+## Inspect runs and manage the champion
 
-# Promote the best run to the model registry
+```bash
+# One-screen project summary: champion metrics, last 5 runs, threshold pass/fail
+kitchen status
+
+# Rank all runs by metric; [C] = registered champion, ★ = metric leader
+kitchen leaderboard
+
+# Manually promote the best run to the model registry
 kitchen promote val_accuracy
 
-# View MLflow UI
-mlflow ui --backend-store-uri sqlite:///mlruns.db
-# Open http://localhost:5000
+# Open the MLflow UI in your browser (starts a local server for SQLite tracking)
+kitchen ui
 ```
 
 ## Generate a Kaggle submission
@@ -99,6 +112,18 @@ kitchen submit
 ```
 
 This validates the submission file (columns, row count, nulls, duplicate IDs) before uploading. Pass `--wait` to poll for the public leaderboard score after upload.
+
+## Publish results and view the dashboard
+
+```bash
+# Publish current run metrics to the results branch as results/<sha>.json
+kitchen push
+
+# Open the GitHub Pages dashboard in your browser
+kitchen open
+```
+
+`kitchen push` can be run locally after any training run — no CI trigger required. The dashboard updates as results accumulate.
 
 ## View the report
 
