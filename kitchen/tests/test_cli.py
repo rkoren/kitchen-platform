@@ -1374,6 +1374,66 @@ def test_init_ci_kaggle_deploy_pages_links_summary(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# No-raw-data CI check (DVC-009)
+# ---------------------------------------------------------------------------
+
+_RAW_DATA_STEP_NAME = "Check for raw data in git"
+
+
+def _ci_train_steps(tmp_path, kaggle=False):
+    """Scaffold --ci project and return the train-evaluate job steps list."""
+    args = ["init", "my-comp", "--ci"]
+    if kaggle:
+        args += ["--source", "kaggle", "--competition", "titanic"]
+    runner.invoke(app, args, catch_exceptions=False)
+    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    return data["jobs"]["train-evaluate"]["steps"]
+
+
+def test_ci_workflow_has_raw_data_check(tmp_path, monkeypatch):
+    """Non-Kaggle CI workflow includes the no-raw-data check step."""
+    monkeypatch.chdir(tmp_path)
+    steps = _ci_train_steps(tmp_path)
+    names = [s.get("name", "") for s in steps]
+    assert _RAW_DATA_STEP_NAME in names
+
+
+def test_ci_kaggle_workflow_has_raw_data_check(tmp_path, monkeypatch):
+    """Kaggle CI workflow includes the no-raw-data check step."""
+    monkeypatch.chdir(tmp_path)
+    steps = _ci_train_steps(tmp_path, kaggle=True)
+    names = [s.get("name", "") for s in steps]
+    assert _RAW_DATA_STEP_NAME in names
+
+
+def test_ci_raw_data_check_runs_before_python_setup(tmp_path, monkeypatch):
+    """The raw-data check appears before setup-python so it fails fast with no install cost."""
+    monkeypatch.chdir(tmp_path)
+    steps = _ci_train_steps(tmp_path)
+    names = [s.get("name", "") or str(s.get("uses", "")) for s in steps]
+    check_idx = next(i for i, n in enumerate(names) if _RAW_DATA_STEP_NAME in n)
+    setup_idx = next(i for i, n in enumerate(names) if "setup-python" in n)
+    assert check_idx < setup_idx, "Raw-data check should run before setup-python"
+
+
+def test_ci_raw_data_check_uses_git_ls_files(tmp_path, monkeypatch):
+    """The check step uses git ls-files to inspect tracked files in data/raw/."""
+    monkeypatch.chdir(tmp_path)
+    steps = _ci_train_steps(tmp_path)
+    check_step = next(s for s in steps if s.get("name", "") == _RAW_DATA_STEP_NAME)
+    assert "git ls-files" in check_step["run"]
+    assert "data/raw/" in check_step["run"]
+
+
+def test_ci_raw_data_check_excludes_gitkeep(tmp_path, monkeypatch):
+    """The check step filters out .gitkeep so the scaffold placeholder doesn't trigger it."""
+    monkeypatch.chdir(tmp_path)
+    steps = _ci_train_steps(tmp_path)
+    check_step = next(s for s in steps if s.get("name", "") == _RAW_DATA_STEP_NAME)
+    assert ".gitkeep" in check_step["run"]
+
+
+# ---------------------------------------------------------------------------
 # kitchen check — DVC context-aware behaviour (DVC-010)
 # ---------------------------------------------------------------------------
 
@@ -1486,13 +1546,6 @@ def test_init_with_dvc_kaggle_no_ingest_placeholder(tmp_path, monkeypatch):
     assert "# ingest:" not in content
 
 
-def test_init_with_dvc_features_stage_uses_python_cmd(tmp_path, monkeypatch):
-    """The features stage uses `python src/features/run.py` (no kitchen run features yet)."""
-    _init_with_dvc(tmp_path, monkeypatch)
-    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
-    assert "cmd: python src/features/run.py" in content
-
-
 def test_init_with_dvc_train_stage_uses_kitchen_run(tmp_path, monkeypatch):
     """The train stage uses `kitchen run train` as its cmd."""
     _init_with_dvc(tmp_path, monkeypatch)
@@ -1559,3 +1612,107 @@ def test_init_with_dvc_output_mentions_remote(tmp_path, monkeypatch):
     """The next-steps output includes a dvc remote modify instruction."""
     result = _init_with_dvc(tmp_path, monkeypatch)
     assert "dvc remote modify" in result.output
+
+
+def test_init_with_dvc_features_stage_uses_kitchen_run_features(tmp_path, monkeypatch):
+    """dvc.yaml features stage cmd is `kitchen run features` not `python src/features/run.py`."""
+    _init_with_dvc(tmp_path, monkeypatch)
+    content = (tmp_path / "my-project" / "dvc.yaml").read_text()
+    assert "cmd: kitchen run features" in content
+    assert "python src/features/run.py" not in content
+
+
+# ---------------------------------------------------------------------------
+# kitchen run features (DVC-011)
+# ---------------------------------------------------------------------------
+
+FEATURES_PARAMS = """\
+experiment: test-project
+features:
+  raw_file: train.csv
+  processed_file: features.parquet
+"""
+
+
+def _make_features_mock(monkeypatch, raises=None):
+    """Inject a fake src.features.run module; return the recorded calls list."""
+    calls = []
+
+    def fake_build(params, store):
+        if raises is not None:
+            raise raises
+        calls.append((params, store))
+
+    fake_mod = type(sys)("src.features.run")
+    fake_mod.build = fake_build
+    monkeypatch.setitem(sys.modules, "src.features.run", fake_mod)
+    return calls
+
+
+def test_run_features_missing_params(tmp_path, monkeypatch):
+    """run features exits non-zero when params file is missing."""
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["run", "features", "--params", "missing.yaml"])
+    assert result.exit_code != 0
+    assert "not found" in result.output
+
+
+def test_run_features_invokes_build(tmp_path, monkeypatch):
+    """run features calls build(params, store) from src.features.run."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(FEATURES_PARAMS)
+    calls = _make_features_mock(monkeypatch)
+    result = runner.invoke(app, ["run", "features"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert len(calls) == 1
+
+
+def test_run_features_custom_params(tmp_path, monkeypatch):
+    """run features --params custom.yaml reads the specified file."""
+    monkeypatch.chdir(tmp_path)
+    custom = tmp_path / "custom.yaml"
+    custom.write_text(FEATURES_PARAMS)
+    calls = _make_features_mock(monkeypatch)
+    result = runner.invoke(app, ["run", "features", "--params", "custom.yaml"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert len(calls) == 1
+
+
+def test_run_features_missing_src_module(tmp_path, monkeypatch):
+    """run features exits non-zero with a helpful message when src.features.run is absent."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(FEATURES_PARAMS)
+
+    real_import = builtins.__import__
+
+    def blocking_import(name, *args, **kwargs):
+        if name == "src.features.run":
+            raise ModuleNotFoundError(f"No module named '{name}'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocking_import)
+    monkeypatch.delitem(sys.modules, "src.features.run", raising=False)
+
+    result = runner.invoke(app, ["run", "features"])
+    assert result.exit_code != 0
+    assert "src/features/run.py" in result.output
+
+
+def test_run_features_not_implemented_error(tmp_path, monkeypatch):
+    """run features exits non-zero with a clear message when build() is a stub."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(FEATURES_PARAMS)
+    _make_features_mock(monkeypatch, raises=NotImplementedError())
+    result = runner.invoke(app, ["run", "features"])
+    assert result.exit_code != 0
+    assert "not yet implemented" in result.output
+
+
+def test_run_features_output_mentions_processed_file(tmp_path, monkeypatch):
+    """run features echoes the name of the processed output file on success."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(FEATURES_PARAMS)
+    _make_features_mock(monkeypatch)
+    result = runner.invoke(app, ["run", "features"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert "features.parquet" in result.output

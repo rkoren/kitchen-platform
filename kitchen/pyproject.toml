@@ -35,10 +35,6 @@ dependencies = [
     # Experiment tracking
     "mlflow>=3.0",
     "boto3>=1.34",
-    # Serving
-    "fastapi>=0.110",
-    "uvicorn>=0.29",
-    "mangum>=0.17",
     # Monitoring
     "evidently>=0.7",
     # Orchestration
@@ -56,11 +52,13 @@ dvc = [
 ]
 serve = [
     "fastapi>=0.110",
+    "uvicorn>=0.29",
     "mangum>=0.17",
 ]
 dev = [
     "pytest>=8.0",
     "pytest-cov",
+    "fastapi>=0.110",  # for test_serve.py TestClient
     "httpx",
     "ruff",
 ]
