@@ -3,6 +3,7 @@
 Usage:
     kitchen init <name>                          # scaffold a new project
     kitchen check                                # pre-flight env/credential check
+    kitchen run features                         # raw data → processed features (standalone)
     kitchen run train                            # features → train → log to MLflow
     kitchen run train --auto-promote \
         --promote-metric <m> [--lower-is-better] # train + auto-promote if new run wins
@@ -1445,6 +1446,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check for raw data in git
+        run: |
+          FILES=$$(git ls-files data/raw/ | grep -v '\\.gitkeep' || true)
+          if [ -n "$$FILES" ]; then
+            echo "Raw data files found in git — remove with git rm --cached and track with DVC instead:"
+            echo "$$FILES"
+            exit 1
+          fi
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -1574,6 +1584,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check for raw data in git
+        run: |
+          FILES=$$(git ls-files data/raw/ | grep -v '\\.gitkeep' || true)
+          if [ -n "$$FILES" ]; then
+            echo "Raw data files found in git — remove with git rm --cached and track with DVC instead:"
+            echo "$$FILES"
+            exit 1
+          fi
 
       - uses: actions/setup-python@v5
         with:
@@ -1896,7 +1915,7 @@ stages:
   #     - data/raw/
 
   features:
-    cmd: python src/features/run.py
+    cmd: kitchen run features
     deps:
       - src/features/run.py
       - data/raw/
@@ -1943,7 +1962,7 @@ stages:
   # via `kitchen ingest` — no DVC tracking needed for data/raw/.
 
   features:
-    cmd: python src/features/run.py
+    cmd: kitchen run features
     deps:
       - src/features/run.py
       - data/raw/
@@ -2600,6 +2619,64 @@ def submit(
 
 run_app = typer.Typer(help="Run pipeline stages.", no_args_is_help=True)
 app.add_typer(run_app, name="run")
+
+
+@run_app.command("features")
+def run_features(
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
+) -> None:
+    """Run the feature engineering step: raw → processed features.
+
+    Loads src/features/run.py from the project root, calls build(params, store),
+    and writes the processed DataFrame to data/processed/.
+
+    Note: `kitchen run train` already runs features internally before training.
+    Use this command to run the features step standalone (e.g. as a DVC stage
+    or to inspect the processed output before committing to a full train run).
+    """
+    import sys
+
+    import yaml
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    with open(path, encoding="utf-8") as f:
+        params = yaml.safe_load(f)
+
+    from kitchen.store import DataStore  # noqa: PLC0415
+
+    try:
+        from src.features.run import build  # project-provided  # noqa: PLC0415
+    except ModuleNotFoundError as exc:
+        typer.echo(
+            f"error: {exc}\nRun from the project root and make sure src/features/run.py is implemented.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        build(params, DataStore())
+    except NotImplementedError:
+        typer.echo(
+            "error: src/features/run.py is scaffolded but not yet implemented — fill in build().",
+            err=True,
+        )
+        raise typer.Exit(1)
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    processed = params.get("features", {}).get("processed_file", "features.parquet")
+    typer.echo(f"Features built → data/processed/{processed}")
 
 
 @run_app.command("train")

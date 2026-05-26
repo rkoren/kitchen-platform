@@ -15,3 +15,16 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=500]
+
+  - repo: local
+    hooks:
+      - id: no-raw-data
+        name: no raw data in git
+        language: system
+        pass_filenames: false
+        entry: >-
+          bash -c
+          'FILES=$(git ls-files "data/raw/" | grep -v "\.gitkeep" || true);
+          if [ -n "$FILES" ]; then
+          echo "Raw data files staged — remove with: git rm --cached <file>";
+          echo "$FILES"; exit 1; fi'
