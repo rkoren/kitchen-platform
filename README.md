@@ -1,8 +1,11 @@
 # kitchen-platform
 
-A reusable MLOps platform to work on Kaggle projects. Two modules work together: **recipes** let you spin up resources from YAML specs and **kitchen** is a framework repos install to build ML pipelines.
+Platform to work on ML competitions or iteratively improve and deploy models. **recipes** lets you spin up cloud resources from YAML specs, and **kitchen** is the framework that repos can install to build and deploy with.
 
-See [`docs/backlog.md`](docs/backlog.md) for the current roadmap, priorities, and milestone plan.
+The workflow has two modes:
+
+- **Exploratory mode** — `kitchen.experiment()` in a notebook, `DataStore.preview()`, one-off overrides (`kitchen run train --override model.max_depth=6`), and `kitchen diff` to understand why one run beat another
+- **Production mode** — `kitchen run features/train/evaluate`, `kitchen run train --auto-promote`, CI-triggered pipelines, Lambda serving via `predictor.py`
 
 ---
 
