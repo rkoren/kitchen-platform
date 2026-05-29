@@ -109,3 +109,101 @@ def test_load_parquet_models_stage_missing_raises_with_command(tmp_path):
     store = DataStore(root=tmp_path)
     with pytest.raises(FileNotFoundError, match="kitchen run train"):
         store.load_parquet("model.parquet", stage="models")
+
+
+# ---------------------------------------------------------------------------
+# DataStore.preview
+# ---------------------------------------------------------------------------
+
+
+def test_preview_parquet_in_processed(tmp_path):
+    store = DataStore(root=tmp_path)
+    df = pd.DataFrame({"a": range(20)})
+    store.save_parquet(df, "features.parquet")
+    result = store.preview("features.parquet")
+    assert len(result) == 5
+    pd.testing.assert_frame_equal(result, df.head(5))
+
+
+def test_preview_csv_in_raw(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.raw_dir.mkdir(parents=True)
+    rows = "\n".join(["a,b"] + [f"{i},{i*2}" for i in range(10)])
+    (store.raw_dir / "data.csv").write_text(rows)
+    result = store.preview("data.csv")
+    assert len(result) == 5
+
+
+def test_preview_custom_n(tmp_path):
+    store = DataStore(root=tmp_path)
+    df = pd.DataFrame({"x": range(20)})
+    store.save_parquet(df, "f.parquet")
+    result = store.preview("f.parquet", n=3)
+    assert len(result) == 3
+
+
+def test_preview_processed_takes_priority_over_raw(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.raw_dir.mkdir(parents=True)
+    (store.raw_dir / "data.csv").write_text("x\n99\n98\n")
+    proc_df = pd.DataFrame({"x": [1, 2, 3, 4, 5, 6]})
+    store.save_parquet(proc_df, "data.parquet")
+    # Two different filenames — put the same name in both stages
+    store.raw_dir.mkdir(parents=True, exist_ok=True)
+    (store.raw_dir / "data.parquet").write_bytes(
+        (store.processed_dir / "data.parquet").read_bytes()
+    )
+    # Write a different frame to raw so we can tell them apart
+    import io
+
+    raw_df = pd.DataFrame({"x": [999]})
+    buf = io.BytesIO()
+    raw_df.to_parquet(buf)
+    (store.raw_dir / "data.parquet").write_bytes(buf.getvalue())
+
+    with pytest.warns(UserWarning, match="both processed/ and raw/"):
+        result = store.preview("data.parquet")
+    pd.testing.assert_frame_equal(result, proc_df.head(5))
+
+
+def test_preview_warns_when_in_both_stages(tmp_path):
+    store = DataStore(root=tmp_path)
+    df = pd.DataFrame({"v": range(10)})
+    store.save_parquet(df, "features.parquet")
+    store.raw_dir.mkdir(parents=True, exist_ok=True)
+    import io
+
+    buf = io.BytesIO()
+    df.to_parquet(buf)
+    (store.raw_dir / "features.parquet").write_bytes(buf.getvalue())
+
+    with pytest.warns(UserWarning, match="returning processed/ copy"):
+        store.preview("features.parquet")
+
+
+def test_preview_not_found_raises_with_listing(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.save_parquet(pd.DataFrame({"a": [1]}), "other.parquet")
+    store.raw_dir.mkdir(parents=True, exist_ok=True)
+    (store.raw_dir / "train.csv").write_text("a\n1\n")
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        store.preview("missing.parquet")
+    msg = str(exc_info.value)
+    assert "missing.parquet" in msg
+    assert "other.parquet" in msg
+    assert "train.csv" in msg
+
+
+def test_preview_not_found_no_data_dirs(tmp_path):
+    store = DataStore(root=tmp_path)
+    with pytest.raises(FileNotFoundError, match="no data files found"):
+        store.preview("anything.csv")
+
+
+def test_preview_unsupported_extension(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.raw_dir.mkdir(parents=True)
+    (store.raw_dir / "data.json").write_text("{}")
+    with pytest.raises(ValueError, match="Unsupported file extension"):
+        store.preview("data.json")

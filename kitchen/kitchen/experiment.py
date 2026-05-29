@@ -1,12 +1,16 @@
-"""Notebook-friendly MLflow experiment context manager.
+"""Notebook-friendly MLflow helpers: experiment() and init_run().
 
 Usage::
 
+    # Ad-hoc metrics without a Trainer class:
     import kitchen
     with kitchen.experiment("my-project") as run:
-        run.log(val_accuracy=0.81, accuracy=0.79)
-        run.log_params(max_depth=6, eta=0.05)
-        run.set_tag("note", "first baseline")
+        run.log(val_accuracy=0.81)
+        run.log_params(max_depth=6)
+
+    # With a project-defined Trainer subclass:
+    with kitchen.init_run(params) as tracker:
+        MyTrainer().run(store, tracker, params)
 """
 
 from __future__ import annotations
@@ -20,7 +24,13 @@ from typing import Any
 
 import mlflow
 
-from kitchen.tracking import _flatten, configure_from_env, init_experiment, log_run_context
+from kitchen.tracking import (
+    Tracker,
+    _flatten,
+    configure_from_env,
+    init_experiment,
+    log_run_context,
+)
 
 
 class ExperimentRun:
@@ -118,3 +128,74 @@ def experiment(
             mlflow.log_params(_flatten(params))
         log_run_context(params=params)
         yield ExperimentRun(active_run)
+
+
+@contextlib.contextmanager
+def init_run(
+    params: dict[str, Any] | None = None,
+    *,
+    run_name: str | None = None,
+) -> Generator[Tracker, None, None]:
+    """Context manager that opens a tracked MLflow run and yields a Tracker.
+
+    Designed for notebook use with project-defined Trainer subclasses:
+
+        params = yaml.safe_load(open("params.yaml"))
+        store = DataStore()
+        with kitchen.init_run(params) as tracker:
+            MyTrainer().run(store, tracker, params)
+
+    The yielded Tracker holds an active MLflow run, so Trainer.run() detects
+    it and logs into the existing run rather than opening a nested one.
+
+    When params is None, auto-discovers and loads params.yaml by searching the
+    current directory and its parents. Falls back to sqlite:///mlruns.db if
+    MLflow is unreachable — never raises in a notebook context.
+
+    Precedence for tracking URI: env var > params mlflow section > sqlite:///mlruns.db.
+
+    Args:
+        params: project params dict; auto-discovers and loads params.yaml when None.
+        run_name: optional display name for this MLflow run.
+
+    Yields:
+        Tracker configured for the project's MLflow experiment.
+    """
+    if params is None:
+        params_yaml = _find_params_yaml(Path.cwd())
+        if params_yaml is not None:
+            _seed_env_from_params_yaml(params_yaml)
+            try:
+                import yaml
+
+                with open(params_yaml, encoding="utf-8") as f:
+                    params = yaml.safe_load(f) or {}
+            except Exception:
+                params = {}
+        else:
+            params = {}
+    else:
+        mlflow_cfg = params.get("mlflow", {}) or {}
+        uri = mlflow_cfg.get("tracking_uri")
+        bucket = mlflow_cfg.get("artifact_bucket")
+        if uri and not os.environ.get("MLFLOW_TRACKING_URI"):
+            os.environ["MLFLOW_TRACKING_URI"] = uri
+        if bucket and not os.environ.get("MLFLOW_ARTIFACT_BUCKET"):
+            os.environ["MLFLOW_ARTIFACT_BUCKET"] = bucket
+
+    experiment_name = params.get("experiment", "default")
+
+    try:
+        configure_from_env()
+        init_experiment(experiment_name)
+    except Exception as exc:
+        warnings.warn(
+            f"MLflow setup failed ({exc}); falling back to sqlite:///mlruns.db",
+            stacklevel=2,
+        )
+        mlflow.set_tracking_uri("sqlite:///mlruns.db")
+        mlflow.set_experiment(experiment_name)
+
+    tracker = Tracker(experiment_name)
+    with tracker.run(run_name=run_name, params=params):
+        yield tracker

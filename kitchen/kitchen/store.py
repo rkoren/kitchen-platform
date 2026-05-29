@@ -10,6 +10,7 @@ Usage::
     df = store.load_parquet("teams.parquet")
 """
 
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -77,3 +78,48 @@ class DataStore:
             cmd = _STAGE_COMMAND.get(stage, f"kitchen run {stage}")
             raise FileNotFoundError(f"{path} not found — run `{cmd}` first")
         return pd.read_parquet(path)
+
+    def preview(self, filename: str, n: int = 5) -> pd.DataFrame:
+        """Return the first n rows of a file, searching processed/ then raw/.
+
+        If the file exists in both stages, processed/ is returned and a warning
+        is emitted. Raises FileNotFoundError with a listing of available files
+        in both stages if the file is not found in either.
+
+        Supported formats: .csv, .parquet.
+        """
+        processed_path = self.processed_dir / filename
+        raw_path = self.raw_dir / filename
+
+        if processed_path.exists():
+            if raw_path.exists():
+                warnings.warn(
+                    f"{filename!r} found in both processed/ and raw/; returning processed/ copy",
+                    stacklevel=2,
+                )
+            return self._preview_read(processed_path, n)
+
+        if raw_path.exists():
+            return self._preview_read(raw_path, n)
+
+        available: list[str] = []
+        for stage_dir, label in [(self.processed_dir, "processed"), (self.raw_dir, "raw")]:
+            if stage_dir.is_dir():
+                names = sorted(p.name for p in stage_dir.iterdir() if p.is_file())
+                if names:
+                    available.append(f"  {label}/: {', '.join(names)}")
+        detail = "\n".join(available) or "  (no data files found)"
+        raise FileNotFoundError(
+            f"{filename!r} not found in data/processed/ or data/raw/.\nAvailable files:\n{detail}"
+        )
+
+    @staticmethod
+    def _preview_read(path: Path, n: int) -> pd.DataFrame:
+        suffix = path.suffix.lower()
+        if suffix == ".parquet":
+            return pd.read_parquet(path).head(n)
+        if suffix == ".csv":
+            return pd.read_csv(path).head(n)
+        raise ValueError(
+            f"Unsupported file extension for preview: {path.suffix!r}. Supported: .csv, .parquet"
+        )
