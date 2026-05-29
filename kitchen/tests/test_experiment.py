@@ -13,6 +13,7 @@ from kitchen.experiment import (
     _find_params_yaml,
     _seed_env_from_params_yaml,
     experiment,
+    init_run,
 )
 
 # ── _find_params_yaml ─────────────────────────────────────────────────────────
@@ -220,3 +221,141 @@ def test_experiment_env_var_wins_over_params_yaml(tmp_path, monkeypatch):
 def test_kitchen_experiment_is_callable():
     """kitchen.experiment should be the function, not the module."""
     assert callable(kitchen.experiment)
+
+
+# ── init_run() ────────────────────────────────────────────────────────────────
+
+
+def _make_tracker_mock():
+    """Return a mock Tracker whose .run() context manager yields an active_run."""
+    tracker = MagicMock()
+    active_run = MagicMock()
+    active_run.info.run_id = "init-run-id"
+    tracker.run.return_value.__enter__ = MagicMock(return_value=active_run)
+    tracker.run.return_value.__exit__ = MagicMock(return_value=False)
+    return tracker
+
+
+def test_init_run_yields_tracker():
+    mock_tracker = _make_tracker_mock()
+    with (
+        patch("kitchen.experiment.mlflow"),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker", return_value=mock_tracker),
+    ):
+        with init_run({"experiment": "proj"}) as tracker:
+            assert tracker is mock_tracker
+
+
+def test_init_run_opens_tracker_run_with_params():
+    mock_tracker = _make_tracker_mock()
+    params = {"experiment": "proj", "model": {"depth": 4}}
+    with (
+        patch("kitchen.experiment.mlflow"),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker", return_value=mock_tracker),
+    ):
+        with init_run(params, run_name="nb-trial"):
+            mock_tracker.run.assert_called_once_with(run_name="nb-trial", params=params)
+
+
+def test_init_run_uses_experiment_from_params():
+    mock_tracker = _make_tracker_mock()
+    with (
+        patch("kitchen.experiment.mlflow"),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker") as MockTracker,
+    ):
+        MockTracker.return_value = mock_tracker
+        with init_run({"experiment": "my-cbb"}):
+            MockTracker.assert_called_once_with("my-cbb")
+
+
+def test_init_run_defaults_to_default_experiment_when_no_params():
+    mock_tracker = _make_tracker_mock()
+    with (
+        patch("kitchen.experiment.mlflow"),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker") as MockTracker,
+    ):
+        MockTracker.return_value = mock_tracker
+        with init_run():
+            MockTracker.assert_called_once_with("default")
+
+
+def test_init_run_seeds_tracking_uri_from_params_dict(monkeypatch):
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    mock_tracker = _make_tracker_mock()
+    params = {"experiment": "proj", "mlflow": {"tracking_uri": "http://from-dict:5000"}}
+    with (
+        patch("kitchen.experiment.mlflow"),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker", return_value=mock_tracker),
+    ):
+        with init_run(params):
+            pass
+    assert os.environ.get("MLFLOW_TRACKING_URI") == "http://from-dict:5000"
+
+
+def test_init_run_env_var_wins_over_params_dict(monkeypatch):
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://env-wins:9999")
+    mock_tracker = _make_tracker_mock()
+    params = {"experiment": "proj", "mlflow": {"tracking_uri": "http://ignored:5000"}}
+    with (
+        patch("kitchen.experiment.mlflow"),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker", return_value=mock_tracker),
+    ):
+        with init_run(params):
+            pass
+    assert os.environ["MLFLOW_TRACKING_URI"] == "http://env-wins:9999"
+
+
+def test_init_run_auto_discovers_params_yaml(tmp_path, monkeypatch):
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    params_yaml = tmp_path / "params.yaml"
+    params_yaml.write_text("experiment: auto-proj\nmlflow:\n  tracking_uri: http://auto:5000\n")
+    mock_tracker = _make_tracker_mock()
+    with (
+        patch("kitchen.experiment.mlflow"),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=params_yaml),
+        patch("kitchen.experiment.Tracker") as MockTracker,
+    ):
+        MockTracker.return_value = mock_tracker
+        with init_run():
+            MockTracker.assert_called_once_with("auto-proj")
+    assert os.environ.get("MLFLOW_TRACKING_URI") == "http://auto:5000"
+
+
+def test_init_run_falls_back_to_sqlite_on_configure_error():
+    mock_mlflow = MagicMock()
+    mock_tracker = _make_tracker_mock()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env", side_effect=Exception("unreachable")),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker", return_value=mock_tracker),
+    ):
+        with pytest.warns(UserWarning, match="falling back to sqlite"):
+            with init_run({"experiment": "proj"}):
+                pass
+    mock_mlflow.set_tracking_uri.assert_called_with("sqlite:///mlruns.db")
+
+
+def test_kitchen_init_run_is_callable():
+    assert callable(kitchen.init_run)
