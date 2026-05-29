@@ -1680,6 +1680,91 @@ def test_init_ci_kaggle_has_deploy_pages_job(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# DASH-002: deploy-pages job generates dashboard before Pages upload
+# ---------------------------------------------------------------------------
+
+
+def _deploy_pages_steps(tmp_path, kaggle: bool = False) -> list:
+    """Helper: scaffold a CI workflow and return the deploy-pages job steps."""
+    if kaggle:
+        runner.invoke(
+            app,
+            ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "titanic"],
+            catch_exceptions=False,
+        )
+    else:
+        runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    return data["jobs"]["deploy-pages"]["steps"]
+
+
+def test_init_ci_deploy_pages_has_generate_dashboard_step(tmp_path, monkeypatch):
+    """deploy-pages job has a 'Generate dashboard' step."""
+    monkeypatch.chdir(tmp_path)
+    steps = _deploy_pages_steps(tmp_path)
+    step_names = [s.get("name", "") for s in steps]
+    assert "Generate dashboard" in step_names
+
+
+def test_init_ci_deploy_pages_generate_step_continue_on_error(tmp_path, monkeypatch):
+    """Generate dashboard step has continue-on-error: true (no results on first run)."""
+    monkeypatch.chdir(tmp_path)
+    steps = _deploy_pages_steps(tmp_path)
+    gen_step = next(s for s in steps if s.get("name") == "Generate dashboard")
+    assert gen_step.get("continue-on-error") is True
+
+
+def test_init_ci_deploy_pages_generate_step_uses_docs_output(tmp_path, monkeypatch):
+    """Generate dashboard step writes to docs/index.html to match upload-pages path."""
+    monkeypatch.chdir(tmp_path)
+    steps = _deploy_pages_steps(tmp_path)
+    gen_step = next(s for s in steps if s.get("name") == "Generate dashboard")
+    assert "--output docs/index.html" in gen_step.get("run", "")
+
+
+def test_init_ci_deploy_pages_fetches_results_branch(tmp_path, monkeypatch):
+    """deploy-pages job fetches the results branch before generating the dashboard."""
+    monkeypatch.chdir(tmp_path)
+    steps = _deploy_pages_steps(tmp_path)
+    step_names = [s.get("name", "") for s in steps]
+    assert "Fetch results branch" in step_names
+
+
+def test_init_ci_deploy_pages_fetch_before_generate(tmp_path, monkeypatch):
+    """Fetch results branch step comes before Generate dashboard step."""
+    monkeypatch.chdir(tmp_path)
+    steps = _deploy_pages_steps(tmp_path)
+    step_names = [s.get("name", "") for s in steps]
+    assert step_names.index("Fetch results branch") < step_names.index("Generate dashboard")
+
+
+def test_init_ci_deploy_pages_checkout_full_depth(tmp_path, monkeypatch):
+    """deploy-pages checkout uses fetch-depth: 0 to get the results branch."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    deploy_steps = data["jobs"]["deploy-pages"]["steps"]
+    checkout = next(s for s in deploy_steps if (s.get("uses") or "").startswith("actions/checkout"))
+    assert checkout.get("with", {}).get("fetch-depth") == 0
+
+
+def test_init_ci_kaggle_deploy_pages_has_generate_dashboard_step(tmp_path, monkeypatch):
+    """Kaggle variant: deploy-pages job also has the Generate dashboard step."""
+    monkeypatch.chdir(tmp_path)
+    steps = _deploy_pages_steps(tmp_path, kaggle=True)
+    step_names = [s.get("name", "") for s in steps]
+    assert "Generate dashboard" in step_names
+
+
+def test_init_ci_deploy_pages_install_kitchen_before_generate(tmp_path, monkeypatch):
+    """Install kitchen step comes before Generate dashboard in deploy-pages."""
+    monkeypatch.chdir(tmp_path)
+    steps = _deploy_pages_steps(tmp_path)
+    step_names = [s.get("name", "") for s in steps]
+    assert step_names.index("Install kitchen") < step_names.index("Generate dashboard")
+
+
+# ---------------------------------------------------------------------------
 # Dashboard delta column (LML-007)
 # ---------------------------------------------------------------------------
 
@@ -2424,3 +2509,407 @@ def test_leaderboard_no_show_params_no_extra_columns():
     result = _lb_invoke(runs)
     assert result.exit_code == 0
     assert "model.eta" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen promote --run-id (LML-011)
+# ---------------------------------------------------------------------------
+
+
+def _make_promote_run(run_id: str, metrics: dict | None = None, run_name: str = "") -> MagicMock:
+    run = MagicMock()
+    run.info.run_id = run_id
+    run.data.metrics = metrics or {}
+    run.data.tags = {"mlflow.runName": run_name} if run_name else {}
+    return run
+
+
+def _promote_invoke(extra_args: list | None = None) -> object:
+    """Invoke `kitchen promote` with registry calls mocked out."""
+
+    def make_client():
+        client = MagicMock()
+        client.get_run.return_value = _make_promote_run("abc123" + "0" * 26, {"accuracy": 0.85})
+        client.get_model_version_by_alias.side_effect = Exception("no champion")
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+        patch("kitchen.registry.get_best_run"),
+        patch("kitchen.registry.register_model", return_value="3"),
+        patch("kitchen.registry.promote_model"),
+        patch("kitchen.registry.get_production_uri", return_value=None),
+    ):
+        return runner.invoke(
+            app,
+            ["promote", "--experiment", "test-exp", *(extra_args or [])],
+            catch_exceptions=False,
+        )
+
+
+def test_promote_run_id_succeeds():
+    """--run-id bypasses metric ranking and promotes the specified run."""
+    result = _promote_invoke(["--run-id", "abc123" + "0" * 26])
+    assert result.exit_code == 0
+
+
+def test_promote_run_id_output_contains_run_id_prefix():
+    """The run ID prefix appears in the promote output."""
+    result = _promote_invoke(["--run-id", "abc123" + "0" * 26])
+    assert result.exit_code == 0
+    assert "abc123" in result.output
+
+
+def test_promote_run_id_with_metric_shows_metric():
+    """--run-id combined with METRIC shows the metric value."""
+    result = _promote_invoke(["accuracy", "--run-id", "abc123" + "0" * 26])
+    assert result.exit_code == 0
+    assert "accuracy" in result.output
+
+
+def test_promote_run_id_dry_run_skips_registration():
+    """--run-id --dry-run shows the run but does not register it."""
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=lambda: _make_promote_run_client()),
+        patch("kitchen.registry.register_model") as mock_reg,
+        patch("kitchen.registry.promote_model"),
+        patch("kitchen.registry.get_production_uri", return_value=None),
+    ):
+        result = runner.invoke(
+            app,
+            ["promote", "--experiment", "test-exp", "--run-id", "abc123" + "0" * 26, "--dry-run"],
+            catch_exceptions=False,
+        )
+    assert "Dry run" in result.output
+    mock_reg.assert_not_called()
+
+
+def _make_promote_run_client():
+    client = MagicMock()
+    client.get_run.return_value = _make_promote_run("abc123" + "0" * 26)
+    client.get_model_version_by_alias.side_effect = Exception("no champion")
+    return client
+
+
+def test_promote_run_id_invalid_id_exits_nonzero():
+    """An invalid run ID produces a non-zero exit code with an error message."""
+
+    def make_client():
+        client = MagicMock()
+        client.get_run.side_effect = Exception("run not found")
+        client.get_model_version_by_alias.side_effect = Exception("no champion")
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+        patch("kitchen.registry.get_production_uri", return_value=None),
+    ):
+        result = runner.invoke(
+            app, ["promote", "--experiment", "test-exp", "--run-id", "bad_id"]
+        )
+    assert result.exit_code != 0
+
+
+def test_promote_no_metric_no_run_id_exits_nonzero():
+    """Calling promote with neither METRIC nor --run-id exits non-zero."""
+    with patch("kitchen.tracking.configure_from_env"):
+        result = runner.invoke(app, ["promote", "--experiment", "test-exp"])
+    assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# DASH-001: kitchen dashboard generate
+# ---------------------------------------------------------------------------
+
+
+def _make_result_dict(
+    sha="aabbccdd",
+    champion=False,
+    metric_val=0.85,
+    lb_score=None,
+    params=None,
+):
+    return {
+        "sha": sha,
+        "timestamp": "2026-01-01T10:00:00Z",
+        "run_id": sha * 4,
+        "metrics": {"val_accuracy": metric_val},
+        "params": params,
+        "top_features": None,
+        "calibration": None,
+        "lb_score": lb_score,
+        "champion": champion,
+    }
+
+
+def _dash_generate_invoke(results, branch_exists=True, extra_args=None, tmp_path=None):
+    """Invoke `kitchen dashboard generate` with git subprocess fully mocked."""
+    import json
+
+    def mock_run(cmd, **kwargs):
+        m = MagicMock()
+        m.returncode = 0 if branch_exists else 1
+        return m
+
+    json_files = [f"results/{r['sha'][:8]}.json" for r in results]
+
+    def mock_check_output(cmd, **kwargs):
+        if "ls-tree" in cmd:
+            return "\n".join(json_files).encode()
+        if "cat-file" in cmd:
+            path = cmd[-1].split(":")[-1]
+            sha_prefix = path.split("/")[-1].replace(".json", "")
+            for r in results:
+                if r["sha"][:8] == sha_prefix:
+                    return json.dumps(r).encode()
+            return b"{}"
+        return b""
+
+    args = ["dashboard", "generate", *(extra_args or [])]
+    with (
+        patch("subprocess.run", side_effect=mock_run),
+        patch("subprocess.check_output", side_effect=mock_check_output),
+    ):
+        return runner.invoke(app, args, catch_exceptions=False)
+
+
+def test_dashboard_generate_creates_html_file(tmp_path, monkeypatch):
+    """generate writes dashboard/index.html and exits 0."""
+    monkeypatch.chdir(tmp_path)
+    results = [_make_result_dict(sha="aabbccdd", champion=True)]
+    result = _dash_generate_invoke(results)
+    assert result.exit_code == 0
+    assert (tmp_path / "dashboard" / "index.html").exists()
+
+
+def test_dashboard_generate_html_contains_project_name(tmp_path, monkeypatch):
+    """Project name from params.yaml appears in the generated HTML."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: my-cbb-model\n")
+    results = [_make_result_dict(sha="aabbccdd", champion=True)]
+    _dash_generate_invoke(results)
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert "my-cbb-model" in html
+
+
+def test_dashboard_generate_html_embeds_results_json(tmp_path, monkeypatch):
+    """All result SHAs appear in the embedded JSON."""
+    monkeypatch.chdir(tmp_path)
+    results = [
+        _make_result_dict(sha="aaaa1111", champion=True, metric_val=0.80),
+        _make_result_dict(sha="bbbb2222", metric_val=0.83),
+        _make_result_dict(sha="cccc3333", metric_val=0.85),
+    ]
+    _dash_generate_invoke(results)
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    for r in results:
+        assert r["sha"] in html
+
+
+def test_dashboard_generate_outputs_metric_name(tmp_path, monkeypatch):
+    """The primary metric appears in the CLI output."""
+    monkeypatch.chdir(tmp_path)
+    results = [_make_result_dict(sha="aabbccdd", champion=True)]
+    result = _dash_generate_invoke(results)
+    assert "val_accuracy" in result.output
+
+
+def test_dashboard_generate_missing_branch_exits_nonzero(tmp_path, monkeypatch):
+    """Missing results branch → exit code 1 with error message."""
+    monkeypatch.chdir(tmp_path)
+    result = _dash_generate_invoke([], branch_exists=False)
+    assert result.exit_code != 0
+    assert "kitchen push" in result.output or "branch" in result.output.lower()
+
+
+def test_dashboard_generate_no_json_files_exits_nonzero(tmp_path, monkeypatch):
+    """No JSON files on results branch → exit code 1."""
+    monkeypatch.chdir(tmp_path)
+
+    def mock_run(cmd, **kwargs):
+        m = MagicMock()
+        m.returncode = 0
+        return m
+
+    def mock_check_output(cmd, **kwargs):
+        if "ls-tree" in cmd:
+            return b""  # no files
+        return b""
+
+    with (
+        patch("subprocess.run", side_effect=mock_run),
+        patch("subprocess.check_output", side_effect=mock_check_output),
+    ):
+        result = runner.invoke(app, ["dashboard", "generate"], catch_exceptions=False)
+    assert result.exit_code != 0
+
+
+def test_dashboard_generate_lb_score_in_html(tmp_path, monkeypatch):
+    """When lb_score is present, HAS_LB is true in the generated HTML."""
+    monkeypatch.chdir(tmp_path)
+    results = [
+        _make_result_dict(sha="aabbccdd", champion=True, lb_score=0.803),
+    ]
+    _dash_generate_invoke(results)
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert "true" in html  # HAS_LB = true
+    assert "0.803" in html
+
+
+def test_dashboard_generate_no_lb_score_has_lb_false(tmp_path, monkeypatch):
+    """When no run has lb_score, HAS_LB is false."""
+    monkeypatch.chdir(tmp_path)
+    results = [_make_result_dict(sha="aabbccdd", champion=True, lb_score=None)]
+    _dash_generate_invoke(results)
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert "HAS_LB = false" in html
+
+
+def test_dashboard_generate_show_params_embeds_keys(tmp_path, monkeypatch):
+    """--show-params keys appear in PARAM_KEYS in the generated HTML."""
+    monkeypatch.chdir(tmp_path)
+    results = [
+        _make_result_dict(
+            sha="aabbccdd",
+            champion=True,
+            params={"model.max_depth": "6", "model.eta": "0.05"},
+        )
+    ]
+    _dash_generate_invoke(results, extra_args=["--show-params", "model.max_depth,model.eta"])
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert "model.max_depth" in html
+    assert "model.eta" in html
+
+
+def test_dashboard_generate_custom_output_path(tmp_path, monkeypatch):
+    """--output writes to the specified path."""
+    monkeypatch.chdir(tmp_path)
+    results = [_make_result_dict(sha="aabbccdd", champion=True)]
+    _dash_generate_invoke(results, extra_args=["--output", "docs/index.html"])
+    assert (tmp_path / "docs" / "index.html").exists()
+
+
+def test_dashboard_generate_champion_marker_in_html(tmp_path, monkeypatch):
+    """Champion result has champion=true in the embedded JSON."""
+    monkeypatch.chdir(tmp_path)
+    results = [
+        _make_result_dict(sha="aabbccdd", champion=True, metric_val=0.90),
+        _make_result_dict(sha="eeff4455", champion=False, metric_val=0.85),
+    ]
+    _dash_generate_invoke(results)
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert '"champion": true' in html
+
+
+# ---------------------------------------------------------------------------
+# DASH-001: kitchen open — local dashboard fallback
+# ---------------------------------------------------------------------------
+
+
+def test_open_falls_back_to_local_dashboard(tmp_path, monkeypatch):
+    """When no dashboard_url is configured but dashboard/index.html exists, serve it."""
+    monkeypatch.chdir(tmp_path)
+    dash = tmp_path / "dashboard" / "index.html"
+    dash.parent.mkdir()
+    dash.write_text("<html></html>")
+    with patch("kitchen.cli._serve_local_dashboard") as mock_serve:
+        result = runner.invoke(app, ["open"], catch_exceptions=False)
+    assert result.exit_code == 0
+    mock_serve.assert_called_once()
+    # open_dashboard passes the Path it constructed; resolve to compare regardless of cwd
+    called_path = mock_serve.call_args[0][0]
+    assert called_path.resolve() == dash.resolve()
+
+
+def test_open_prefers_url_over_local_dashboard(tmp_path, monkeypatch):
+    """Configured dashboard_url takes precedence over local dashboard/index.html."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(
+        "experiment: test\ndashboard_url: https://user.github.io/repo/\n"
+    )
+    dash = tmp_path / "dashboard" / "index.html"
+    dash.parent.mkdir()
+    dash.write_text("<html></html>")
+    with patch("webbrowser.open") as mock_open:
+        runner.invoke(app, ["open"], catch_exceptions=False)
+    mock_open.assert_called_once_with("https://user.github.io/repo/")
+
+
+def test_open_falls_back_to_ui_when_no_local_dashboard(tmp_path, monkeypatch):
+    """When no url and no dashboard/index.html, fall back to MLflow UI."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "https://mlflow.example.com")
+    with patch("webbrowser.open") as mock_open:
+        result = runner.invoke(app, ["open"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert "Falling back" in result.output
+    mock_open.assert_called_once_with("https://mlflow.example.com")
+
+
+# ---------------------------------------------------------------------------
+# DASH-003: --serve flag and _serve_local_dashboard
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_generate_serve_calls_serve_helper(tmp_path, monkeypatch):
+    """--serve invokes _serve_local_dashboard with the output path."""
+    monkeypatch.chdir(tmp_path)
+    results = [_make_result_dict(sha="aabbccdd", champion=True)]
+    with patch("kitchen.cli._serve_local_dashboard") as mock_serve:
+        result = _dash_generate_invoke(results, extra_args=["--serve"])
+    assert result.exit_code == 0
+    mock_serve.assert_called_once()
+    called_path = mock_serve.call_args[0][0]
+    assert called_path.resolve() == (tmp_path / "dashboard" / "index.html").resolve()
+
+
+def test_dashboard_generate_no_serve_skips_serve_helper(tmp_path, monkeypatch):
+    """Without --serve, _serve_local_dashboard is never called."""
+    monkeypatch.chdir(tmp_path)
+    results = [_make_result_dict(sha="aabbccdd", champion=True)]
+    with patch("kitchen.cli._serve_local_dashboard") as mock_serve:
+        result = _dash_generate_invoke(results)
+    assert result.exit_code == 0
+    mock_serve.assert_not_called()
+
+
+def test_dashboard_generate_serve_hint_in_output(tmp_path, monkeypatch):
+    """Without --serve, the CLI suggests kitchen dashboard generate --serve."""
+    monkeypatch.chdir(tmp_path)
+    results = [_make_result_dict(sha="aabbccdd", champion=True)]
+    result = _dash_generate_invoke(results)
+    assert "--serve" in result.output
+
+
+def test_serve_local_dashboard_starts_server_and_opens_browser(tmp_path, capsys):
+    """_serve_local_dashboard prints a localhost URL with the chosen port."""
+    from kitchen.cli import _serve_local_dashboard
+
+    html_file = tmp_path / "dashboard" / "index.html"
+    html_file.parent.mkdir()
+    html_file.write_text("<html></html>")
+
+    class _FakeServer:
+        def __init__(self, addr: tuple, handler: object) -> None:
+            pass
+
+        def serve_forever(self) -> None:
+            raise KeyboardInterrupt
+
+        def server_close(self) -> None:
+            pass
+
+    with (
+        patch("http.server.HTTPServer", _FakeServer),
+        patch("webbrowser.open"),
+        patch("kitchen.cli._find_free_port", return_value=19999),
+        patch("threading.Thread"),  # prevent background thread from racing
+    ):
+        _serve_local_dashboard(html_file)
+
+    captured = capsys.readouterr()
+    assert "19999" in captured.out
+    assert "localhost" in captured.out
