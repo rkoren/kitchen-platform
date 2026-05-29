@@ -1,52 +1,222 @@
-"""Tests for kitchen.experiment."""
+"""Tests for kitchen.experiment context manager (NB-001)."""
 
-from unittest.mock import patch
+from __future__ import annotations
 
-from kitchen.experiment import ExperimentConfig, log_config
+import os
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+import kitchen
+from kitchen.experiment import (
+    ExperimentRun,
+    _find_params_yaml,
+    _seed_env_from_params_yaml,
+    experiment,
+)
+
+# ── _find_params_yaml ─────────────────────────────────────────────────────────
 
 
-def test_experiment_config_defaults():
-    config = ExperimentConfig(name="baseline")
-    assert not config.params
-    assert config.description == ""
+def test_find_params_yaml_finds_in_cwd(tmp_path):
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+    result = _find_params_yaml(tmp_path)
+    assert result == tmp_path / "params.yaml"
 
 
-def test_experiment_config_stores_params():
-    config = ExperimentConfig(name="depth-5", params={"max_depth": 5, "eta": 0.01})
-    assert config.params["max_depth"] == 5
+def test_find_params_yaml_finds_in_parent(tmp_path):
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+    child = tmp_path / "subdir"
+    child.mkdir()
+    result = _find_params_yaml(child)
+    assert result == tmp_path / "params.yaml"
 
 
-def test_log_config_logs_params():
-    config = ExperimentConfig(name="test-run", params={"lr": 0.01, "epochs": 10})
+def test_find_params_yaml_returns_none_when_absent(tmp_path):
+    assert _find_params_yaml(tmp_path) is None
+
+
+# ── _seed_env_from_params_yaml ────────────────────────────────────────────────
+
+
+def test_seed_env_sets_tracking_uri(tmp_path, monkeypatch):
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    (tmp_path / "params.yaml").write_text("mlflow:\n  tracking_uri: http://localhost:5000\n")
+    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    assert os.environ["MLFLOW_TRACKING_URI"] == "http://localhost:5000"
+
+
+def test_seed_env_does_not_override_existing_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://existing:9999")
+    (tmp_path / "params.yaml").write_text("mlflow:\n  tracking_uri: http://localhost:5000\n")
+    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    assert os.environ["MLFLOW_TRACKING_URI"] == "http://existing:9999"
+
+
+def test_seed_env_silently_ignores_bad_yaml(tmp_path, monkeypatch):
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    (tmp_path / "params.yaml").write_text("{{not valid yaml")
+    _seed_env_from_params_yaml(tmp_path / "params.yaml")  # must not raise
+
+
+# ── ExperimentRun ─────────────────────────────────────────────────────────────
+
+
+def test_experiment_run_log_calls_log_metrics():
+    active_run = MagicMock()
+    active_run.info.run_id = "abc123"
+    er = ExperimentRun(active_run)
     with patch("kitchen.experiment.mlflow") as mock_mlflow:
-        log_config(config)
-        mock_mlflow.log_params.assert_called_once_with({"lr": 0.01, "epochs": 10})
+        er.log(accuracy=0.9, loss=0.1)
+        mock_mlflow.log_metrics.assert_called_once_with({"accuracy": 0.9, "loss": 0.1})
 
 
-def test_log_config_sets_name_tag():
-    config = ExperimentConfig(name="my-run", params={})
+def test_experiment_run_log_params_calls_log_params():
+    active_run = MagicMock()
+    er = ExperimentRun(active_run)
     with patch("kitchen.experiment.mlflow") as mock_mlflow:
-        log_config(config)
-        mock_mlflow.set_tag.assert_any_call("experiment_name", "my-run")
+        er.log_params(max_depth=6, eta=0.05)
+        mock_mlflow.log_params.assert_called_once_with({"max_depth": 6, "eta": 0.05})
 
 
-def test_log_config_sets_description_tag():
-    config = ExperimentConfig(name="x", params={}, description="testing depth")
+def test_experiment_run_set_tag():
+    active_run = MagicMock()
+    er = ExperimentRun(active_run)
     with patch("kitchen.experiment.mlflow") as mock_mlflow:
-        log_config(config)
-        mock_mlflow.set_tag.assert_any_call("description", "testing depth")
+        er.set_tag("note", "baseline")
+        mock_mlflow.set_tag.assert_called_once_with("note", "baseline")
 
 
-def test_log_config_skips_description_tag_when_empty():
-    config = ExperimentConfig(name="x", params={})
-    with patch("kitchen.experiment.mlflow") as mock_mlflow:
-        log_config(config)
-        calls = [c.args[0] for c in mock_mlflow.set_tag.call_args_list]
-        assert "description" not in calls
+def test_experiment_run_id():
+    active_run = MagicMock()
+    active_run.info.run_id = "run-xyz"
+    er = ExperimentRun(active_run)
+    assert er.run_id == "run-xyz"
 
 
-def test_log_config_skips_log_params_when_empty():
-    config = ExperimentConfig(name="x", params={})
-    with patch("kitchen.experiment.mlflow") as mock_mlflow:
-        log_config(config)
-        mock_mlflow.log_params.assert_not_called()
+# ── experiment() context manager ──────────────────────────────────────────────
+
+
+def _make_mock_mlflow(run_id: str = "test-run-id"):
+    """Return a mock mlflow module with a working start_run context manager."""
+    mock = MagicMock()
+    active_run = MagicMock()
+    active_run.info.run_id = run_id
+    mock.start_run.return_value.__enter__ = MagicMock(return_value=active_run)
+    mock.start_run.return_value.__exit__ = MagicMock(return_value=False)
+    return mock, active_run
+
+
+def test_experiment_yields_experiment_run():
+    mock_mlflow, _ = _make_mock_mlflow()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment.log_run_context"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+    ):
+        with experiment("my-project") as run:
+            assert isinstance(run, ExperimentRun)
+            assert run.run_id == "test-run-id"
+
+
+def test_experiment_starts_run_with_run_name():
+    mock_mlflow, _ = _make_mock_mlflow()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment.log_run_context"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+    ):
+        with experiment("proj", run_name="trial-1"):
+            mock_mlflow.start_run.assert_called_once_with(run_name="trial-1")
+
+
+def test_experiment_logs_params_when_provided():
+    mock_mlflow, _ = _make_mock_mlflow()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment.log_run_context"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+    ):
+        with experiment("proj", params={"model": {"max_depth": 6}}):
+            mock_mlflow.log_params.assert_called_once_with({"model.max_depth": 6})
+
+
+def test_experiment_calls_log_run_context():
+    mock_mlflow, _ = _make_mock_mlflow()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment.log_run_context") as mock_lrc,
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+    ):
+        with experiment("proj"):
+            mock_lrc.assert_called_once()
+
+
+def test_experiment_falls_back_to_sqlite_on_configure_error():
+    mock_mlflow, _ = _make_mock_mlflow()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env", side_effect=Exception("unreachable")),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment.log_run_context"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+    ):
+        with pytest.warns(UserWarning, match="falling back to sqlite"):
+            with experiment("proj"):
+                pass
+        mock_mlflow.set_tracking_uri.assert_called_with("sqlite:///mlruns.db")
+
+
+def test_experiment_seeds_from_params_yaml(tmp_path, monkeypatch):
+    """params.yaml tracking_uri is applied when env var is absent."""
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_ARTIFACT_BUCKET", raising=False)
+    params_yaml = tmp_path / "params.yaml"
+    params_yaml.write_text("mlflow:\n  tracking_uri: http://custom:5001\n")
+
+    mock_mlflow, _ = _make_mock_mlflow()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env") as mock_cfg,
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment.log_run_context"),
+        patch("kitchen.experiment._find_params_yaml", return_value=params_yaml),
+    ):
+        with experiment("proj"):
+            pass
+        mock_cfg.assert_called_once()
+        assert os.environ.get("MLFLOW_TRACKING_URI") == "http://custom:5001"
+
+
+def test_experiment_env_var_wins_over_params_yaml(tmp_path, monkeypatch):
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://env-wins:9999")
+    params_yaml = tmp_path / "params.yaml"
+    params_yaml.write_text("mlflow:\n  tracking_uri: http://should-be-ignored:5001\n")
+
+    mock_mlflow, _ = _make_mock_mlflow()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment.log_run_context"),
+        patch("kitchen.experiment._find_params_yaml", return_value=params_yaml),
+    ):
+        with experiment("proj"):
+            pass
+        assert os.environ["MLFLOW_TRACKING_URI"] == "http://env-wins:9999"
+
+
+# ── Public API surface ────────────────────────────────────────────────────────
+
+
+def test_kitchen_experiment_is_callable():
+    """kitchen.experiment should be the function, not the module."""
+    assert callable(kitchen.experiment)
