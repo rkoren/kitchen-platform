@@ -367,7 +367,7 @@ def test_run_train_invokes_pipeline(tmp_path, monkeypatch):
 
     calls = []
 
-    def fake_pipeline(params_file="params.yaml"):
+    def fake_pipeline(params_file="params.yaml", overrides=None):
         calls.append(params_file)
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -383,7 +383,7 @@ def test_run_train_custom_params(tmp_path, monkeypatch):
 
     calls = []
 
-    def fake_pipeline(params_file="params.yaml"):
+    def fake_pipeline(params_file="params.yaml", overrides=None):
         calls.append(params_file)
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -396,7 +396,7 @@ def test_run_train_missing_src_module(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text("experiment: test\n")
 
-    def fake_pipeline(params_file="params.yaml"):
+    def fake_pipeline(params_file="params.yaml", overrides=None):
         raise ModuleNotFoundError("No module named 'src.features.run'")
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -406,11 +406,142 @@ def test_run_train_missing_src_module(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# kitchen run train --override (SWEEP-001)
+# ---------------------------------------------------------------------------
+
+
+def test_override_single_int(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+    captured = {}
+
+    def fake_pipeline(params_file="params.yaml", overrides=None):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
+    result = runner.invoke(app, ["run", "train", "--override", "model.max_depth=6"])
+    assert result.exit_code == 0
+    assert captured["overrides"] == {"model.max_depth": 6}
+
+
+def test_override_multiple(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+    captured = {}
+
+    def fake_pipeline(params_file="params.yaml", overrides=None):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
+    result = runner.invoke(
+        app,
+        ["run", "train", "--override", "model.max_depth=6", "--override", "model.eta=0.05"],
+    )
+    assert result.exit_code == 0
+    assert captured["overrides"] == {"model.max_depth": 6, "model.eta": 0.05}
+
+
+def test_override_bool_coercion(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+    captured = {}
+
+    def fake_pipeline(params_file="params.yaml", overrides=None):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
+    result = runner.invoke(
+        app, ["run", "train", "--override", "use_gpu=true", "--override", "shuffle=False"]
+    )
+    assert result.exit_code == 0
+    assert captured["overrides"]["use_gpu"] is True
+    assert captured["overrides"]["shuffle"] is False
+
+
+def test_override_string_value(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+    captured = {}
+
+    def fake_pipeline(params_file="params.yaml", overrides=None):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
+    result = runner.invoke(app, ["run", "train", "--override", "model.objective=binary:logistic"])
+    assert result.exit_code == 0
+    assert captured["overrides"] == {"model.objective": "binary:logistic"}
+
+
+def test_override_invalid_format(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+    result = runner.invoke(app, ["run", "train", "--override", "no-equals-sign"])
+    assert result.exit_code != 0
+    assert "key=value" in result.output
+
+
+def test_no_override_passes_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+    captured = {}
+
+    def fake_pipeline(params_file="params.yaml", overrides=None):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
+    result = runner.invoke(app, ["run", "train"])
+    assert result.exit_code == 0
+    assert captured["overrides"] is None
+
+
+# ---------------------------------------------------------------------------
+# _coerce_override_value unit tests (SWEEP-001)
+# ---------------------------------------------------------------------------
+
+
+def test_coerce_int():
+    from kitchen.cli import _coerce_override_value
+
+    assert _coerce_override_value("6") == 6
+    assert isinstance(_coerce_override_value("6"), int)
+
+
+def test_coerce_float():
+    from kitchen.cli import _coerce_override_value
+
+    assert _coerce_override_value("0.05") == 0.05
+    assert isinstance(_coerce_override_value("0.05"), float)
+
+
+def test_coerce_bool_true():
+    from kitchen.cli import _coerce_override_value
+
+    assert _coerce_override_value("true") is True
+    assert _coerce_override_value("True") is True
+    assert _coerce_override_value("TRUE") is True
+
+
+def test_coerce_bool_false():
+    from kitchen.cli import _coerce_override_value
+
+    assert _coerce_override_value("false") is False
+    assert _coerce_override_value("False") is False
+
+
+def test_coerce_string_fallback():
+    from kitchen.cli import _coerce_override_value
+
+    assert _coerce_override_value("binary:logistic") == "binary:logistic"
+    assert isinstance(_coerce_override_value("binary:logistic"), str)
+
+
+# ---------------------------------------------------------------------------
 # kitchen run train --auto-promote (LML-004)
 # ---------------------------------------------------------------------------
 
 
-def _fake_pipeline_noop(params_file="params.yaml"):  # pylint: disable=unused-argument
+def _fake_pipeline_noop(params_file="params.yaml", overrides=None):  # pylint: disable=unused-argument
     pass
 
 
@@ -704,6 +835,63 @@ def test_run_evaluate_model_load_failure(tmp_path, monkeypatch):
     result = runner.invoke(app, ["run", "evaluate"])
     assert result.exit_code != 0
     assert "error loading model" in result.output
+
+
+def test_run_evaluate_missing_champion_gives_clear_message(tmp_path, monkeypatch):
+    """K-019: MlflowException about a missing alias shows a helpful first-run message."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    alias_exc = mlflow.exceptions.MlflowException(
+        "Registered model alias 'champion' not found for model 'test-project-model'."
+    )
+    _make_evaluate_mocks(monkeypatch, load_raises=alias_exc)
+
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = lambda m, p, s: {}
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code != 0
+    assert "No 'champion' model registered yet" in result.output
+    assert "auto-promote" in result.output
+
+
+def test_run_evaluate_missing_alias_shows_alias_name(tmp_path, monkeypatch):
+    """The helpful message reflects the actual alias name when --alias is overridden."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    alias_exc = mlflow.exceptions.MlflowException(
+        "Registered model alias 'staging' not found for model 'test-project-model'."
+    )
+    _make_evaluate_mocks(monkeypatch, load_raises=alias_exc)
+
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = lambda m, p, s: {}
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate", "--alias", "staging"])
+    assert result.exit_code != 0
+    assert "No 'staging' model registered yet" in result.output
+
+
+def test_run_evaluate_non_alias_mlflow_error_shows_generic_message(tmp_path, monkeypatch):
+    """A non-alias MlflowException (e.g. network error) still shows the generic message."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    generic_exc = mlflow.exceptions.MlflowException("Connection refused: mlflow server unreachable")
+    _make_evaluate_mocks(monkeypatch, load_raises=generic_exc)
+
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = lambda m, p, s: {}
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code != 0
+    assert "error loading model" in result.output
+    assert "auto-promote" not in result.output
 
 
 def test_run_evaluate_invalid_flavor(tmp_path, monkeypatch):
@@ -1997,3 +2185,242 @@ def test_dvc_init_output_mentions_s3_remote(tmp_path, monkeypatch):
     """Next-steps output tells the user to set the S3 remote URL."""
     result = _dvc_init(tmp_path, monkeypatch, params_content=_PARAMS_LOCAL)
     assert "s3://YOUR-BUCKET" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen diff (CMP-001)
+# ---------------------------------------------------------------------------
+
+
+def _make_diff_run(
+    run_id: str,
+    params: dict[str, str],
+    metrics: dict[str, float],
+    run_name: str = "",
+) -> MagicMock:
+    run = MagicMock()
+    run.info.run_id = run_id
+    run.data.params = params
+    run.data.metrics = metrics
+    run.data.tags = {"mlflow.runName": run_name} if run_name else {}
+    return run
+
+
+def _diff_invoke(run_a, run_b, extra_args=None):
+    """Invoke `kitchen diff` with two mocked MLflow runs."""
+
+    def make_client():
+        client = MagicMock()
+        client.get_run.side_effect = [run_a, run_b]
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+    ):
+        return runner.invoke(
+            app, ["diff", run_a.info.run_id, run_b.info.run_id, *(extra_args or [])],
+            catch_exceptions=False,
+        )
+
+
+def test_diff_shows_param_change():
+    run_a = _make_diff_run("a" * 32, {"model.max_depth": "3"}, {})
+    run_b = _make_diff_run("b" * 32, {"model.max_depth": "6"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "model.max_depth" in result.output
+    assert "3" in result.output
+    assert "6" in result.output
+
+
+def test_diff_shows_metric_change():
+    run_a = _make_diff_run("a" * 32, {}, {"val_accuracy": 0.80})
+    run_b = _make_diff_run("b" * 32, {}, {"val_accuracy": 0.85})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "val_accuracy" in result.output
+    assert "0.8000" in result.output
+    assert "0.8500" in result.output
+
+
+def test_diff_suppresses_identical_params():
+    run_a = _make_diff_run("a" * 32, {"model.max_depth": "6", "model.eta": "0.1"}, {})
+    run_b = _make_diff_run("b" * 32, {"model.max_depth": "6", "model.eta": "0.05"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "model.max_depth" not in result.output
+    assert "model.eta" in result.output
+
+
+def test_diff_suppresses_identical_metrics():
+    run_a = _make_diff_run("a" * 32, {}, {"val_accuracy": 0.80, "val_brier": 0.18})
+    run_b = _make_diff_run("b" * 32, {}, {"val_accuracy": 0.85, "val_brier": 0.18})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "val_accuracy" in result.output
+    assert "val_brier" not in result.output
+
+
+def test_diff_params_before_metrics():
+    run_a = _make_diff_run("a" * 32, {"model.eta": "0.1"}, {"val_accuracy": 0.80})
+    run_b = _make_diff_run("b" * 32, {"model.eta": "0.05"}, {"val_accuracy": 0.85})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    params_pos = result.output.index("Params")
+    metrics_pos = result.output.index("Metrics")
+    assert params_pos < metrics_pos
+
+
+def test_diff_no_differences():
+    run_a = _make_diff_run("a" * 32, {"model.max_depth": "6"}, {"val_accuracy": 0.80})
+    run_b = _make_diff_run("b" * 32, {"model.max_depth": "6"}, {"val_accuracy": 0.80})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "No differences found" in result.output
+
+
+def test_diff_missing_param_in_one_run():
+    run_a = _make_diff_run("a" * 32, {"model.max_depth": "6"}, {})
+    run_b = _make_diff_run("b" * 32, {}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "model.max_depth" in result.output
+    assert "(missing)" in result.output
+
+
+def test_diff_filters_fi_metrics():
+    """Feature importance metrics (fi.*) should not appear in the diff."""
+    run_a = _make_diff_run("a" * 32, {}, {"fi.feature_x": 0.5, "val_accuracy": 0.80})
+    run_b = _make_diff_run("b" * 32, {}, {"fi.feature_x": 0.9, "val_accuracy": 0.85})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "fi.feature_x" not in result.output
+    assert "val_accuracy" in result.output
+
+
+def test_diff_shows_run_id_prefixes():
+    run_a = _make_diff_run("abcd1234" + "0" * 24, {"model.eta": "0.1"}, {})
+    run_b = _make_diff_run("efgh5678" + "0" * 24, {"model.eta": "0.05"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "abcd1234" in result.output
+    assert "efgh5678" in result.output
+
+
+def test_diff_invalid_run_id_exits_nonzero():
+    def make_client():
+        client = MagicMock()
+        client.get_run.side_effect = Exception("run not found")
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+    ):
+        result = runner.invoke(app, ["diff", "bad_id_a", "bad_id_b"])
+    assert result.exit_code != 0
+
+
+def test_diff_shows_run_names():
+    run_a = _make_diff_run("a" * 32, {"model.eta": "0.1"}, {}, run_name="baseline")
+    run_b = _make_diff_run("b" * 32, {"model.eta": "0.05"}, {}, run_name="challenger")
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "baseline" in result.output
+    assert "challenger" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen leaderboard --show-params (CMP-002)
+# ---------------------------------------------------------------------------
+
+
+def _make_lb_run(
+    run_id: str,
+    metric_val: float,
+    params: dict | None = None,
+    variant: str = "",
+) -> MagicMock:
+    run = MagicMock()
+    run.info.run_id = run_id
+    run.data.metrics = {"loto_brier": metric_val}
+    run.data.params = params or {}
+    run.data.tags = {"model_variant": variant} if variant else {}
+    run.info.start_time = None
+    return run
+
+
+def _lb_invoke(runs: list, extra_args: list | None = None) -> object:
+    """Invoke `kitchen leaderboard --experiment test-exp` with mocked MLflow."""
+
+    def make_client():
+        client = MagicMock()
+        exp = MagicMock()
+        exp.experiment_id = "1"
+        client.get_experiment_by_name.return_value = exp
+        client.search_runs.return_value = runs
+        client.get_model_version_by_alias.side_effect = Exception("no champion")
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+    ):
+        return runner.invoke(
+            app,
+            ["leaderboard", "--experiment", "test-exp", *(extra_args or [])],
+            catch_exceptions=False,
+        )
+
+
+def test_leaderboard_show_params_column_header():
+    """--show-params adds the param key as a column header."""
+    runs = [_make_lb_run("a" * 32, 0.18, {"model.eta": "0.1"})]
+    result = _lb_invoke(runs, ["--show-params", "model.eta"])
+    assert result.exit_code == 0
+    assert "model.eta" in result.output
+
+
+def test_leaderboard_show_params_value():
+    """The param value from the run appears in the leaderboard row."""
+    runs = [_make_lb_run("a" * 32, 0.18, {"model.eta": "0.05"})]
+    result = _lb_invoke(runs, ["--show-params", "model.eta"])
+    assert result.exit_code == 0
+    assert "0.05" in result.output
+
+
+def test_leaderboard_show_params_multiple_columns():
+    """Multiple comma-separated params produce multiple columns."""
+    runs = [_make_lb_run("a" * 32, 0.18, {"model.eta": "0.1", "model.max_depth": "6"})]
+    result = _lb_invoke(runs, ["--show-params", "model.eta,model.max_depth"])
+    assert result.exit_code == 0
+    assert "model.eta" in result.output
+    assert "model.max_depth" in result.output
+    assert "0.1" in result.output
+    assert "6" in result.output
+
+
+def test_leaderboard_show_params_missing_param_shows_dash():
+    """A run missing the requested param shows a dash placeholder."""
+    runs = [_make_lb_run("a" * 32, 0.18, {})]
+    result = _lb_invoke(runs, ["--show-params", "model.eta"])
+    assert result.exit_code == 0
+    assert "model.eta" in result.output
+
+
+def test_leaderboard_show_params_trailing_comma_ignored():
+    """Trailing comma in --show-params does not create a spurious empty column."""
+    runs = [_make_lb_run("a" * 32, 0.18, {"model.eta": "0.1"})]
+    result = _lb_invoke(runs, ["--show-params", "model.eta,"])
+    assert result.exit_code == 0
+    assert "model.eta" in result.output
+    assert result.output.count("model.eta") == 1
+
+
+def test_leaderboard_no_show_params_no_extra_columns():
+    """Without --show-params the output contains no param column headers."""
+    runs = [_make_lb_run("a" * 32, 0.18, {"model.eta": "0.1"})]
+    result = _lb_invoke(runs)
+    assert result.exit_code == 0
+    assert "model.eta" not in result.output

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 
+import mlflow
 import yaml
 from dotenv import load_dotenv
 from prefect import flow, get_run_logger, task
@@ -25,6 +26,20 @@ load_dotenv()
 EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT", "default")
 
 
+def _apply_overrides(params: dict, overrides: dict) -> None:
+    """Apply dot-notation key=value overrides to params in-place.
+
+    Creates missing intermediate dicts so --override new_section.key=v works
+    even when new_section is absent from params.yaml.
+    """
+    for key, value in overrides.items():
+        parts = key.split(".")
+        target = params
+        for part in parts[:-1]:
+            target = target.setdefault(part, {})
+        target[parts[-1]] = value
+
+
 @task
 def _build(params: dict) -> None:
     from src.features.run import build  # project-provided
@@ -33,7 +48,7 @@ def _build(params: dict) -> None:
 
 
 @task
-def _train(params: dict) -> None:
+def _train(params: dict, overrides: dict | None = None) -> None:
     from src.train.run import train  # project-provided
 
     log = get_run_logger()
@@ -41,17 +56,22 @@ def _train(params: dict) -> None:
     experiment = params.get("experiment", EXPERIMENT)
     init_experiment(experiment)
     tracker = Tracker(experiment)
-    train(params, DataStore(), tracker)
+    with tracker.run(run_name=params.get("run_name"), params=params):
+        if overrides:
+            mlflow.set_tags({f"override.{k}": str(v) for k, v in overrides.items()})
+        train(params, DataStore(), tracker)
     log.info("Training complete — see MLflow for metrics.")
 
 
 @flow(name="kitchen-train")
-def train_pipeline(params_file: str = "params.yaml") -> None:
+def train_pipeline(params_file: str = "params.yaml", overrides: dict | None = None) -> None:
     """Run a single training pass: features → train → log to MLflow."""
     with open(params_file, encoding="utf-8") as f:
         params = yaml.safe_load(f)
+    if overrides:
+        _apply_overrides(params, overrides)
     _build(params)
-    _train(params)
+    _train(params, overrides=overrides)
 
 
 if __name__ == "__main__":

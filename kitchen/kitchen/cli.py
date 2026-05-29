@@ -5,12 +5,15 @@ Usage:
     kitchen check                                # pre-flight env/credential check
     kitchen run features                         # raw data → processed features (standalone)
     kitchen run train                            # features → train → log to MLflow
+    kitchen run train --override model.max_depth=6  # one-off param override (repeatable)
     kitchen run train --auto-promote \
         --promote-metric <m> [--lower-is-better] # train + auto-promote if new run wins
     kitchen run evaluate                         # evaluate champion model
     kitchen run monitor [--local report.html]    # generate drift report
     kitchen status                               # one-screen project summary: champion + recent runs
     kitchen leaderboard                          # rank runs; [C]=champion ★=metric leader
+    kitchen leaderboard --show-params model.eta,model.max_depth  # add param columns
+    kitchen diff <run_id_a> <run_id_b>           # show param and metric deltas between two runs
     kitchen promote METRIC                       # manually promote best run
     kitchen ui                                   # open MLflow UI in browser
     kitchen experiments list                     # list recent runs
@@ -2635,6 +2638,13 @@ def leaderboard(
         str | None,
         typer.Option("--model-name", help="Registered model name to resolve champion alias"),
     ] = None,
+    show_params: Annotated[
+        str | None,
+        typer.Option(
+            "--show-params",
+            help="Comma-separated param paths to show as extra columns (e.g. model.eta,model.max_depth)",
+        ),
+    ] = None,
 ) -> None:
     """Rank runs by a metric; shows full run_id and lb_score for easy replay.
 
@@ -2680,11 +2690,20 @@ def leaderboard(
     except Exception:
         pass
 
+    param_keys: list[str] = (
+        [p.strip() for p in show_params.split(",") if p.strip()] if show_params else []
+    )
+    param_widths: list[int] = [
+        max(len(key), max((len(r.data.params.get(key, "-")) for r in runs), default=0), 6)
+        for key in param_keys
+    ]
+
     direction = "higher=better" if higher_is_better else "lower=better"
     typer.echo(f"\nExperiment: {exp_name}  |  {metric} ({direction})\n")
 
     id_w = 32
-    header = f"{'#':<4}  {'RUN ID':<{id_w}}  {'VARIANT':<12}  {metric:>12}  {'lb_score':>10}  STARTED"
+    param_col_header = "".join(f"  {key:>{w}}" for key, w in zip(param_keys, param_widths))
+    header = f"{'#':<4}  {'RUN ID':<{id_w}}  {'VARIANT':<12}  {metric:>12}  {'lb_score':>10}{param_col_header}  STARTED"
     typer.echo(header)
     typer.echo("-" * len(header))
 
@@ -2703,12 +2722,104 @@ def leaderboard(
         variant = run.data.tags.get("model_variant", "")[:12]
         primary = _fmt_metric(run.data.metrics.get(metric))
         lb = _fmt_metric(run.data.metrics.get("lb_score"))
+        param_col_vals = "".join(
+            f"  {run.data.params.get(key, '-'):>{w}}" for key, w in zip(param_keys, param_widths)
+        )
         started = _time_ago(run.info.start_time) if run.info.start_time else "-"
-        typer.echo(f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}  {lb:>10}  {started}")
+        typer.echo(f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}  {lb:>10}{param_col_vals}  {started}")
 
     typer.echo()
     if champion_run_id:
         typer.echo(f"[C] = current champion  (models:/{resolved_model_name}@champion)")
+
+
+# ---------------------------------------------------------------------------
+# Diff command (CMP-001)
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def diff(
+    run_id_a: str = typer.Argument(..., help="First run ID (a)"),
+    run_id_b: str = typer.Argument(..., help="Second run ID (b)"),
+) -> None:
+    """Show what changed between two MLflow runs.
+
+    Prints a two-column table of params and metrics that differ; identical
+    values are suppressed. Params are listed before metrics.
+    """
+    import mlflow.tracking
+
+    from kitchen.tracking import configure_from_env
+
+    configure_from_env()
+    client = mlflow.tracking.MlflowClient()
+
+    try:
+        run_a = client.get_run(run_id_a)
+    except Exception as exc:
+        typer.echo(f"error: could not fetch run {run_id_a!r}: {exc}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        run_b = client.get_run(run_id_b)
+    except Exception as exc:
+        typer.echo(f"error: could not fetch run {run_id_b!r}: {exc}", err=True)
+        raise typer.Exit(1)
+
+    a_short = run_a.info.run_id[:8]
+    b_short = run_b.info.run_id[:8]
+    a_name = run_a.data.tags.get("mlflow.runName", "")
+    b_name = run_b.data.tags.get("mlflow.runName", "")
+
+    typer.echo("\nComparing:")
+    typer.echo(f"  a  {a_short}  {a_name}".rstrip())
+    typer.echo(f"  b  {b_short}  {b_name}".rstrip())
+
+    # --- Param diffs ---
+    params_a = run_a.data.params
+    params_b = run_b.data.params
+    param_rows: list[tuple[str, str, str]] = []
+    for key in sorted(set(params_a) | set(params_b)):
+        va = params_a.get(key, "(missing)")
+        vb = params_b.get(key, "(missing)")
+        if va != vb:
+            param_rows.append((key, va, vb))
+
+    # --- Metric diffs ---
+    metrics_a = {k: v for k, v in run_a.data.metrics.items() if not k.startswith("fi.")}
+    metrics_b = {k: v for k, v in run_b.data.metrics.items() if not k.startswith("fi.")}
+    metric_rows: list[tuple[str, str, str]] = []
+    for key in sorted(set(metrics_a) | set(metrics_b)):
+        va_raw = metrics_a.get(key)
+        vb_raw = metrics_b.get(key)
+        if va_raw != vb_raw:
+            metric_rows.append((key, _fmt_metric(va_raw), _fmt_metric(vb_raw)))
+
+    if not param_rows and not metric_rows:
+        typer.echo("\nNo differences found.\n")
+        return
+
+    all_rows = param_rows + metric_rows
+    key_w = max(len(r[0]) for r in all_rows)
+    a_w = max(len(r[1]) for r in all_rows)
+
+    header = f"\n  {'FIELD':<{key_w}}  {a_short:>{a_w}}  {b_short}"
+    sep = "  " + "-" * (key_w + a_w + 4 + len(b_short))
+
+    if param_rows:
+        typer.echo(f"\nParams{header}")
+        typer.echo(sep)
+        for key, va, vb in param_rows:
+            typer.echo(f"  {key:<{key_w}}  {va:>{a_w}}  {vb}")
+
+    if metric_rows:
+        typer.echo(f"\nMetrics{header}")
+        typer.echo(sep)
+        for key, va, vb in metric_rows:
+            typer.echo(f"  {key:<{key_w}}  {va:>{a_w}}  {vb}")
+
+    typer.echo()
 
 
 # ---------------------------------------------------------------------------
@@ -2905,6 +3016,24 @@ def submit(
 # Run sub-commands
 # ---------------------------------------------------------------------------
 
+
+def _coerce_override_value(s: str) -> int | float | bool | str:
+    """Coerce a string override value to the most specific type that fits."""
+    if s.lower() == "true":
+        return True
+    if s.lower() == "false":
+        return False
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    return s
+
+
 run_app = typer.Typer(help="Run pipeline stages.", no_args_is_help=True)
 app.add_typer(run_app, name="run")
 
@@ -2988,11 +3117,23 @@ def run_train(
         str | None,
         typer.Option("--model-name", help="Registered model name for auto-promote (defaults to <experiment>-model)"),
     ] = None,
+    override: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--override",
+            help="Shadow a params.yaml value for this run only: key=value (repeatable). "
+            "Example: --override model.max_depth=6 --override model.eta=0.05",
+        ),
+    ] = None,
 ) -> None:
     """Run the full train pipeline: features → train → log to MLflow.
 
     With --auto-promote, compares the new run against the current champion on
     --promote-metric and promotes automatically if it wins.
+
+    With --override, one or more params.yaml values are shadowed for this run
+    only without modifying the file. Overrides are logged as MLflow run tags
+    (override.<key>) so they appear in kitchen leaderboard and kitchen diff.
     """
     import sys
 
@@ -3005,6 +3146,18 @@ def run_train(
         typer.echo(f"error: file not found: {params_file}", err=True)
         raise typer.Exit(1)
 
+    parsed_overrides: dict | None = None
+    if override:
+        parsed_overrides = {}
+        for item in override:
+            if "=" not in item:
+                typer.echo(
+                    f"error: --override {item!r} must be in key=value format", err=True
+                )
+                raise typer.Exit(1)
+            key, _, raw_val = item.partition("=")
+            parsed_overrides[key.strip()] = _coerce_override_value(raw_val)
+
     cwd = str(Path.cwd())
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
@@ -3016,7 +3169,7 @@ def run_train(
         raise typer.Exit(1)
 
     try:
-        train_pipeline(params_file=params_file)
+        train_pipeline(params_file=params_file, overrides=parsed_overrides)
     except ModuleNotFoundError as exc:
         typer.echo(
             f"error: {exc}\nRun from the project root and make sure src/ is implemented.",
@@ -3086,7 +3239,21 @@ def run_evaluate(
     try:
         model = loader.load_model(model_uri)
     except Exception as exc:
-        typer.echo(f"error loading model from {model_uri!r}: {exc}", err=True)
+        import mlflow.exceptions
+
+        exc_lower = str(exc).lower()
+        is_missing_alias = isinstance(exc, mlflow.exceptions.MlflowException) and (
+            "alias" in exc_lower or alias.lower() in exc_lower
+        )
+        if is_missing_alias:
+            typer.echo(
+                f"error: No {alias!r} model registered yet for {model_uri!r}.\n"
+                f"  Run `kitchen run train --auto-promote --promote-metric <metric>` first,\n"
+                f"  or `kitchen promote <metric>` to promote an existing run.",
+                err=True,
+            )
+        else:
+            typer.echo(f"error loading model from {model_uri!r}: {exc}", err=True)
         raise typer.Exit(1)
 
     try:

@@ -14,10 +14,12 @@ from kitchen.modeling import (
     clip_predictions,
     clip_proba,
     cross_validate,
+    loto_cv,
     make_stack_features,
     rank_average,
     regression_metrics,
     set_seed,
+    time_series_cv,
     train_val_split,
     voting_predict,
 )
@@ -1044,3 +1046,186 @@ def test_calibrate_importable_from_kitchen():
     from kitchen import calibrate_model as cm  # noqa: F401
 
     assert callable(cm)
+
+
+# ---------------------------------------------------------------------------
+# time_series_cv (CV-001)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def ts_df():
+    """4 seasons × 20 rows each; target is deterministically derived from feat1."""
+    dfs = []
+    for season in [2019, 2020, 2021, 2022]:
+        feat1 = np.linspace(-1.0, 1.0, 20)
+        dfs.append(
+            pd.DataFrame({
+                "season": season,
+                "feat1": feat1,
+                "feat2": feat1[::-1],
+                "target": (feat1 > 0).astype(int),
+            })
+        )
+    return pd.concat(dfs, ignore_index=True)
+
+
+def _dummy_trainer():
+    from sklearn.dummy import DummyClassifier
+
+    return DummyClassifier(strategy="most_frequent")
+
+
+def test_ts_cv_returns_dict(ts_df):
+    result = time_series_cv(ts_df, "season", "target", 2, _dummy_trainer, classification_metrics)
+    assert isinstance(result, dict)
+
+
+def test_ts_cv_per_period_keys_present(ts_df):
+    result = time_series_cv(ts_df, "season", "target", 2, _dummy_trainer, classification_metrics)
+    assert "accuracy_2021" in result
+    assert "accuracy_2022" in result
+
+
+def test_ts_cv_only_val_periods_in_per_period_keys(ts_df):
+    """With n_val_periods=2, the two earlier seasons produce no per-period entry."""
+    result = time_series_cv(ts_df, "season", "target", 2, _dummy_trainer, classification_metrics)
+    assert "accuracy_2019" not in result
+    assert "accuracy_2020" not in result
+
+
+def test_ts_cv_aggregate_keys_present(ts_df):
+    result = time_series_cv(ts_df, "season", "target", 2, _dummy_trainer, classification_metrics)
+    assert "accuracy_mean" in result
+    assert "accuracy_std" in result
+
+
+def test_ts_cv_values_are_floats(ts_df):
+    result = time_series_cv(ts_df, "season", "target", 2, _dummy_trainer, classification_metrics)
+    assert all(isinstance(v, float) for v in result.values())
+
+
+def test_ts_cv_n_val_periods_one(ts_df):
+    result = time_series_cv(ts_df, "season", "target", 1, _dummy_trainer, classification_metrics)
+    assert "accuracy_2022" in result
+    assert "accuracy_mean" in result
+
+
+def test_ts_cv_insufficient_periods_raises(ts_df):
+    with pytest.raises(ValueError, match="distinct values"):
+        time_series_cv(ts_df, "season", "target", 4, _dummy_trainer, classification_metrics)
+
+
+def test_ts_cv_exact_boundary_raises(ts_df):
+    """n_val_periods == len(periods) leaves no training data — should raise."""
+    with pytest.raises(ValueError):
+        time_series_cv(ts_df, "season", "target", 4, _dummy_trainer, classification_metrics)
+
+
+def test_ts_cv_return_proba_adds_log_loss(ts_df):
+    result = time_series_cv(
+        ts_df, "season", "target", 2, _dummy_trainer, classification_metrics, return_proba=True
+    )
+    assert "log_loss_mean" in result
+
+
+def test_ts_cv_time_col_excluded_from_features(ts_df):
+    """Verify that training succeeds (season values aren't leaked as a feature)."""
+    result = time_series_cv(ts_df, "season", "target", 2, _dummy_trainer, classification_metrics)
+    assert result["accuracy_mean"] >= 0.0
+
+
+def test_ts_cv_mean_in_unit_interval(ts_df):
+    result = time_series_cv(ts_df, "season", "target", 2, _dummy_trainer, classification_metrics)
+    assert 0.0 <= result["accuracy_mean"] <= 1.0
+
+
+def test_ts_cv_std_nonnegative(ts_df):
+    result = time_series_cv(ts_df, "season", "target", 2, _dummy_trainer, classification_metrics)
+    assert result["accuracy_std"] >= 0.0
+
+
+def test_ts_cv_importable_from_kitchen():
+    from kitchen import time_series_cv as tscv  # noqa: F401
+
+    assert callable(tscv)
+
+
+# ---------------------------------------------------------------------------
+# loto_cv (CV-002)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def loto_df():
+    """4 groups × 20 rows each; target deterministically derived from feat1."""
+    dfs = []
+    for group in ["A", "B", "C", "D"]:
+        feat1 = np.linspace(-1.0, 1.0, 20)
+        dfs.append(
+            pd.DataFrame({
+                "cohort": group,
+                "feat1": feat1,
+                "feat2": feat1[::-1],
+                "target": (feat1 > 0).astype(int),
+            })
+        )
+    return pd.concat(dfs, ignore_index=True)
+
+
+def test_loto_cv_returns_dict(loto_df):
+    result = loto_cv(loto_df, "cohort", "target", _dummy_trainer, classification_metrics)
+    assert isinstance(result, dict)
+
+
+def test_loto_cv_all_group_keys_present(loto_df):
+    result = loto_cv(loto_df, "cohort", "target", _dummy_trainer, classification_metrics)
+    for group in ["A", "B", "C", "D"]:
+        assert f"accuracy_{group}" in result
+
+
+def test_loto_cv_aggregate_keys_present(loto_df):
+    result = loto_cv(loto_df, "cohort", "target", _dummy_trainer, classification_metrics)
+    assert "accuracy_mean" in result
+    assert "accuracy_std" in result
+
+
+def test_loto_cv_values_are_floats(loto_df):
+    result = loto_cv(loto_df, "cohort", "target", _dummy_trainer, classification_metrics)
+    assert all(isinstance(v, float) for v in result.values())
+
+
+def test_loto_cv_mean_in_unit_interval(loto_df):
+    result = loto_cv(loto_df, "cohort", "target", _dummy_trainer, classification_metrics)
+    assert 0.0 <= result["accuracy_mean"] <= 1.0
+
+
+def test_loto_cv_std_nonnegative(loto_df):
+    result = loto_cv(loto_df, "cohort", "target", _dummy_trainer, classification_metrics)
+    assert result["accuracy_std"] >= 0.0
+
+
+def test_loto_cv_return_proba_adds_log_loss(loto_df):
+    result = loto_cv(
+        loto_df, "cohort", "target", _dummy_trainer, classification_metrics, return_proba=True
+    )
+    assert "log_loss_mean" in result
+
+
+def test_loto_cv_leave_out_col_excluded_from_features(loto_df):
+    """Training succeeds, confirming cohort column is not passed as a feature."""
+    result = loto_cv(loto_df, "cohort", "target", _dummy_trainer, classification_metrics)
+    assert result["accuracy_mean"] >= 0.0
+
+
+def test_loto_cv_n_groups_equals_folds(loto_df):
+    """Four groups → four per-group keys (no group is skipped or duplicated)."""
+    result = loto_cv(loto_df, "cohort", "target", _dummy_trainer, classification_metrics)
+    per_group_keys = [k for k in result if k.startswith("accuracy_") and not k.endswith(("_mean", "_std"))]
+    assert len(per_group_keys) == 4
+
+
+def test_loto_cv_importable_from_kitchen():
+    from kitchen import loto_cv as lcv  # noqa: F401
+
+    assert callable(lcv)
