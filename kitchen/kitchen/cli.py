@@ -15,12 +15,16 @@ Usage:
     kitchen leaderboard --show-params model.eta,model.max_depth  # add param columns
     kitchen diff <run_id_a> <run_id_b>           # show param and metric deltas between two runs
     kitchen promote METRIC                       # manually promote best run
+    kitchen promote --run-id <run_id>            # promote a specific run (e.g. from dashboard)
     kitchen ui                                   # open MLflow UI in browser
     kitchen experiments list                     # list recent runs
     kitchen experiments compare METRIC           # rank runs by a metric
     kitchen submit                               # submit to Kaggle
     kitchen report                               # markdown metrics summary
     kitchen serve local                          # start FastAPI serving app locally
+    kitchen dashboard generate                   # re-render dashboard/index.html from results branch
+    kitchen dashboard generate --serve           # generate + start local HTTP server + open browser
+    kitchen dashboard generate --show-params model.eta,model.max_depth  # add param columns
 """
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments,redefined-outer-name
@@ -131,11 +135,15 @@ def open_dashboard(
         typer.echo(f"Opening dashboard → {url}")
         webbrowser.open(url)
     else:
-        typer.echo(
-            "No dashboard_url found in params.yaml or DASHBOARD_URL env var. "
-            "Falling back to MLflow UI."
-        )
-        ui()
+        local_dash = Path("dashboard/index.html")
+        if local_dash.exists():
+            _serve_local_dashboard(local_dash)
+        else:
+            typer.echo(
+                "No dashboard_url found in params.yaml or DASHBOARD_URL env var. "
+                "Falling back to MLflow UI."
+            )
+            ui()
 
 
 @app.command()
@@ -1836,6 +1844,24 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install kitchen
+        run: pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
+
+      - name: Fetch results branch
+        run: git fetch origin results:results 2>/dev/null || true
+
+      - name: Generate dashboard
+        continue-on-error: true
+        run: kitchen dashboard generate --output docs/index.html
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -1988,6 +2014,24 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install kitchen
+        run: pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
+
+      - name: Fetch results branch
+        run: git fetch origin results:results 2>/dev/null || true
+
+      - name: Generate dashboard
+        continue-on-error: true
+        run: kitchen dashboard generate --output docs/index.html
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -2177,6 +2221,219 @@ _DASHBOARD_HTML = """\
 </body>
 </html>
 """
+
+# ---------------------------------------------------------------------------
+# Dashboard generated template (kitchen dashboard generate)
+# Uses __PLACEHOLDER__ substitution — not string.Template — to avoid conflicts
+# with $ in project names and JSON data.
+# ---------------------------------------------------------------------------
+
+_DASHBOARD_GENERATED_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>__PROJECT_ESCAPED__ — Results Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #f9fafb; color: #111; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    #chart-wrap { max-width: 860px; margin-bottom: 2rem; }
+    #runs-table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+    th, td { padding: 0.35rem 0.75rem; border: 1px solid #e2e8f0; text-align: left; white-space: nowrap; }
+    th { background: #f1f5f9; }
+    tr.champion { background: #fef9c3; font-weight: 600; }
+    .dpos { color: #16a34a; }
+    .dneg { color: #dc2626; }
+    #status { color: #6b7280; margin-bottom: 1rem; font-size: 0.9rem; }
+    .scroll-wrap { overflow-x: auto; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>__PROJECT_ESCAPED__ — Results Dashboard</h1>
+  <p id="status">__STATUS_ESCAPED__</p>
+  <div id="chart-wrap"><canvas id="chart"></canvas></div>
+  <div class="scroll-wrap">
+    <table id="runs-table"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
+  </div>
+  <script>
+    var RESULTS = __RESULTS_JSON__;
+    var METRIC = __METRIC_JS__;
+    var PARAM_KEYS = __PARAM_KEYS_JSON__;
+    var HAS_LB = __HAS_LB__;
+    (function () {
+      var champ = RESULTS.find(function (r) { return r.champion; });
+      var champVal = (champ && METRIC) ? ((champ.metrics || {})[METRIC]) : null;
+      if (champVal === undefined) { champVal = null; }
+      if (METRIC) {
+        var cvals = RESULTS.map(function (r) { return (r.metrics || {})[METRIC]; });
+        var hasVals = cvals.some(function (v) { return v !== undefined && v !== null; });
+        if (hasVals) {
+          new Chart(document.getElementById('chart').getContext('2d'), {
+            type: 'line',
+            data: {
+              labels: RESULTS.map(function (r) { return (r.sha || '').slice(0, 8); }),
+              datasets: [{
+                label: METRIC,
+                data: cvals,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59,130,246,0.08)',
+                tension: 0.2,
+                spanGaps: true,
+                pointBackgroundColor: RESULTS.map(function (r) {
+                  return r.champion ? '#eab308' : '#3b82f6';
+                }),
+                pointRadius: 5
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: { legend: { display: true } },
+              scales: { y: { title: { display: true, text: METRIC } } }
+            }
+          });
+        } else {
+          document.getElementById('chart-wrap').style.display = 'none';
+        }
+      } else {
+        document.getElementById('chart-wrap').style.display = 'none';
+      }
+      var hdrs = ['#', 'SHA', 'Run ID', METRIC || 'Metric', 'Δ vs Champion'];
+      if (HAS_LB) { hdrs.push('LB Score'); }
+      PARAM_KEYS.forEach(function (k) { hdrs.push(k); });
+      hdrs.push('Started');
+      var htr = document.createElement('tr');
+      hdrs.forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        htr.appendChild(th);
+      });
+      document.getElementById('thead').appendChild(htr);
+      var tbody = document.getElementById('tbody');
+      RESULTS.forEach(function (run, i) {
+        var tr = document.createElement('tr');
+        if (run.champion) { tr.className = 'champion'; }
+        var mVal = METRIC ? (run.metrics || {})[METRIC] : null;
+        if (mVal === undefined) { mVal = null; }
+        var mStr = (mVal !== null) ? mVal.toFixed(4) : '—';
+        var deltaStr, deltaCls = '';
+        if (run.champion) {
+          deltaStr = '★';
+        } else if (champVal !== null && mVal !== null) {
+          var d = mVal - champVal;
+          deltaStr = (d >= 0 ? '+' : '') + d.toFixed(4);
+          deltaCls = d >= 0 ? 'dpos' : 'dneg';
+        } else {
+          deltaStr = '—';
+        }
+        [run.champion ? '[C]' : String(i + 1),
+         (run.sha || '').slice(0, 8),
+         (run.run_id || '').slice(0, 8),
+         mStr
+        ].forEach(function (v) {
+          var td = document.createElement('td');
+          td.textContent = v;
+          tr.appendChild(td);
+        });
+        var dtd = document.createElement('td');
+        dtd.textContent = deltaStr;
+        if (deltaCls) { dtd.className = deltaCls; }
+        tr.appendChild(dtd);
+        if (HAS_LB) {
+          var ltd = document.createElement('td');
+          var lb = run.lb_score;
+          ltd.textContent = (lb !== null && lb !== undefined) ? String(lb) : '—';
+          tr.appendChild(ltd);
+        }
+        PARAM_KEYS.forEach(function (k) {
+          var ptd = document.createElement('td');
+          var p = run.params;
+          ptd.textContent = (p && p[k] !== undefined) ? p[k] : '-';
+          tr.appendChild(ptd);
+        });
+        var std = document.createElement('td');
+        std.textContent = run.timestamp ? new Date(run.timestamp).toLocaleString() : '—';
+        tr.appendChild(std);
+        tbody.appendChild(tr);
+      });
+    }());
+  </script>
+</body>
+</html>
+"""
+
+
+def _render_dashboard_html(
+    project: str,
+    status: str,
+    results: "list[dict]",
+    metric: str,
+    param_keys: "list[str]",
+    has_lb: bool,
+) -> str:
+    import html as _html
+    import json as _json
+
+    html = _DASHBOARD_GENERATED_HTML
+    html = html.replace("__PROJECT_ESCAPED__", _html.escape(project))
+    html = html.replace("__STATUS_ESCAPED__", _html.escape(status))
+    html = html.replace("__RESULTS_JSON__", _json.dumps(results))
+    html = html.replace("__METRIC_JS__", _json.dumps(metric))
+    html = html.replace("__PARAM_KEYS_JSON__", _json.dumps(param_keys))
+    html = html.replace("__HAS_LB__", "true" if has_lb else "false")
+    return html
+
+
+def _find_free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+def _serve_local_dashboard(html_path: Path) -> None:
+    """Start a local HTTP server in CWD and open html_path in the browser.
+
+    Blocks until the user presses Ctrl+C.
+    """
+    import http.server
+    import threading
+    import time
+    import webbrowser
+
+    port = _find_free_port()
+
+    try:
+        rel = html_path.resolve().relative_to(Path.cwd())
+    except ValueError:
+        rel = html_path
+
+    url = f"http://localhost:{port}/{rel}"
+
+    class _QuietHandler(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *args: object) -> None:  # suppress request log lines
+            pass
+
+    httpd = http.server.HTTPServer(("", port), _QuietHandler)
+
+    typer.echo(f"Dashboard → {url}")
+    typer.echo("Press Ctrl+C to stop.\n")
+
+    def _open() -> None:
+        time.sleep(0.5)
+        webbrowser.open(url)
+
+    threading.Thread(target=_open, daemon=True).start()
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("\nStopped.")
+    finally:
+        httpd.server_close()
+
 
 # ---------------------------------------------------------------------------
 # DVC scaffold templates (--with-dvc)
@@ -3782,7 +4039,9 @@ def report(
 
 @app.command()
 def promote(
-    metric: str = typer.Argument(..., help="Metric to rank runs by"),
+    metric: Annotated[
+        str | None, typer.Argument(help="Metric to rank runs by (omit when using --run-id)")
+    ] = None,
     experiment: Annotated[
         str | None, typer.Option("--experiment", "-e", help="Experiment name")
     ] = None,
@@ -3797,33 +4056,66 @@ def promote(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Show winner without registering")
     ] = False,
+    run_id: Annotated[
+        str | None,
+        typer.Option("--run-id", help="Promote a specific run by ID instead of ranking by metric"),
+    ] = None,
 ) -> None:
-    """Promote the best-performing run to the model registry."""
+    """Promote a run to the model registry.
+
+    Pass METRIC to promote whichever run leads on that metric.
+    Pass --run-id to promote a specific run directly (e.g. copied from the dashboard).
+    Both METRIC and --run-id may be combined: --run-id targets the run, METRIC is shown for context.
+    """
     import os
+
+    import mlflow.tracking
 
     from kitchen.registry import get_best_run, get_production_uri, promote_model, register_model
     from kitchen.tracking import configure_from_env
 
     configure_from_env()
+
+    if run_id is None and metric is None:
+        typer.echo(
+            "error: provide a METRIC to rank by, or --run-id to target a specific run.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
     exp_name = _resolve_experiment(experiment, params_file)
 
     if model_name is None:
         model_name = os.environ.get("MLFLOW_MODEL_NAME", f"{exp_name}-model")
 
-    try:
-        run = get_best_run(exp_name, metric, lower_is_better=lower_is_better)
-    except ValueError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1)
+    if run_id is not None:
+        client = mlflow.tracking.MlflowClient()
+        try:
+            run = client.get_run(run_id)
+        except Exception as exc:
+            typer.echo(f"error: could not fetch run {run_id!r}: {exc}", err=True)
+            raise typer.Exit(1)
+    else:
+        try:
+            run = get_best_run(exp_name, metric, lower_is_better=lower_is_better)
+        except ValueError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1)
 
-    run_id = run.info.run_id
-    score = run.data.metrics.get(metric, float("nan"))
+    actual_run_id = run.info.run_id
     variant = run.data.tags.get("model_variant", "")
     variant_str = f" ({variant})" if variant else ""
-    direction = "lower=better" if lower_is_better else "higher=better"
 
     typer.echo(f"\nExperiment : {exp_name}")
-    typer.echo(f"Best run   : {run_id[:8]}  {metric}={score:.6f}{variant_str}  ({direction})")
+    if metric:
+        score = run.data.metrics.get(metric, float("nan"))
+        direction = "lower=better" if lower_is_better else "higher=better"
+        label = "Run" if run_id else "Best run"
+        typer.echo(f"{label:<11}: {actual_run_id[:8]}  {metric}={score:.6f}{variant_str}  ({direction})")
+    else:
+        run_name = run.data.tags.get("mlflow.runName", "")
+        name_str = f"  {run_name}" if run_name else ""
+        typer.echo(f"Run        : {actual_run_id[:8]}{name_str}{variant_str}")
 
     current = get_production_uri(model_name, alias)
     if current:
@@ -3833,7 +4125,7 @@ def promote(
         typer.echo("\nDry run — skipping registration and promotion.")
         return
 
-    reg_version = register_model(run_id, "model", model_name)
+    reg_version = register_model(actual_run_id, "model", model_name)
     typer.echo(f"\nRegistered : {model_name} v{reg_version}")
     promote_model(model_name, reg_version, alias=alias)
     typer.echo(f"Promoted   : {model_name} v{reg_version} → {alias}")
@@ -4479,6 +4771,162 @@ def serve_local(
         subprocess.run(cmd, env=env, check=False)
     except KeyboardInterrupt:
         typer.echo("\nStopped.")
+
+
+# ---------------------------------------------------------------------------
+# kitchen dashboard — generate and view the static results dashboard
+# ---------------------------------------------------------------------------
+
+dashboard_app = typer.Typer(help="Dashboard helpers.", no_args_is_help=True)
+app.add_typer(dashboard_app, name="dashboard")
+
+
+@dashboard_app.command("generate")
+def dashboard_generate(
+    output: Annotated[
+        str, typer.Option("--output", help="Path to write the HTML file")
+    ] = "dashboard/index.html",
+    branch: Annotated[
+        str, typer.Option("--branch", help="Git branch holding results/*.json files")
+    ] = "results",
+    metric: Annotated[
+        str | None, typer.Option("--metric", help="Primary metric to chart (auto-detected if omitted)")
+    ] = None,
+    show_params: Annotated[
+        str | None,
+        typer.Option(
+            "--show-params",
+            help="Comma-separated param keys to show as extra columns (e.g. model.eta,model.max_depth)",
+        ),
+    ] = None,
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml (used for project name)")
+    ] = "params.yaml",
+    serve: Annotated[
+        bool,
+        typer.Option(
+            "--serve/--no-serve",
+            help="After generating, start a local HTTP server and open the dashboard in the browser",
+        ),
+    ] = False,
+) -> None:
+    """Re-render dashboard/index.html from results/*.json on the results branch.
+
+    Reads result snapshots written by `kitchen push` from the local results branch
+    and produces a self-contained HTML file with all data embedded — no server or
+    GitHub Pages needed to view it locally.
+
+    Pass --serve to start a local HTTP server and open the dashboard immediately.
+    The generated file is NOT committed to git; it is a local build artifact.
+    """
+    import json
+    import subprocess
+    from datetime import datetime, timezone
+
+    branch_ref = f"refs/heads/{branch}"
+    check = subprocess.run(
+        ["git", "rev-parse", "--verify", branch_ref],
+        capture_output=True,
+        check=False,
+    )
+    if check.returncode != 0:
+        typer.echo(
+            f"error: branch '{branch}' not found locally — run `kitchen push` first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    ls_raw = subprocess.check_output(
+        ["git", "ls-tree", "--name-only", branch_ref, "results/"]
+    ).decode().strip()
+    json_files = [f for f in ls_raw.splitlines() if f.endswith(".json")]
+    if not json_files:
+        typer.echo(
+            f"error: no .json files found under results/ on branch '{branch}'.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    results: list[dict] = []
+    for file_path in json_files:
+        raw = subprocess.check_output(
+            ["git", "cat-file", "-p", f"{branch_ref}:{file_path}"]
+        ).decode()
+        try:
+            results.append(json.loads(raw))
+        except json.JSONDecodeError:
+            typer.echo(f"warning: skipping malformed result file {file_path}", err=True)
+
+    if not results:
+        typer.echo("error: no valid result files found.", err=True)
+        raise typer.Exit(1)
+
+    results.sort(key=lambda r: r.get("timestamp", ""))
+
+    project = "project"
+    if Path(params_file).exists():
+        try:
+            from kitchen.config import KitchenConfig
+
+            cfg = KitchenConfig.from_yaml(params_file)
+            project = cfg.experiment
+        except Exception:
+            pass
+
+    resolved_metric = metric
+    if resolved_metric is None:
+        priority = [
+            "val_accuracy", "val_brier", "val_log_loss", "val_roc_auc",
+            "val_rmse", "val_mae", "loto_brier",
+        ]
+        for candidate in priority:
+            if any(candidate in (r.get("metrics") or {}) for r in results):
+                resolved_metric = candidate
+                break
+        if resolved_metric is None:
+            for r in results:
+                for k in (r.get("metrics") or {}):
+                    if not k.startswith("fi."):
+                        resolved_metric = k
+                        break
+                if resolved_metric:
+                    break
+
+    param_keys: list[str] = []
+    if show_params:
+        requested = [p.strip() for p in show_params.split(",") if p.strip()]
+        if any(r.get("params") for r in results):
+            param_keys = requested
+
+    has_lb = any(r.get("lb_score") is not None for r in results)
+
+    status = (
+        f"{len(results)} run(s) loaded. "
+        f"Generated: {datetime.now(tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+    )
+
+    html = _render_dashboard_html(
+        project=project,
+        status=status,
+        results=results,
+        metric=resolved_metric or "",
+        param_keys=param_keys,
+        has_lb=has_lb,
+    )
+
+    out_path = Path(output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html, encoding="utf-8")
+
+    typer.echo(f"Dashboard written → {out_path}  ({len(results)} run(s))")
+    typer.echo(f"  metric  : {resolved_metric or '—'}")
+    if param_keys:
+        typer.echo(f"  params  : {', '.join(param_keys)}")
+
+    if serve:
+        _serve_local_dashboard(out_path)
+    else:
+        typer.echo("\nOpen with: kitchen open  (or kitchen dashboard generate --serve)")
 
 
 if __name__ == "__main__":
