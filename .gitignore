@@ -53,12 +53,13 @@ secrets/
 .claude
 CLAUDE.md
 Agents.md
+architecture.md
 backlog.md
 secondary-backlog.md
+feedback.md
 
 # Scripts
 scripts
 
 # Internal docs
-docs/decisions
-
+docs

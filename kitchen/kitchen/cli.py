@@ -34,6 +34,16 @@ from typing import Annotated
 
 import typer
 
+# Load .env from the project root (CWD) so MLFLOW_TRACKING_URI and other
+# credentials are available to all commands without the user needing to
+# `source .env` first.  Variables already set in the environment take
+# precedence (override=False is the default).
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed — env vars must be set externally
+
 app = typer.Typer(help="kitchen ML platform CLI", add_completion=False, no_args_is_help=True)
 
 
@@ -2637,7 +2647,9 @@ def leaderboard(
     import os
 
     import mlflow.tracking
+    from kitchen.tracking import configure_from_env
 
+    configure_from_env()
     exp_name = _resolve_experiment(experiment, params_file)
     client = mlflow.tracking.MlflowClient()
     exp = client.get_experiment_by_name(exp_name)
@@ -3298,6 +3310,73 @@ def check(
             else:
                 _fail(str(p), "implement to run the pipeline")
 
+    # --- Project package importability ---
+    # Read the package name from pyproject.toml so this works for any project,
+    # not just cbb-model.  Covers the common case where `kitchen` runs in a
+    # different Python env than the one where `pip install -e .` was last run
+    # (e.g. pipx kitchen on Python 3.13 vs Homebrew kitchen on Python 3.14).
+    _pyproject = Path("pyproject.toml")
+    if _pyproject.exists() and any(p.exists() for p in src_candidates):
+        _pkg_names: list[str] = []
+        try:
+            import importlib.util as _ilu
+
+            if _ilu.find_spec("tomllib"):
+                import tomllib as _toml
+            else:
+                import tomli as _toml  # type: ignore[no-reuse-declared]
+
+            with open(_pyproject, "rb") as _fh:
+                _pdata = _toml.load(_fh)
+            # hatch: packages = ["src/cbb"] → importable name is "cbb"
+            _wheel_pkgs = (
+                _pdata.get("tool", {})
+                .get("hatch", {})
+                .get("build", {})
+                .get("targets", {})
+                .get("wheel", {})
+                .get("packages", [])
+            )
+            for _wp in _wheel_pkgs:
+                _pkg_names.append(Path(_wp).name)
+            # setuptools / flit: [tool.setuptools.packages.find] root = "src"
+            if not _pkg_names:
+                _pkg_names = (
+                    _pdata.get("tool", {})
+                    .get("setuptools", {})
+                    .get("packages", {})
+                    .get("find", {})
+                    .get("include", [])
+                )
+        except Exception:
+            pass  # toml parse failure — skip importability check
+
+        if _pkg_names:
+            import importlib as _il
+
+            _missing: list[str] = []
+            for _pn in _pkg_names:
+                try:
+                    _il.import_module(_pn)
+                except ModuleNotFoundError:
+                    _missing.append(_pn)
+
+            if _missing:
+                # Detect whether kitchen itself was installed via pipx so we
+                # can give the right fix command.
+                _kitchen_bin = shutil.which("kitchen") or ""
+                _via_pipx = ".local/pipx" in _kitchen_bin or "pipx" in _kitchen_bin
+                if _via_pipx:
+                    _fix = "pipx inject rkoren-kitchen . --force"
+                else:
+                    _fix = "pip install -e ."
+                _fail(
+                    "project package",
+                    f"'{', '.join(_missing)}' not importable — run: {_fix}",
+                )
+            else:
+                _ok("project package", f"'{', '.join(_pkg_names)}' importable ✓")
+
     # --- Summary ---
     typer.echo()
     if issues == 0:
@@ -3625,6 +3704,9 @@ def push(
     message: Annotated[
         str | None, typer.Option("--message", "-m", help="Custom commit message")
     ] = None,
+    top_features_n: Annotated[
+        int, typer.Option("--top-features", help="Max feature importances to include (0 = disable).")
+    ] = 20,
 ) -> None:
     """Publish current run metrics to the results branch as results/<sha>.json.
 
@@ -3635,6 +3717,7 @@ def push(
     import json
     import os
     import subprocess
+    import tempfile
     from datetime import datetime, timezone
 
     from kitchen.tracking import configure_from_env
@@ -3682,17 +3765,73 @@ def push(
     # --- Resolve run_id ---
     run_id: str | None = run_id_override or metrics.get("run_id")
 
-    # --- Champion lookup ---
+    # --- Fetch MLflow metadata (champion flag, params, top features, calibration) ---
+    # All fetches are best-effort: any failure silently leaves the field as None.
     is_champion = False
-    if run_id and model_name:
-        try:
-            import mlflow.tracking
+    params_from_run: dict | None = None
+    top_features: list | None = None
+    calibration_data: list | None = None
 
-            client = mlflow.tracking.MlflowClient()
-            mv = client.get_model_version_by_alias(model_name, "champion")
-            is_champion = mv.run_id == run_id
-        except Exception:
-            pass
+    if run_id:
+        try:
+            import mlflow as _mlflow
+            import mlflow.tracking as _mlflow_tracking
+
+            _client = _mlflow_tracking.MlflowClient()
+
+            # Champion flag
+            if model_name:
+                try:
+                    _mv = _client.get_model_version_by_alias(model_name, "champion")
+                    is_champion = _mv.run_id == run_id
+                except Exception:
+                    pass
+
+            # Params from the MLflow run (stored as strings by MLflow)
+            try:
+                _p = dict(_client.get_run(run_id).data.params)
+                params_from_run = _p if _p else None
+            except Exception:
+                pass
+
+            # Top features from feature_importances.json artifact (logged by M-007)
+            if top_features_n > 0:
+                try:
+                    with tempfile.TemporaryDirectory() as _tmp:
+                        _fi_path = _mlflow.artifacts.download_artifacts(
+                            run_id=run_id,
+                            artifact_path="feature_importances.json",
+                            dst_path=_tmp,
+                        )
+                        _fi_raw: dict = json.loads(
+                            Path(_fi_path).read_text(encoding="utf-8")
+                        )
+                        _sorted_fi = sorted(
+                            _fi_raw.items(), key=lambda x: x[1], reverse=True
+                        )
+                        top_features = [
+                            {"name": k, "importance": v}
+                            for k, v in _sorted_fi[:top_features_n]
+                        ]
+                except Exception:
+                    pass
+
+            # Calibration curves from calibration.json artifact (logged by DASH-006)
+            try:
+                with tempfile.TemporaryDirectory() as _tmp:
+                    _cal_path = _mlflow.artifacts.download_artifacts(
+                        run_id=run_id,
+                        artifact_path="calibration.json",
+                        dst_path=_tmp,
+                    )
+                    calibration_data = json.loads(
+                        Path(_cal_path).read_text(encoding="utf-8")
+                    )
+            except Exception:
+                pass
+
+        except ImportError:
+            pass  # mlflow not installed — all metadata fields remain None
 
     # --- lb_score ---
     lb_score: float | None = metrics.pop("kaggle_public_score", None)
@@ -3708,6 +3847,9 @@ def push(
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         "run_id": run_id or "",
         "metrics": {k: v for k, v in metrics.items() if k != "run_id"},
+        "params": params_from_run,
+        "top_features": top_features,
+        "calibration": calibration_data,
         "lb_score": lb_score,
         "champion": is_champion,
     }
@@ -4039,8 +4181,11 @@ Done. Next steps:
 
   cd {cd_target}
   pip install -e ../kitchen-platform/kitchen -e .
+  # If kitchen was installed via pipx, inject the project package instead:
+  # pipx inject rkoren-kitchen .
   cp .env.example .env
   kitchen check                       # verify tools, credentials, and config
+                                      # (includes a check that your package is importable)
 {data_step}
   # Implement src/features/run.py, src/train/run.py, src/evaluate/run.py
   kitchen run train                   # features → train → log to MLflow
