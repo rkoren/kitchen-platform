@@ -1,5 +1,6 @@
-from kitchen import evaluate, experiment, registry, tracking
+from kitchen import evaluate, registry, tracking
 from kitchen.config import KitchenConfig
+from kitchen.experiment import experiment
 from kitchen.modeling import (
     blend_predictions,
     calibrate_model,

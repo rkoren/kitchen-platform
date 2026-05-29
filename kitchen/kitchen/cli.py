@@ -2647,6 +2647,7 @@ def leaderboard(
     import os
 
     import mlflow.tracking
+
     from kitchen.tracking import configure_from_env
 
     configure_from_env()
