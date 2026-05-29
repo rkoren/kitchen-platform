@@ -14,7 +14,7 @@ Usage:
     kitchen leaderboard                          # rank runs; [C]=champion ★=metric leader
     kitchen leaderboard --show-params model.eta,model.max_depth  # add param columns
     kitchen leaderboard --expand-metrics         # show per-fold metrics as sub-columns
-    kitchen diff <run_id_a> <run_id_b>           # show param and metric deltas between two runs
+    kitchen diff <run_id_a> <run_id_b>           # show param, metric, and feature importance deltas
     kitchen promote METRIC                       # manually promote best run
     kitchen promote --run-id <run_id>            # promote a specific run (e.g. from dashboard)
     kitchen ui                                   # open MLflow UI in browser
@@ -3027,8 +3027,30 @@ def leaderboard(
 
 
 # ---------------------------------------------------------------------------
-# Diff command (CMP-001)
+# Diff command (CMP-001, CMP-004)
 # ---------------------------------------------------------------------------
+
+
+def _diff_load_fi(run_id: str) -> dict[str, float] | None:
+    """Download feature_importances.json for a run; returns None if absent.
+
+    Only JSON is supported (M-007 only logs JSON; add CSV handling here if that changes).
+    """
+    import json
+    import tempfile
+
+    try:
+        import mlflow.artifacts
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fi_path = mlflow.artifacts.download_artifacts(
+                run_id=run_id,
+                artifact_path="feature_importances.json",
+                dst_path=tmp,
+            )
+            return json.loads(Path(fi_path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 @app.command()
@@ -3089,28 +3111,55 @@ def diff(
         if va_raw != vb_raw:
             metric_rows.append((key, _fmt_metric(va_raw), _fmt_metric(vb_raw)))
 
-    if not param_rows and not metric_rows:
+    # --- Feature importance rank diffs (CMP-004) ---
+    _fi_a = _diff_load_fi(run_id_a)
+    _fi_b = _diff_load_fi(run_id_b)
+    fi_rows: list[tuple[int, int, int, str]] = []
+    if _fi_a is not None and _fi_b is not None:
+        _rank_a = {n: i + 1 for i, (n, _) in enumerate(sorted(_fi_a.items(), key=lambda x: (-x[1], x[0])))}
+        _rank_b = {n: i + 1 for i, (n, _) in enumerate(sorted(_fi_b.items(), key=lambda x: (-x[1], x[0])))}
+        fi_rows = sorted(
+            [
+                (abs(_rank_b[f] - _rank_a[f]), _rank_a[f], _rank_b[f], f)
+                for f in set(_rank_a) & set(_rank_b)
+                if _rank_a[f] != _rank_b[f]
+            ],
+            reverse=True,
+        )[:5]
+
+    if not param_rows and not metric_rows and not fi_rows:
         typer.echo("\nNo differences found.\n")
         return
 
-    all_rows = param_rows + metric_rows
-    key_w = max(len(r[0]) for r in all_rows)
-    a_w = max(len(r[1]) for r in all_rows)
+    if param_rows or metric_rows:
+        all_rows = param_rows + metric_rows
+        key_w = max(len(r[0]) for r in all_rows)
+        a_w = max(len(r[1]) for r in all_rows)
+        header = f"\n  {'FIELD':<{key_w}}  {a_short:>{a_w}}  {b_short}"
+        sep = "  " + "-" * (key_w + a_w + 4 + len(b_short))
 
-    header = f"\n  {'FIELD':<{key_w}}  {a_short:>{a_w}}  {b_short}"
-    sep = "  " + "-" * (key_w + a_w + 4 + len(b_short))
+        if param_rows:
+            typer.echo(f"\nParams{header}")
+            typer.echo(sep)
+            for key, va, vb in param_rows:
+                typer.echo(f"  {key:<{key_w}}  {va:>{a_w}}  {vb}")
 
-    if param_rows:
-        typer.echo(f"\nParams{header}")
-        typer.echo(sep)
-        for key, va, vb in param_rows:
-            typer.echo(f"  {key:<{key_w}}  {va:>{a_w}}  {vb}")
+        if metric_rows:
+            typer.echo(f"\nMetrics{header}")
+            typer.echo(sep)
+            for key, va, vb in metric_rows:
+                typer.echo(f"  {key:<{key_w}}  {va:>{a_w}}  {vb}")
 
-    if metric_rows:
-        typer.echo(f"\nMetrics{header}")
-        typer.echo(sep)
-        for key, va, vb in metric_rows:
-            typer.echo(f"  {key:<{key_w}}  {va:>{a_w}}  {vb}")
+    if fi_rows:
+        fw = max(len(f) for _, _, _, f in fi_rows)
+        fi_header = f"\n  {'FEATURE':<{fw}}  {'rank(a)':>7}  {'rank(b)':>7}  {'Δ':>5}"
+        fi_sep = "  " + "-" * (fw + 26)
+        typer.echo(f"\nFeature importance{fi_header}")
+        typer.echo(fi_sep)
+        for _, ra, rb, feat in fi_rows:
+            delta = rb - ra
+            delta_str = f"+{delta}" if delta > 0 else str(delta)
+            typer.echo(f"  {feat:<{fw}}  {ra:>7}  {rb:>7}  {delta_str:>5}")
 
     typer.echo()
 
