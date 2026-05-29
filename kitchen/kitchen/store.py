@@ -79,6 +79,22 @@ class DataStore:
             raise FileNotFoundError(f"{path} not found — run `{cmd}` first")
         return pd.read_parquet(path)
 
+    def list(self, stage: str = "raw") -> list[str]:
+        """Return a sorted list of filenames in the given stage directory.
+
+        ``stage`` accepts ``"raw"``, ``"processed"``, ``"models"``, or a custom
+        relative path from the store root.  Returns an empty list when the
+        directory does not exist or is empty.  Only files are returned —
+        subdirectories are excluded.
+        """
+        if stage in _KNOWN_STAGES:
+            directory = getattr(self, f"{stage}_dir")
+        else:
+            directory = self.root / stage
+        if not directory.is_dir():
+            return []
+        return sorted(p.name for p in directory.iterdir() if p.is_file())
+
     def preview(self, filename: str, n: int = 5) -> pd.DataFrame:
         """Return the first n rows of a file, searching processed/ then raw/.
 

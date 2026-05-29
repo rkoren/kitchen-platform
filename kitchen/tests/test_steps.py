@@ -12,7 +12,7 @@ from kitchen.steps import Evaluator, FeatureBuilder, Trainer, _resolve
 
 
 class DoubleFeatures(FeatureBuilder):
-    def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame:
+    def build(self, raw: pd.DataFrame | dict[str, pd.DataFrame], params: dict) -> pd.DataFrame:
         return raw * 2
 
 
@@ -59,6 +59,73 @@ def test_feature_builder_run_calls_store():
     store.save_parquet.assert_called_once()
     saved_df = store.save_parquet.call_args[0][0]
     assert list(saved_df["x"]) == [2, 4]
+
+
+# --- FeatureBuilder.sources ---
+
+
+def test_sources_default_returns_raw_file_from_params():
+    assert DoubleFeatures().sources({"raw_file": "train.csv"}) == ["train.csv"]
+
+
+def test_sources_default_falls_back_to_data_csv():
+    assert DoubleFeatures().sources({}) == ["data.csv"]
+
+
+def test_sources_default_resolves_nested_params():
+    params = {"features": {"raw_file": "raw/train.csv"}}
+    assert DoubleFeatures().sources(params) == ["raw/train.csv"]
+
+
+def test_feature_builder_run_uses_sources():
+    """run() calls sources() — an overridden sources() changes what is loaded."""
+
+    class MultiSource(FeatureBuilder):
+        def sources(self, params: dict) -> list[str]:
+            return ["a.csv", "b.csv"]
+
+        def build(self, raw, params: dict) -> pd.DataFrame:
+            return pd.DataFrame({"x": [1]})
+
+    store = MagicMock()
+    store.load_csv.return_value = pd.DataFrame({"x": [1]})
+    MultiSource().run(store, params={})
+    calls = [c[0][0] for c in store.load_csv.call_args_list]
+    assert calls == ["a.csv", "b.csv"]
+
+
+def test_feature_builder_multi_source_passes_dict_to_build():
+    """When sources() returns multiple files, build() receives a dict keyed by filename."""
+    received = {}
+
+    class MultiSource(FeatureBuilder):
+        def sources(self, params: dict) -> list[str]:
+            return ["a.csv", "b.csv"]
+
+        def build(self, raw, params: dict) -> pd.DataFrame:
+            received["raw"] = raw
+            return pd.DataFrame({"x": [1]})
+
+    store = MagicMock()
+    store.load_csv.return_value = pd.DataFrame({"x": [1]})
+    MultiSource().run(store, params={})
+    assert isinstance(received["raw"], dict)
+    assert set(received["raw"].keys()) == {"a.csv", "b.csv"}
+
+
+def test_feature_builder_single_source_passes_dataframe_to_build():
+    """Single-source path still passes a plain DataFrame (backward compat)."""
+    received = {}
+
+    class SingleSource(FeatureBuilder):
+        def build(self, raw, params: dict) -> pd.DataFrame:
+            received["raw"] = raw
+            return raw
+
+    store = MagicMock()
+    store.load_csv.return_value = pd.DataFrame({"x": [1]})
+    SingleSource().run(store, params={"raw_file": "train.csv"})
+    assert isinstance(received["raw"], pd.DataFrame)
 
 
 # --- Trainer ---
