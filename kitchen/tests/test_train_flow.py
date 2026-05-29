@@ -16,6 +16,7 @@ import yaml
 
 from kitchen.flows.train_flow import (
     EXPERIMENT,
+    _apply_overrides,
     _build,
     _train,
     train_pipeline,
@@ -245,7 +246,7 @@ def test_pipeline_calls_build_before_train(tmp_path, monkeypatch):
     order: list[str] = []
     with (
         patch("kitchen.flows.train_flow._build", side_effect=lambda p: order.append("build")),
-        patch("kitchen.flows.train_flow._train", side_effect=lambda p: order.append("train")),
+        patch("kitchen.flows.train_flow._train", side_effect=lambda p, **kw: order.append("train")),
     ):
         train_pipeline.fn(params_file=params_file)
     assert order == ["build", "train"]
@@ -258,7 +259,7 @@ def test_pipeline_passes_parsed_params_to_tasks(tmp_path, monkeypatch):
     received: dict[str, dict] = {}
     with (
         patch("kitchen.flows.train_flow._build", side_effect=lambda p: received.update({"build": p})),
-        patch("kitchen.flows.train_flow._train", side_effect=lambda p: received.update({"train": p})),
+        patch("kitchen.flows.train_flow._train", side_effect=lambda p, **kw: received.update({"train": p})),
     ):
         train_pipeline.fn(params_file=params_file)
     assert received["build"]["experiment"] == "test-exp"
@@ -282,3 +283,120 @@ def test_pipeline_missing_params_file_raises(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises((FileNotFoundError, OSError)):
         train_pipeline.fn(params_file="nonexistent.yaml")
+
+
+# ---------------------------------------------------------------------------
+# _apply_overrides (SWEEP-001)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_overrides_flat_key():
+    params = {"experiment": "test", "alpha": 0.1}
+    _apply_overrides(params, {"alpha": 0.5})
+    assert params["alpha"] == 0.5
+
+
+def test_apply_overrides_nested_key():
+    params = {"model": {"max_depth": 3, "eta": 0.1}}
+    _apply_overrides(params, {"model.max_depth": 6})
+    assert params["model"]["max_depth"] == 6
+    assert params["model"]["eta"] == 0.1  # unchanged
+
+
+def test_apply_overrides_creates_missing_intermediate_dicts():
+    params: dict = {}
+    _apply_overrides(params, {"new_section.key": 42})
+    assert params["new_section"]["key"] == 42
+
+
+def test_apply_overrides_multiple_keys():
+    params = {"model": {"max_depth": 3, "eta": 0.1}}
+    _apply_overrides(params, {"model.max_depth": 8, "model.eta": 0.05})
+    assert params["model"]["max_depth"] == 8
+    assert params["model"]["eta"] == 0.05
+
+
+def test_apply_overrides_does_not_touch_other_keys():
+    params = {"experiment": "proj", "model": {"max_depth": 3}}
+    _apply_overrides(params, {"model.max_depth": 6})
+    assert params["experiment"] == "proj"
+
+
+# ---------------------------------------------------------------------------
+# train_pipeline with overrides (SWEEP-001)
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_applies_overrides_to_params(tmp_path, monkeypatch):
+    """train_pipeline mutates params before passing to tasks when overrides are given."""
+    monkeypatch.chdir(tmp_path)
+    params_file = _write_params(tmp_path, {"experiment": "test-exp", "model": {"max_depth": 3}})
+    received: dict = {}
+    with (
+        patch("kitchen.flows.train_flow._build", side_effect=lambda p: received.update({"build": p})),
+        patch("kitchen.flows.train_flow._train", side_effect=lambda p, **kw: None),
+    ):
+        train_pipeline.fn(params_file=params_file, overrides={"model.max_depth": 6})
+    assert received["build"]["model"]["max_depth"] == 6
+
+
+def test_pipeline_passes_overrides_to_train_task(tmp_path, monkeypatch):
+    """train_pipeline passes the overrides dict to _train as a keyword argument."""
+    monkeypatch.chdir(tmp_path)
+    params_file = _write_params(tmp_path)
+    captured: dict = {}
+    with (
+        patch("kitchen.flows.train_flow._build"),
+        patch(
+            "kitchen.flows.train_flow._train",
+            side_effect=lambda p, overrides=None: captured.update({"overrides": overrides}),
+        ),
+    ):
+        train_pipeline.fn(params_file=params_file, overrides={"model.max_depth": 6})
+    assert captured["overrides"] == {"model.max_depth": 6}
+
+
+def test_pipeline_no_overrides_passes_none_to_train(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    params_file = _write_params(tmp_path)
+    captured: dict = {}
+    with (
+        patch("kitchen.flows.train_flow._build"),
+        patch(
+            "kitchen.flows.train_flow._train",
+            side_effect=lambda p, overrides=None: captured.update({"overrides": overrides}),
+        ),
+    ):
+        train_pipeline.fn(params_file=params_file)
+    assert captured["overrides"] is None
+
+
+# ---------------------------------------------------------------------------
+# _train override tag logging (SWEEP-001)
+# ---------------------------------------------------------------------------
+
+
+def test_train_logs_override_tags(monkeypatch, train_env):
+    """_train logs override keys as MLflow tags with the 'override.' prefix."""
+    _inject_train_mod(monkeypatch)
+    with patch("kitchen.flows.train_flow.mlflow") as mock_mlflow:
+        _train.fn(PARAMS, overrides={"model.max_depth": 6, "model.eta": 0.05})
+    mock_mlflow.set_tags.assert_called_once_with(
+        {"override.model.max_depth": "6", "override.model.eta": "0.05"}
+    )
+
+
+def test_train_no_override_tags_when_no_overrides(monkeypatch, train_env):
+    """_train does not call mlflow.set_tags when overrides is None."""
+    _inject_train_mod(monkeypatch)
+    with patch("kitchen.flows.train_flow.mlflow") as mock_mlflow:
+        _train.fn(PARAMS)
+    mock_mlflow.set_tags.assert_not_called()
+
+
+def test_train_opens_tracker_run(monkeypatch, train_env):
+    """_train always opens tracker.run() regardless of whether overrides are present."""
+    _inject_train_mod(monkeypatch)
+    _train.fn(PARAMS)
+    tracker = train_env["Tracker"].return_value
+    tracker.run.assert_called_once()

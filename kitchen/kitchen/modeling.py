@@ -1,10 +1,12 @@
-"""Modeling helpers: splits, metrics, cross-validation, clipping, seeding, ensembling, and calibration.
+"""Modeling helpers: splits, metrics, cross-validation, clipping, seeding, ensembles, and calibration.
 
 Quick usage::
 
     from kitchen.modeling import (
         train_val_split,
         cross_validate,
+        time_series_cv,
+        loto_cv,
         classification_metrics,
         regression_metrics,
         clip_proba,
@@ -243,6 +245,209 @@ def cross_validate(
         result[f"{key}_std"] = float(vals.std())
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# CV-001 / CV-002: Time-series and leave-one-group-out CV
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_key(value: "Any") -> str:
+    """Convert a period or group label to a safe MLflow metric key component."""
+    return "".join(c if c.isalnum() else "_" for c in str(value)).strip("_") or "group"
+
+
+def _aggregate_fold_metrics(
+    fold_metrics: "list[dict[str, float]]",
+    fold_keys: "list[str]",
+) -> "dict[str, float]":
+    """Merge per-fold metrics into a flat dict with per-fold and aggregate keys."""
+    metric_names = list(fold_metrics[0].keys())
+    result: dict[str, float] = {}
+    for fold_key, fm in zip(fold_keys, fold_metrics):
+        for metric_name, value in fm.items():
+            result[f"{metric_name}_{fold_key}"] = float(value)
+    for metric_name in metric_names:
+        vals = np.array([fm[metric_name] for fm in fold_metrics])
+        result[f"{metric_name}_mean"] = float(vals.mean())
+        result[f"{metric_name}_std"] = float(vals.std())
+    return result
+
+
+def time_series_cv(
+    df: "pd.DataFrame",
+    time_col: str,
+    target_col: str,
+    n_val_periods: int,
+    trainer_fn: "Callable[[], Any]",
+    metric_fn: "Callable[..., dict[str, float]]",
+    return_proba: bool = False,
+    **fit_kwargs: "Any",
+) -> "dict[str, float]":
+    """Walk-forward time-series cross-validation.
+
+    For each of the last *n_val_periods* distinct values of *time_col*, trains
+    on all prior periods and evaluates on the held-out period.  Both *time_col*
+    and *target_col* are dropped from the feature matrix.
+
+    Args:
+        df: Full dataset with a temporal grouping column and a target column.
+        time_col: Column whose distinct sorted values define temporal order
+            (e.g. ``"Season"``, ``"Year"``).
+        target_col: Name of the target column.
+        n_val_periods: Number of trailing periods to use as validation folds.
+        trainer_fn: Zero-argument callable returning a new, unfitted
+            sklearn-compatible estimator.  Called once per period.
+            Example: ``lambda: XGBClassifier(**params["model"])``.
+        metric_fn: Metric function with signature
+            ``(y_true, y_pred, **kwargs) -> dict[str, float]``.
+        return_proba: When ``True``, passes ``predict_proba()`` output to
+            *metric_fn* as ``y_proba``.
+        **fit_kwargs: Extra keyword arguments forwarded to
+            ``estimator.fit(X, y, **fit_kwargs)``.
+
+    Returns:
+        Flat ``dict[str, float]`` with:
+
+        - ``{metric}_{period}`` — value for that specific period.
+        - ``{metric}_mean`` / ``{metric}_std`` — aggregate across all periods.
+
+    Raises:
+        ValueError: If *time_col* has fewer than ``n_val_periods + 1`` distinct
+            values (insufficient history to train before the first val period).
+
+    Example::
+
+        from kitchen.modeling import time_series_cv, classification_metrics
+
+        cv = time_series_cv(
+            df=train_df,
+            time_col="Season",
+            target_col="won",
+            n_val_periods=3,
+            trainer_fn=lambda: XGBClassifier(**params["model"]),
+            metric_fn=classification_metrics,
+        )
+        # {"accuracy_2020": 0.74, ..., "accuracy_mean": 0.76, "accuracy_std": 0.02}
+        tracker.log_metrics(cv)
+    """
+    periods = sorted(df[time_col].unique())
+    if len(periods) < n_val_periods + 1:
+        raise ValueError(
+            f"time_series_cv requires at least {n_val_periods + 1} distinct values in "
+            f"column {time_col!r}; found {len(periods)}."
+        )
+
+    feature_cols = [c for c in df.columns if c not in (time_col, target_col)]
+    val_periods = periods[-n_val_periods:]
+    fold_metrics: list[dict[str, float]] = []
+    period_keys: list[str] = []
+
+    for period in val_periods:
+        train_mask = df[time_col] < period
+        val_mask = df[time_col] == period
+
+        X_train = df.loc[train_mask, feature_cols].values
+        y_train = df.loc[train_mask, target_col].values
+        X_val = df.loc[val_mask, feature_cols].values
+        y_val = df.loc[val_mask, target_col].values
+
+        estimator = trainer_fn()
+        estimator.fit(X_train, y_train, **fit_kwargs)
+        y_pred = estimator.predict(X_val)
+
+        kwargs: dict = {}
+        if return_proba and hasattr(estimator, "predict_proba"):
+            proba = estimator.predict_proba(X_val)
+            kwargs["y_proba"] = proba[:, 1] if proba.shape[1] == 2 else proba
+
+        fold_metrics.append(metric_fn(y_val, y_pred, **kwargs))
+        period_keys.append(_sanitize_key(period))
+
+    return _aggregate_fold_metrics(fold_metrics, period_keys)
+
+
+def loto_cv(
+    df: "pd.DataFrame",
+    leave_out_col: str,
+    target_col: str,
+    trainer_fn: "Callable[[], Any]",
+    metric_fn: "Callable[..., dict[str, float]]",
+    return_proba: bool = False,
+    **fit_kwargs: "Any",
+) -> "dict[str, float]":
+    """Leave-one-group-out cross-validation.
+
+    For each distinct value of *leave_out_col*, trains on all other groups and
+    evaluates on the held-out group.  Both *leave_out_col* and *target_col* are
+    dropped from the feature matrix.
+
+    Correct for datasets where the test distribution is a future or held-out
+    group (e.g. a held-out season, region, or cohort) — ``StratifiedKFold``
+    would leak future information in these settings.
+
+    Args:
+        df: Full dataset with a grouping column and a target column.
+        leave_out_col: Column whose distinct values define the groups
+            (e.g. ``"Season"``, ``"Region"``).
+        target_col: Name of the target column.
+        trainer_fn: Zero-argument callable returning a new, unfitted
+            sklearn-compatible estimator.  Called once per group.
+            Example: ``lambda: XGBClassifier(**params["model"])``.
+        metric_fn: Metric function with signature
+            ``(y_true, y_pred, **kwargs) -> dict[str, float]``.
+        return_proba: When ``True``, passes ``predict_proba()`` output to
+            *metric_fn* as ``y_proba``.
+        **fit_kwargs: Extra keyword arguments forwarded to
+            ``estimator.fit(X, y, **fit_kwargs)``.
+
+    Returns:
+        Flat ``dict[str, float]`` with:
+
+        - ``{metric}_{group}`` — value for that specific held-out group.
+        - ``{metric}_mean`` / ``{metric}_std`` — aggregate across all groups.
+
+    Example::
+
+        from kitchen.modeling import loto_cv, classification_metrics
+
+        cv = loto_cv(
+            df=train_df,
+            leave_out_col="Season",
+            target_col="won",
+            trainer_fn=lambda: XGBClassifier(**params["model"]),
+            metric_fn=classification_metrics,
+        )
+        # {"accuracy_2019": 0.73, ..., "accuracy_mean": 0.76, "accuracy_std": 0.02}
+        tracker.log_metrics(cv)
+    """
+    groups = sorted(df[leave_out_col].unique())
+    feature_cols = [c for c in df.columns if c not in (leave_out_col, target_col)]
+    fold_metrics: list[dict[str, float]] = []
+    group_keys: list[str] = []
+
+    for group in groups:
+        train_mask = df[leave_out_col] != group
+        val_mask = df[leave_out_col] == group
+
+        X_train = df.loc[train_mask, feature_cols].values
+        y_train = df.loc[train_mask, target_col].values
+        X_val = df.loc[val_mask, feature_cols].values
+        y_val = df.loc[val_mask, target_col].values
+
+        estimator = trainer_fn()
+        estimator.fit(X_train, y_train, **fit_kwargs)
+        y_pred = estimator.predict(X_val)
+
+        kwargs: dict = {}
+        if return_proba and hasattr(estimator, "predict_proba"):
+            proba = estimator.predict_proba(X_val)
+            kwargs["y_proba"] = proba[:, 1] if proba.shape[1] == 2 else proba
+
+        fold_metrics.append(metric_fn(y_val, y_pred, **kwargs))
+        group_keys.append(_sanitize_key(group))
+
+    return _aggregate_fold_metrics(fold_metrics, group_keys)
 
 
 # ---------------------------------------------------------------------------
