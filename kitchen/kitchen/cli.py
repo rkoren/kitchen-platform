@@ -13,6 +13,7 @@ Usage:
     kitchen status                               # one-screen project summary: champion + recent runs
     kitchen leaderboard                          # rank runs; [C]=champion ★=metric leader
     kitchen leaderboard --show-params model.eta,model.max_depth  # add param columns
+    kitchen leaderboard --expand-metrics         # show per-fold metrics as sub-columns
     kitchen diff <run_id_a> <run_id_b>           # show param and metric deltas between two runs
     kitchen promote METRIC                       # manually promote best run
     kitchen promote --run-id <run_id>            # promote a specific run (e.g. from dashboard)
@@ -2910,6 +2911,13 @@ def leaderboard(
             help="Comma-separated param paths to show as extra columns (e.g. model.eta,model.max_depth)",
         ),
     ] = None,
+    expand_metrics: Annotated[
+        bool,
+        typer.Option(
+            "--expand-metrics/--no-expand-metrics",
+            help="Show per-fold metric sub-columns for any {metric}_{fold} keys logged by time_series_cv or loto_cv",
+        ),
+    ] = False,
 ) -> None:
     """Rank runs by a metric; shows full run_id and lb_score for easy replay.
 
@@ -2963,12 +2971,28 @@ def leaderboard(
         for key in param_keys
     ]
 
+    # Discover per-fold keys: any {metric}_{suffix} key logged by time_series_cv / loto_cv,
+    # excluding the aggregate _mean and _std keys.
+    fold_suffixes: list[str] = []
+    if expand_metrics:
+        prefix = f"{metric}_"
+        all_fold_suffixes: set[str] = set()
+        for run in runs:
+            for key in run.data.metrics:
+                if key.startswith(prefix):
+                    suffix = key[len(prefix):]
+                    if suffix not in ("mean", "std"):
+                        all_fold_suffixes.add(suffix)
+        fold_suffixes = sorted(all_fold_suffixes)
+    fold_widths: list[int] = [max(len(s), 6) for s in fold_suffixes]
+
     direction = "higher=better" if higher_is_better else "lower=better"
     typer.echo(f"\nExperiment: {exp_name}  |  {metric} ({direction})\n")
 
     id_w = 32
     param_col_header = "".join(f"  {key:>{w}}" for key, w in zip(param_keys, param_widths))
-    header = f"{'#':<4}  {'RUN ID':<{id_w}}  {'VARIANT':<12}  {metric:>12}  {'lb_score':>10}{param_col_header}  STARTED"
+    fold_col_header = "".join(f"  {s:>{w}}" for s, w in zip(fold_suffixes, fold_widths))
+    header = f"{'#':<4}  {'RUN ID':<{id_w}}  {'VARIANT':<12}  {metric:>12}{fold_col_header}  {'lb_score':>10}{param_col_header}  STARTED"
     typer.echo(header)
     typer.echo("-" * len(header))
 
@@ -2987,11 +3011,15 @@ def leaderboard(
         variant = run.data.tags.get("model_variant", "")[:12]
         primary = _fmt_metric(run.data.metrics.get(metric))
         lb = _fmt_metric(run.data.metrics.get("lb_score"))
+        fold_col_vals = "".join(
+            f"  {_fmt_metric(run.data.metrics.get(f'{metric}_{s}')):>{w}}"
+            for s, w in zip(fold_suffixes, fold_widths)
+        )
         param_col_vals = "".join(
             f"  {run.data.params.get(key, '-'):>{w}}" for key, w in zip(param_keys, param_widths)
         )
         started = _time_ago(run.info.start_time) if run.info.start_time else "-"
-        typer.echo(f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}  {lb:>10}{param_col_vals}  {started}")
+        typer.echo(f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}{fold_col_vals}  {lb:>10}{param_col_vals}  {started}")
 
     typer.echo()
     if champion_run_id:

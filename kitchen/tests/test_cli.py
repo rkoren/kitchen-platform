@@ -2442,10 +2442,11 @@ def _make_lb_run(
     metric_val: float,
     params: dict | None = None,
     variant: str = "",
+    extra_metrics: dict | None = None,
 ) -> MagicMock:
     run = MagicMock()
     run.info.run_id = run_id
-    run.data.metrics = {"loto_brier": metric_val}
+    run.data.metrics = {"loto_brier": metric_val, **(extra_metrics or {})}
     run.data.params = params or {}
     run.data.tags = {"model_variant": variant} if variant else {}
     run.info.start_time = None
@@ -2525,6 +2526,109 @@ def test_leaderboard_no_show_params_no_extra_columns():
     result = _lb_invoke(runs)
     assert result.exit_code == 0
     assert "model.eta" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen leaderboard --expand-metrics (CMP-003)
+# ---------------------------------------------------------------------------
+
+
+def test_leaderboard_expand_metrics_shows_fold_suffixes_as_columns():
+    """--expand-metrics adds per-fold suffix keys as column headers."""
+    runs = [
+        _make_lb_run(
+            "a" * 32,
+            0.18,
+            extra_metrics={"loto_brier_2021": 0.19, "loto_brier_2022": 0.17, "loto_brier_mean": 0.18},
+        )
+    ]
+    result = _lb_invoke(runs, ["--expand-metrics"])
+    assert result.exit_code == 0
+    assert "2021" in result.output
+    assert "2022" in result.output
+
+
+def test_leaderboard_expand_metrics_shows_fold_values():
+    """Per-fold metric values appear in the leaderboard row."""
+    runs = [
+        _make_lb_run(
+            "a" * 32,
+            0.18,
+            extra_metrics={"loto_brier_2021": 0.19, "loto_brier_2022": 0.17},
+        )
+    ]
+    result = _lb_invoke(runs, ["--expand-metrics"])
+    assert result.exit_code == 0
+    assert "0.1900" in result.output
+    assert "0.1700" in result.output
+
+
+def test_leaderboard_expand_metrics_excludes_mean_and_std():
+    """_mean and _std keys are aggregates and must not appear as fold sub-columns."""
+    runs = [
+        _make_lb_run(
+            "a" * 32,
+            0.18,
+            extra_metrics={
+                "loto_brier_2021": 0.19,
+                "loto_brier_mean": 0.18,
+                "loto_brier_std": 0.01,
+            },
+        )
+    ]
+    result = _lb_invoke(runs, ["--expand-metrics"])
+    assert result.exit_code == 0
+    assert "2021" in result.output
+    # "mean" and "std" should not appear as column headers
+    lines = result.output.splitlines()
+    header = next(line for line in lines if "RUN ID" in line)
+    assert "mean" not in header
+    assert "std" not in header
+
+
+def test_leaderboard_expand_metrics_missing_fold_shows_dash():
+    """A run that lacks a fold key shows a dash for that fold column."""
+    run_a = _make_lb_run("a" * 32, 0.18, extra_metrics={"loto_brier_2021": 0.19, "loto_brier_2022": 0.17})
+    run_b = _make_lb_run("b" * 32, 0.20, extra_metrics={"loto_brier_2021": 0.21})
+    result = _lb_invoke([run_a, run_b], ["--expand-metrics"])
+    assert result.exit_code == 0
+    # run_b has no loto_brier_2022 — a dash placeholder should appear
+    assert "-" in result.output
+
+
+def test_leaderboard_expand_metrics_union_across_runs():
+    """Fold columns are the union of all fold keys seen across all runs."""
+    run_a = _make_lb_run("a" * 32, 0.18, extra_metrics={"loto_brier_2021": 0.19})
+    run_b = _make_lb_run("b" * 32, 0.20, extra_metrics={"loto_brier_2022": 0.21})
+    result = _lb_invoke([run_a, run_b], ["--expand-metrics"])
+    assert result.exit_code == 0
+    assert "2021" in result.output
+    assert "2022" in result.output
+
+
+def test_leaderboard_no_expand_metrics_hides_fold_columns():
+    """Without --expand-metrics, per-fold keys do not appear as columns."""
+    runs = [
+        _make_lb_run(
+            "a" * 32,
+            0.18,
+            extra_metrics={"loto_brier_2021": 0.19, "loto_brier_2022": 0.17},
+        )
+    ]
+    result = _lb_invoke(runs)
+    assert result.exit_code == 0
+    lines = result.output.splitlines()
+    header = next(line for line in lines if "RUN ID" in line)
+    assert "2021" not in header
+    assert "2022" not in header
+
+
+def test_leaderboard_expand_metrics_no_fold_keys_is_noop():
+    """--expand-metrics with no per-fold keys logged renders normally."""
+    runs = [_make_lb_run("a" * 32, 0.18)]
+    result = _lb_invoke(runs, ["--expand-metrics"])
+    assert result.exit_code == 0
+    assert "loto_brier" in result.output
 
 
 # ---------------------------------------------------------------------------
