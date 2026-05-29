@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import builtins
 import importlib.util
+import json
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import mlflow.exceptions
@@ -2307,17 +2309,31 @@ def _make_diff_run(
     return run
 
 
-def _diff_invoke(run_a, run_b, extra_args=None):
-    """Invoke `kitchen diff` with two mocked MLflow runs."""
+def _diff_invoke(run_a, run_b, extra_args=None, fi_a: dict | None = None, fi_b: dict | None = None):
+    """Invoke `kitchen diff` with two mocked MLflow runs.
+
+    Pass ``fi_a`` / ``fi_b`` as ``{feature: importance}`` dicts to inject feature
+    importance artifacts for CMP-004 tests; omit (or pass None) to simulate a run
+    with no ``feature_importances.json`` artifact.
+    """
 
     def make_client():
         client = MagicMock()
         client.get_run.side_effect = [run_a, run_b]
         return client
 
+    def fake_download(run_id, artifact_path, dst_path):
+        fi = fi_a if run_id == run_a.info.run_id else fi_b
+        if fi is None:
+            raise Exception("no artifact")
+        p = Path(dst_path) / artifact_path
+        p.write_text(json.dumps(fi))
+        return str(p)
+
     with (
         patch("kitchen.tracking.configure_from_env"),
         patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+        patch("mlflow.artifacts.download_artifacts", side_effect=fake_download),
     ):
         return runner.invoke(
             app, ["diff", run_a.info.run_id, run_b.info.run_id, *(extra_args or [])],
@@ -2430,6 +2446,108 @@ def test_diff_shows_run_names():
     assert result.exit_code == 0
     assert "baseline" in result.output
     assert "challenger" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen diff — feature importance comparison (CMP-004)
+# ---------------------------------------------------------------------------
+
+
+def test_diff_fi_shows_section_header():
+    """Feature importance section header appears when both runs have the artifact."""
+    run_a = _make_diff_run("a" * 32, {}, {})
+    run_b = _make_diff_run("b" * 32, {}, {})
+    fi = {"feat_x": 0.9, "feat_y": 0.5, "feat_z": 0.1}
+    fi_b = {"feat_x": 0.1, "feat_y": 0.5, "feat_z": 0.9}
+    result = _diff_invoke(run_a, run_b, fi_a=fi, fi_b=fi_b)
+    assert result.exit_code == 0
+    assert "Feature importance" in result.output
+
+
+def test_diff_fi_shows_rank_changes():
+    """Features whose rank changed appear with their rank(a), rank(b), and delta."""
+    run_a = _make_diff_run("a" * 32, {}, {})
+    run_b = _make_diff_run("b" * 32, {}, {})
+    fi_a = {"feat_x": 0.9, "feat_y": 0.1}  # feat_x rank 1, feat_y rank 2
+    fi_b = {"feat_x": 0.1, "feat_y": 0.9}  # feat_x rank 2, feat_y rank 1
+    result = _diff_invoke(run_a, run_b, fi_a=fi_a, fi_b=fi_b)
+    assert result.exit_code == 0
+    assert "feat_x" in result.output
+    assert "feat_y" in result.output
+
+
+def test_diff_fi_delta_positive_when_demoted():
+    """A feature that dropped in rank shows a positive delta."""
+    run_a = _make_diff_run("a" * 32, {}, {})
+    run_b = _make_diff_run("b" * 32, {}, {})
+    # feat_x: rank 1 → rank 3 (+2)
+    fi_a = {"feat_x": 0.9, "feat_y": 0.6, "feat_z": 0.1}
+    fi_b = {"feat_x": 0.1, "feat_y": 0.6, "feat_z": 0.9}
+    result = _diff_invoke(run_a, run_b, fi_a=fi_a, fi_b=fi_b)
+    assert result.exit_code == 0
+    assert "+2" in result.output
+
+
+def test_diff_fi_delta_negative_when_promoted():
+    """A feature that rose in rank shows a negative delta."""
+    run_a = _make_diff_run("a" * 32, {}, {})
+    run_b = _make_diff_run("b" * 32, {}, {})
+    # feat_z: rank 3 → rank 1 (-2)
+    fi_a = {"feat_x": 0.9, "feat_y": 0.6, "feat_z": 0.1}
+    fi_b = {"feat_x": 0.1, "feat_y": 0.6, "feat_z": 0.9}
+    result = _diff_invoke(run_a, run_b, fi_a=fi_a, fi_b=fi_b)
+    assert result.exit_code == 0
+    assert "-2" in result.output
+
+
+def test_diff_fi_top_5_limit():
+    """Only the top 5 features by rank-change magnitude are shown."""
+    run_a = _make_diff_run("a" * 32, {}, {})
+    run_b = _make_diff_run("b" * 32, {}, {})
+    # 10 features all reversed in rank — only top 5 shifts shown
+    names = [f"f{i:02d}" for i in range(10)]
+    fi_a = {n: 10 - i for i, n in enumerate(names)}   # f00 most important
+    fi_b = {n: i + 1 for i, n in enumerate(names)}    # f09 most important
+    result = _diff_invoke(run_a, run_b, fi_a=fi_a, fi_b=fi_b)
+    assert result.exit_code == 0
+    feature_lines = [line for line in result.output.splitlines() if line.strip().startswith("f")]
+    assert len(feature_lines) == 5
+
+
+def test_diff_fi_skipped_when_artifact_missing():
+    """No feature importance section when either run lacks the artifact."""
+    run_a = _make_diff_run("a" * 32, {"model.eta": "0.1"}, {})
+    run_b = _make_diff_run("b" * 32, {"model.eta": "0.05"}, {})
+    # fi_a provided, fi_b omitted → section should not appear
+    fi_a = {"feat_x": 0.9, "feat_y": 0.1}
+    result = _diff_invoke(run_a, run_b, fi_a=fi_a)
+    assert result.exit_code == 0
+    assert "Feature importance" not in result.output
+
+
+def test_diff_fi_only_no_other_diffs():
+    """When only FI ranks differ (params and metrics match), FI section still shows."""
+    run_a = _make_diff_run("a" * 32, {"p": "1"}, {"val_acc": 0.8})
+    run_b = _make_diff_run("b" * 32, {"p": "1"}, {"val_acc": 0.8})
+    fi_a = {"feat_x": 0.9, "feat_y": 0.1}
+    fi_b = {"feat_x": 0.1, "feat_y": 0.9}
+    result = _diff_invoke(run_a, run_b, fi_a=fi_a, fi_b=fi_b)
+    assert result.exit_code == 0
+    assert "Feature importance" in result.output
+    assert "No differences found" not in result.output
+
+
+def test_diff_fi_after_metrics_section():
+    """Feature importance section appears after the metrics section."""
+    run_a = _make_diff_run("a" * 32, {}, {"val_acc": 0.80})
+    run_b = _make_diff_run("b" * 32, {}, {"val_acc": 0.85})
+    fi_a = {"feat_x": 0.9, "feat_y": 0.1}
+    fi_b = {"feat_x": 0.1, "feat_y": 0.9}
+    result = _diff_invoke(run_a, run_b, fi_a=fi_a, fi_b=fi_b)
+    assert result.exit_code == 0
+    metrics_pos = result.output.index("Metrics")
+    fi_pos = result.output.index("Feature importance")
+    assert metrics_pos < fi_pos
 
 
 # ---------------------------------------------------------------------------
