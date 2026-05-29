@@ -207,3 +207,62 @@ def test_preview_unsupported_extension(tmp_path):
     (store.raw_dir / "data.json").write_text("{}")
     with pytest.raises(ValueError, match="Unsupported file extension"):
         store.preview("data.json")
+
+
+# ---------------------------------------------------------------------------
+# DataStore.list
+# ---------------------------------------------------------------------------
+
+
+def test_list_raw_returns_sorted_filenames(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.raw_dir.mkdir(parents=True)
+    for name in ["c.csv", "a.csv", "b.csv"]:
+        (store.raw_dir / name).write_text("x\n1\n")
+    assert store.list("raw") == ["a.csv", "b.csv", "c.csv"]
+
+
+def test_list_processed_returns_filenames(tmp_path):
+    store = DataStore(root=tmp_path)
+    df = pd.DataFrame({"x": [1, 2]})
+    store.save_parquet(df, "features.parquet")
+    assert store.list("processed") == ["features.parquet"]
+
+
+def test_list_missing_dir_returns_empty_list(tmp_path):
+    store = DataStore(root=tmp_path)
+    assert store.list("raw") == []
+
+
+def test_list_empty_dir_returns_empty_list(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.raw_dir.mkdir(parents=True)
+    assert store.list("raw") == []
+
+
+def test_list_excludes_subdirectories(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.raw_dir.mkdir(parents=True)
+    (store.raw_dir / "train.csv").write_text("x\n1\n")
+    (store.raw_dir / "subdir").mkdir()
+    assert store.list("raw") == ["train.csv"]
+
+
+def test_list_custom_relative_path(tmp_path):
+    store = DataStore(root=tmp_path)
+    custom = tmp_path / "data" / "external"
+    custom.mkdir(parents=True)
+    (custom / "extra.csv").write_text("x\n1\n")
+    assert store.list("data/external") == ["extra.csv"]
+
+
+def test_list_custom_path_missing_returns_empty(tmp_path):
+    store = DataStore(root=tmp_path)
+    assert store.list("data/external") == []
+
+
+def test_list_default_stage_is_raw(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.raw_dir.mkdir(parents=True)
+    (store.raw_dir / "train.csv").write_text("x\n1\n")
+    assert store.list() == ["train.csv"]

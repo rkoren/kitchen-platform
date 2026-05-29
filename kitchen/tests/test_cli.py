@@ -163,6 +163,22 @@ def test_feature_builder_raises_not_implemented(scaffold, monkeypatch):
         features_cls().build(pd.DataFrame(), params={})  # pylint: disable=not-callable
 
 
+def test_scaffold_features_build_signature_includes_dict(tmp_path, monkeypatch):
+    """Scaffolded build() annotation accepts dict[str, DataFrame] for multi-source."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)
+    content = (tmp_path / "my-competition" / "src" / "features" / "run.py").read_text()
+    assert "dict[str, pd.DataFrame]" in content
+
+
+def test_scaffold_features_sources_usage_documented(tmp_path, monkeypatch):
+    """Scaffolded features/run.py mentions the sources() override pattern."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)
+    content = (tmp_path / "my-competition" / "src" / "features" / "run.py").read_text()
+    assert "sources" in content
+
+
 def test_init_here_flag(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["init", "my-competition", "--here"], catch_exceptions=False)

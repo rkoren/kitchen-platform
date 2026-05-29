@@ -380,7 +380,7 @@ cp .env.example .env
 
 | File | Class | Method |
 |---|---|---|
-| `src/features/run.py` | `${class_name}Features(FeatureBuilder)` | `build(raw_df) -> df` |
+| `src/features/run.py` | `${class_name}Features(FeatureBuilder)` | `build(raw_or_sources, params) -> df` |
 | `src/train/run.py` | `${class_name}Trainer(Trainer)` | `fit(df, params) -> model` |
 | `src/evaluate/run.py` | `${class_name}Evaluator(Evaluator)` | `evaluate(model, df) -> dict` |
 
@@ -655,6 +655,10 @@ TODO:
   1. Implement ${class_name}Features.build() to transform raw CSV into model-ready features.
   2. Update FEATURES to list every column passed to the model (exclude the target).
   3. Keep the target column in the returned DataFrame — train.py separates it.
+  4. If your project has multiple raw input files, override sources() to declare them:
+       def sources(self, params: dict) -> list[str]:
+           return ["train.csv", "other.csv"]
+     build() will then receive a dict[filename, DataFrame] instead of a plain DataFrame.
 \"\"\"
 from __future__ import annotations
 
@@ -667,8 +671,12 @@ FEATURES: list[str] = []  # TODO: fill in after feature engineering
 
 
 class ${class_name}Features(FeatureBuilder):
-    def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame:
-        \"\"\"Transform raw CSV data into model-ready features + target column.\"\"\"
+    def build(self, raw: pd.DataFrame | dict[str, pd.DataFrame], params: dict) -> pd.DataFrame:
+        \"\"\"Transform raw data into model-ready features + target column.
+
+        ``raw`` is a plain DataFrame for single-source projects (the default).
+        Override sources() and ``raw`` becomes a dict[filename, DataFrame].
+        \"\"\"
         raise NotImplementedError
 
 

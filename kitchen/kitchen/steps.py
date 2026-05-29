@@ -5,7 +5,7 @@ Project repos implement these and optionally wire them into dvc.yaml stages (req
     # src/features/run.py
     from kitchen.steps import FeatureBuilder
     class MyFeatures(FeatureBuilder):
-        def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame: ...
+        def build(self, raw: pd.DataFrame | dict[str, pd.DataFrame], params: dict) -> pd.DataFrame: ...
 
     # src/train/run.py
     from kitchen.steps import Trainer
@@ -52,13 +52,30 @@ def _resolve(params: dict, key: str, default: str) -> str:
 class FeatureBuilder(ABC):
     """Transforms raw data into model-ready features."""
 
+    def sources(self, params: dict) -> list[str]:
+        """Return the list of raw source filenames to load.
+
+        Override to declare multiple input files; the default returns the single
+        ``raw_file`` from params (backward-compatible with existing subclasses).
+        """
+        return [_resolve(params, "raw_file", "data.csv")]
+
     @abstractmethod
-    def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame:
-        """Return a processed DataFrame from raw input."""
+    def build(self, raw: pd.DataFrame | dict[str, pd.DataFrame], params: dict) -> pd.DataFrame:
+        """Return a processed DataFrame from raw input.
+
+        ``raw`` is a plain DataFrame when ``sources()`` returns a single file
+        (the default); it is a ``dict[filename, DataFrame]`` when ``sources()``
+        returns multiple files.
+        """
 
     def run(self, store: DataStore, params: dict) -> None:
         """Load raw data, build features, persist to processed stage."""
-        raw = store.load_csv(_resolve(params, "raw_file", "data.csv"))
+        src = self.sources(params)
+        if len(src) == 1:
+            raw = store.load_csv(src[0])
+        else:
+            raw = {f: store.load_csv(f) for f in src}
         processed = self.build(raw, params)
         store.save_parquet(processed, _resolve(params, "processed_file", "features.parquet"))
 
