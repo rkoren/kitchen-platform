@@ -42,6 +42,11 @@ markdown_extensions:
   - toc:
       permalink: true
 
+plugins:
+  - search
+  - mkdocs-jupyter:
+      include_source: true
+
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
@@ -63,3 +68,5 @@ nav:
     - Orchestration: kitchen/orchestration.md
     - Modeling Helpers: kitchen/modeling.md
     - CI/CD Integration: kitchen/ci-cd.md
+  - Notebooks:
+    - Notebook-First Exploration: notebooks/exploration.ipynb
