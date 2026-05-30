@@ -17,9 +17,11 @@ def _make_run(
     metrics: dict | None = None,
     tags: dict | None = None,
     start_time: int = 1_700_000_000_000,
+    run_name: str = "",
 ) -> MagicMock:
     run = MagicMock()
     run.info.run_id = run_id
+    run.info.run_name = run_name
     run.info.start_time = start_time
     run.data.metrics = metrics or {}
     run.data.tags = tags or {}
