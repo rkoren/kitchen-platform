@@ -50,7 +50,6 @@ plugins:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
-  - Backlog: backlog.md
   - recipes:
     - Overview: recipes/index.md
     - Quickstart: recipes/quickstart.md
