@@ -610,6 +610,66 @@ def test_auto_promote_requires_metric(tmp_path, monkeypatch):
     assert "promote-metric" in result.output
 
 
+def test_auto_promote_detects_metric_from_plain_float_threshold(tmp_path, monkeypatch):
+    """Plain float threshold → metric auto-detected, higher-is-better (lower=False)."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(
+        "experiment: cbb\nthresholds:\n  val_accuracy: 0.80\n"
+    )
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+
+    new_run = MagicMock()
+    new_run.info.run_id = "newrun" + "0" * 26
+    new_run.data.metrics = {"val_accuracy": 0.85}
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_cls,
+        patch("kitchen.registry.register_model", return_value="1"),
+        patch("kitchen.registry.promote_model"),
+    ):
+        client = MagicMock()
+        client.get_experiment_by_name.return_value.experiment_id = "1"
+        client.search_runs.return_value = [new_run]
+        client.get_model_version_by_alias.side_effect = mlflow.exceptions.MlflowException("no alias")
+        mock_cls.return_value = client
+        result = runner.invoke(app, ["run", "train", "--auto-promote"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "val_accuracy" in result.output
+    assert "higher=better" in result.output
+
+
+def test_auto_promote_detects_metric_from_max_threshold(tmp_path, monkeypatch):
+    """ThresholdSpec with max-only → metric auto-detected, lower-is-better."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(
+        "experiment: cbb\nthresholds:\n  val_logloss:\n    max: 0.45\n"
+    )
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+
+    new_run = MagicMock()
+    new_run.info.run_id = "newrun" + "0" * 26
+    new_run.data.metrics = {"val_logloss": 0.38}
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_cls,
+        patch("kitchen.registry.register_model", return_value="1"),
+        patch("kitchen.registry.promote_model"),
+    ):
+        client = MagicMock()
+        client.get_experiment_by_name.return_value.experiment_id = "1"
+        client.search_runs.return_value = [new_run]
+        client.get_model_version_by_alias.side_effect = mlflow.exceptions.MlflowException("no alias")
+        mock_cls.return_value = client
+        result = runner.invoke(app, ["run", "train", "--auto-promote"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "val_logloss" in result.output
+    assert "lower=better" in result.output
+
+
 def test_auto_promote_no_champion_promotes(tmp_path, monkeypatch):
     result, mock_reg, mock_prom = _auto_promote_invoke(
         tmp_path, monkeypatch,
@@ -2727,10 +2787,12 @@ def _make_lb_run(
     params: dict | None = None,
     variant: str = "",
     extra_metrics: dict | None = None,
+    run_name: str = "",
 ) -> MagicMock:
     run = MagicMock()
     run.info.run_id = run_id
-    run.data.metrics = {"loto_brier": metric_val, **(extra_metrics or {})}
+    run.info.run_name = run_name
+    run.data.metrics = {"val_accuracy": metric_val, **(extra_metrics or {})}
     run.data.params = params or {}
     run.data.tags = {"model_variant": variant} if variant else {}
     run.info.start_time = None
@@ -2823,7 +2885,7 @@ def test_leaderboard_expand_metrics_shows_fold_suffixes_as_columns():
         _make_lb_run(
             "a" * 32,
             0.18,
-            extra_metrics={"loto_brier_2021": 0.19, "loto_brier_2022": 0.17, "loto_brier_mean": 0.18},
+            extra_metrics={"val_accuracy_2021": 0.19, "val_accuracy_2022": 0.17, "val_accuracy_mean": 0.18},
         )
     ]
     result = _lb_invoke(runs, ["--expand-metrics"])
@@ -2838,7 +2900,7 @@ def test_leaderboard_expand_metrics_shows_fold_values():
         _make_lb_run(
             "a" * 32,
             0.18,
-            extra_metrics={"loto_brier_2021": 0.19, "loto_brier_2022": 0.17},
+            extra_metrics={"val_accuracy_2021": 0.19, "val_accuracy_2022": 0.17},
         )
     ]
     result = _lb_invoke(runs, ["--expand-metrics"])
@@ -2854,9 +2916,9 @@ def test_leaderboard_expand_metrics_excludes_mean_and_std():
             "a" * 32,
             0.18,
             extra_metrics={
-                "loto_brier_2021": 0.19,
-                "loto_brier_mean": 0.18,
-                "loto_brier_std": 0.01,
+                "val_accuracy_2021": 0.19,
+                "val_accuracy_mean": 0.18,
+                "val_accuracy_std": 0.01,
             },
         )
     ]
@@ -2872,18 +2934,18 @@ def test_leaderboard_expand_metrics_excludes_mean_and_std():
 
 def test_leaderboard_expand_metrics_missing_fold_shows_dash():
     """A run that lacks a fold key shows a dash for that fold column."""
-    run_a = _make_lb_run("a" * 32, 0.18, extra_metrics={"loto_brier_2021": 0.19, "loto_brier_2022": 0.17})
-    run_b = _make_lb_run("b" * 32, 0.20, extra_metrics={"loto_brier_2021": 0.21})
+    run_a = _make_lb_run("a" * 32, 0.18, extra_metrics={"val_accuracy_2021": 0.19, "val_accuracy_2022": 0.17})
+    run_b = _make_lb_run("b" * 32, 0.20, extra_metrics={"val_accuracy_2021": 0.21})
     result = _lb_invoke([run_a, run_b], ["--expand-metrics"])
     assert result.exit_code == 0
-    # run_b has no loto_brier_2022 — a dash placeholder should appear
+    # run_b has no val_accuracy_2022 — a dash placeholder should appear
     assert "-" in result.output
 
 
 def test_leaderboard_expand_metrics_union_across_runs():
     """Fold columns are the union of all fold keys seen across all runs."""
-    run_a = _make_lb_run("a" * 32, 0.18, extra_metrics={"loto_brier_2021": 0.19})
-    run_b = _make_lb_run("b" * 32, 0.20, extra_metrics={"loto_brier_2022": 0.21})
+    run_a = _make_lb_run("a" * 32, 0.18, extra_metrics={"val_accuracy_2021": 0.19})
+    run_b = _make_lb_run("b" * 32, 0.20, extra_metrics={"val_accuracy_2022": 0.21})
     result = _lb_invoke([run_a, run_b], ["--expand-metrics"])
     assert result.exit_code == 0
     assert "2021" in result.output
@@ -2896,7 +2958,7 @@ def test_leaderboard_no_expand_metrics_hides_fold_columns():
         _make_lb_run(
             "a" * 32,
             0.18,
-            extra_metrics={"loto_brier_2021": 0.19, "loto_brier_2022": 0.17},
+            extra_metrics={"val_accuracy_2021": 0.19, "val_accuracy_2022": 0.17},
         )
     ]
     result = _lb_invoke(runs)
@@ -2912,7 +2974,135 @@ def test_leaderboard_expand_metrics_no_fold_keys_is_noop():
     runs = [_make_lb_run("a" * 32, 0.18)]
     result = _lb_invoke(runs, ["--expand-metrics"])
     assert result.exit_code == 0
-    assert "loto_brier" in result.output
+    assert "val_accuracy" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen leaderboard auto-detect metric (SCF-006)
+# ---------------------------------------------------------------------------
+
+
+def _lb_invoke_autodetect(runs: list, params_content: str | None = None) -> object:
+    """Invoke leaderboard with no --metric; optionally write a tmp params.yaml."""
+    import os
+    import tempfile
+
+    def make_client():
+        client = MagicMock()
+        exp = MagicMock()
+        exp.experiment_id = "1"
+        client.get_experiment_by_name.return_value = exp
+        client.search_runs.return_value = runs
+        client.get_model_version_by_alias.side_effect = Exception("no champion")
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+    ):
+        if params_content is not None:
+            with tempfile.TemporaryDirectory() as tmp:
+                params_path = os.path.join(tmp, "params.yaml")
+                with open(params_path, "w") as f:
+                    f.write(params_content)
+                return runner.invoke(
+                    app,
+                    ["leaderboard", "--experiment", "test-exp", "--params", params_path],
+                    catch_exceptions=False,
+                )
+        return runner.invoke(
+            app,
+            ["leaderboard", "--experiment", "test-exp"],
+            catch_exceptions=False,
+        )
+
+
+def test_leaderboard_autodetect_from_thresholds_plain_float():
+    """Plain float threshold → metric name used, higher-is-better."""
+    params = "experiment: test-exp\nthresholds:\n  val_f1: 0.75\n"
+    runs = [_make_lb_run("a" * 32, 0.80)]
+    result = _lb_invoke_autodetect(runs, params)
+    assert result.exit_code == 0
+    assert "val_f1" in result.output
+    assert "higher=better" in result.output
+
+
+def test_leaderboard_autodetect_from_thresholds_max_spec():
+    """ThresholdSpec with max-only → metric name used, lower-is-better."""
+    params = "experiment: test-exp\nthresholds:\n  val_logloss:\n    max: 0.45\n"
+    runs = [_make_lb_run("a" * 32, 0.30)]
+    result = _lb_invoke_autodetect(runs, params)
+    assert result.exit_code == 0
+    assert "val_logloss" in result.output
+    assert "lower=better" in result.output
+
+
+def test_leaderboard_autodetect_fallback_to_val_star():
+    """No thresholds → first val_* metric in recent runs is used."""
+    runs = [_make_lb_run("a" * 32, 0.82)]
+    result = _lb_invoke_autodetect(runs)
+    assert result.exit_code == 0
+    assert "val_accuracy" in result.output
+
+
+def test_leaderboard_explicit_metric_overrides_autodetect():
+    """Passing --metric skips auto-detection."""
+    params = "experiment: test-exp\nthresholds:\n  val_f1: 0.75\n"
+    runs = [_make_lb_run("a" * 32, 0.80)]
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_cls,
+    ):
+        import os
+        import tempfile
+
+        client = MagicMock()
+        exp = MagicMock()
+        exp.experiment_id = "1"
+        client.get_experiment_by_name.return_value = exp
+        client.search_runs.return_value = runs
+        client.get_model_version_by_alias.side_effect = Exception()
+        mock_cls.return_value = client
+        with tempfile.TemporaryDirectory() as tmp:
+            params_path = os.path.join(tmp, "params.yaml")
+            with open(params_path, "w") as f:
+                f.write(params)
+            result = runner.invoke(
+                app,
+                ["leaderboard", "--experiment", "test-exp", "--params", params_path, "--metric", "val_accuracy"],
+                catch_exceptions=False,
+            )
+    assert result.exit_code == 0
+    assert "val_accuracy" in result.output
+
+
+# ---------------------------------------------------------------------------
+# VARIANT column fallback to run_name (SCF-007)
+# ---------------------------------------------------------------------------
+
+
+def test_leaderboard_variant_falls_back_to_run_name():
+    """When model_variant tag is absent, VARIANT column shows run_name."""
+    runs = [_make_lb_run("a" * 32, 0.82, run_name="baseline-run")]
+    result = _lb_invoke(runs, ["--metric", "val_accuracy"])
+    assert result.exit_code == 0
+    assert "baseline-run" in result.output
+
+
+def test_leaderboard_variant_tag_takes_priority_over_run_name():
+    """model_variant tag is shown when present; run_name is not used."""
+    runs = [_make_lb_run("a" * 32, 0.82, variant="experiment-1", run_name="baseline-run")]
+    result = _lb_invoke(runs, ["--metric", "val_accuracy"])
+    assert result.exit_code == 0
+    assert "experiment-1" in result.output
+    assert "baseline-run" not in result.output
+
+
+def test_leaderboard_variant_empty_when_both_absent():
+    """VARIANT column is blank (not an error) when neither tag nor run_name is set."""
+    runs = [_make_lb_run("a" * 32, 0.82, run_name="")]
+    result = _lb_invoke(runs, ["--metric", "val_accuracy"])
+    assert result.exit_code == 0
 
 
 # ---------------------------------------------------------------------------

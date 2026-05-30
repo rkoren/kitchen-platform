@@ -271,7 +271,7 @@ def status(
             run_id_short = run.info.run_id[:8]
             is_champ = run.info.run_id == champion_run_id
             rank = "[C]" if is_champ else str(i + 1)
-            variant = run.data.tags.get("model_variant", "")[:12]
+            variant = (run.data.tags.get("model_variant") or run.info.run_name or "")[:12]
             val = _fmt_metric(
                 run.data.metrics.get(display_metric) if display_metric else None
             )
@@ -2671,6 +2671,27 @@ def _fmt_metric(value: float | None) -> str:
     return "-" if value is None else f"{value:.4f}"
 
 
+def _promote_metric_from_thresholds(params_file: str) -> tuple[str, bool] | None:
+    """Return (metric, lower_is_better) from first thresholds entry, or None if absent."""
+    p = Path(params_file)
+    if not p.exists():
+        return None
+    try:
+        from kitchen.config import KitchenConfig, ThresholdSpec
+
+        cfg = KitchenConfig.from_yaml(str(p))
+        if cfg.thresholds:
+            name, spec = next(iter(cfg.thresholds.items()))
+            if isinstance(spec, ThresholdSpec):
+                lower = spec.max is not None and spec.min is None
+            else:
+                lower = False  # plain float = lower bound = higher-is-better
+            return name, lower
+    except Exception:
+        pass
+    return None
+
+
 def _try_auto_promote(
     params_file: str,
     metric: str,
@@ -2722,16 +2743,18 @@ def _try_auto_promote(
     except Exception:
         pass
 
+    direction_label = "lower=better" if lower_is_better else "higher=better"
     if champ_score is None:
         wins, reason = True, "no current champion"
     elif lower_is_better:
         wins = new_score < champ_score
-        reason = f"{new_score:.6f} < {champ_score:.6f} (lower=better)"
+        reason = f"{new_score:.6f} < {champ_score:.6f} ({direction_label})"
     else:
         wins = new_score > champ_score
-        reason = f"{new_score:.6f} > {champ_score:.6f} (higher=better)"
+        reason = f"{new_score:.6f} > {champ_score:.6f} ({direction_label})"
 
     typer.echo()
+    typer.echo(f"auto-promote: metric={metric} ({direction_label})")
     if wins:
         reg_version = register_model(new_run.info.run_id, "model", resolved_model)
         promote_model(resolved_model, reg_version, alias="champion")
@@ -2935,11 +2958,55 @@ def experiments_compare(
 # ---------------------------------------------------------------------------
 
 
+def _autodetect_metric(
+    params_file: str,
+    client: object,
+    experiment_id: str,
+) -> tuple[str, bool]:
+    """Return (metric_name, higher_is_better).
+
+    Priority:
+    1. First key in params.yaml thresholds — direction inferred from spec type.
+    2. First val_* key logged in the most recent run — assumed higher-is-better.
+    3. Hard fallback: "val_accuracy", higher-is-better.
+    """
+    p = Path(params_file)
+    if p.exists():
+        try:
+            from kitchen.config import KitchenConfig, ThresholdSpec
+
+            cfg = KitchenConfig.from_yaml(str(p))
+            if cfg.thresholds:
+                name, spec = next(iter(cfg.thresholds.items()))
+                if isinstance(spec, ThresholdSpec):
+                    higher = not (spec.max is not None and spec.min is None)
+                else:
+                    higher = True  # plain float = lower bound = higher-is-better
+                return name, higher
+        except Exception:
+            pass
+
+    try:
+        runs = client.search_runs(
+            experiment_ids=[experiment_id],
+            max_results=5,
+            order_by=["start_time DESC"],
+        )
+        for run in runs:
+            for key in sorted(run.data.metrics):
+                if key.startswith("val_"):
+                    return key, True
+    except Exception:
+        pass
+
+    return "val_accuracy", True
+
+
 @app.command()
 def leaderboard(
     metric: Annotated[
-        str, typer.Option("--metric", "-m", help="Primary metric to rank by")
-    ] = "loto_brier",
+        str | None, typer.Option("--metric", "-m", help="Primary metric to rank by")
+    ] = None,
     experiment: Annotated[
         str | None, typer.Option("--experiment", "-e", help="Experiment name")
     ] = None,
@@ -2971,8 +3038,9 @@ def leaderboard(
 ) -> None:
     """Rank runs by a metric; shows full run_id and lb_score for easy replay.
 
-    Defaults to loto_brier (lower=better) for competition use. The full run_id
-    is shown so it can be copied directly into flows/submit.py --run-id.
+    When --metric is omitted, the primary metric is auto-detected: first from
+    the thresholds section in params.yaml (direction inferred from spec type),
+    then from the first val_* key logged in recent runs.
 
     [C] marks the promoted champion from the model registry. ★ marks the
     top-ranked run by metric (they may differ if a newer run hasn't been promoted yet).
@@ -2990,6 +3058,9 @@ def leaderboard(
     if exp is None:
         typer.echo(f"Experiment {exp_name!r} not found.", err=True)
         raise typer.Exit(1)
+
+    if metric is None:
+        metric, higher_is_better = _autodetect_metric(params_file, client, exp.experiment_id)
 
     order = "DESC" if higher_is_better else "ASC"
     runs = client.search_runs(
@@ -3058,7 +3129,7 @@ def leaderboard(
             rank = "★"
         else:
             rank = str(i + 1)
-        variant = run.data.tags.get("model_variant", "")[:12]
+        variant = (run.data.tags.get("model_variant") or run.info.run_name or "")[:12]
         primary = _fmt_metric(run.data.metrics.get(metric))
         lb = _fmt_metric(run.data.metrics.get("lb_score"))
         fold_col_vals = "".join(
@@ -3499,7 +3570,10 @@ def run_train(
     ] = False,
     promote_metric: Annotated[
         str | None,
-        typer.Option("--promote-metric", help="Metric to compare for auto-promote (required with --auto-promote)"),
+        typer.Option(
+            "--promote-metric",
+            help="Metric to compare for auto-promote. Auto-detected from params.yaml thresholds when omitted.",
+        ),
     ] = None,
     lower_is_better: Annotated[
         bool,
@@ -3521,7 +3595,9 @@ def run_train(
     """Run the full train pipeline: features → train → log to MLflow.
 
     With --auto-promote, compares the new run against the current champion on
-    --promote-metric and promotes automatically if it wins.
+    --promote-metric and promotes automatically if it wins. When --promote-metric
+    is omitted, the metric is auto-detected from the first key in params.yaml
+    thresholds (direction inferred from spec type).
 
     With --override, one or more params.yaml values are shadowed for this run
     only without modifying the file. Overrides are logged as MLflow run tags
@@ -3530,8 +3606,15 @@ def run_train(
     import sys
 
     if auto_promote and not promote_metric:
-        typer.echo("error: --promote-metric is required when using --auto-promote", err=True)
-        raise typer.Exit(1)
+        detected = _promote_metric_from_thresholds(params_file)
+        if detected is None:
+            typer.echo(
+                "error: --promote-metric is required when using --auto-promote "
+                "(or add a 'thresholds:' section to params.yaml for auto-detection)",
+                err=True,
+            )
+            raise typer.Exit(1)
+        promote_metric, lower_is_better = detected
 
     path = Path(params_file)
     if not path.exists():
