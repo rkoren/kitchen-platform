@@ -367,12 +367,13 @@ def validate(
 _CLAUDE_MD = """\
 # $name
 
-Kaggle competition project on the [kitchen platform](../kitchen-platform/kitchen).
+Kaggle competition project built on the [kitchen platform](https://github.com/rkoren/kitchen-platform).
 
 ## Setup
 
 ```bash
-pip install -e ../kitchen-platform/kitchen -e .
+pip install rkoren-kitchen -e .
+# Contributors working from the monorepo: pip install -e ../kitchen-platform/kitchen -e .
 cp .env.example .env
 # Download competition data to data/raw/
 ```
@@ -391,35 +392,31 @@ model hyperparams from `params["model"].*`.
 ## Running experiments
 
 ```bash
-# Train baseline (first approach)
-python experiments/baseline.py
+kitchen run train                   # features → train → log to MLflow
+kitchen run evaluate                # load champion model, compute metrics
+kitchen leaderboard                 # rank all runs by primary metric
+kitchen promote METRIC              # promote best run to the registry
+kitchen ui                          # open MLflow UI in browser
 
-# Train challenger (improved approach — edit experiments/challenger.py first)
+# Experiment variants (edit first, then run)
+python experiments/baseline.py
 python experiments/challenger.py
 
-# Compare runs and promote best model
-python flows/promote.py --dry-run
-python flows/promote.py
-
-# View MLflow UI
-mlflow ui --backend-store-uri sqlite:///mlruns.db   # → http://localhost:5000
-
 # Generate Kaggle submission
-python flows/generate_submission.py
+kitchen submit
 ```
 
 ## Kitchen modules
 
 - `kitchen.steps` — `FeatureBuilder`, `Trainer` (set `model_flavour`), `Evaluator` ABCs
 - `kitchen.tracking` — `Tracker`, `configure_from_env()`, `init_experiment()`
-- `kitchen.registry` — `get_best_run()`, `register_model()`, `promote_model()`
-- `kitchen.evaluate` — `brier_score(y_true, y_prob)`, `log_loss(y_true, y_prob)`
 - `kitchen.store` — `DataStore` (wraps `data/raw/`, `data/processed/`, `models/`)
+- `kitchen.modeling` — `train_val_split`, `classification_metrics`, `regression_metrics`
 
 ## Experiment tagging
 
 Both experiment scripts tag runs with `model_variant=baseline` or `model_variant=challenger`.
-`flows/promote.py` compares across variants and promotes the winner to the `champion` alias.
+`kitchen promote METRIC` promotes the best run to the `champion` alias.
 Load the champion with `mlflow.sklearn.load_model('models:/$name-model@champion')`.
 """
 
@@ -4897,7 +4894,7 @@ def init(
         # Write .dvc/config with S3 remote placeholder (always overwrite default from dvc init)
         _write(dvc_dir / "config", _DVC_CONFIG, overwrite=True)
 
-    cd_target = root.name if not here else "."
+    cd_line = f"  cd {root.name}\n" if not here else ""
     if source == "kaggle":
         data_step = "  kitchen ingest                      # download competition data → data/raw/"
         submit_step = "  kitchen submit                      # validate and upload to Kaggle"
@@ -4925,10 +4922,9 @@ def init(
     typer.echo(f"""
 Done. Next steps:
 
-  cd {cd_target}
-  pip install -e ../kitchen-platform/kitchen -e .
-  # If kitchen was installed via pipx, inject the project package instead:
-  # pipx inject rkoren-kitchen .
+{cd_line}  pip install rkoren-kitchen -e .
+  # Monorepo contributors: pip install -e ../kitchen-platform/kitchen -e .
+  # If kitchen was installed via pipx: pipx inject rkoren-kitchen .
   cp .env.example .env
   kitchen check                       # verify tools, credentials, and config
                                       # (includes a check that your package is importable)

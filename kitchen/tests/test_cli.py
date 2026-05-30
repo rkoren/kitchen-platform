@@ -1702,6 +1702,46 @@ def test_init_ci_note_in_output(tmp_path, monkeypatch):
     assert "train-evaluate.yml" in result.output
 
 
+def test_init_claude_md_no_monorepo_install(tmp_path, monkeypatch):
+    """CLAUDE.md must not show the monorepo-only install path as the primary command (SCF-012)."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    claude_md = (tmp_path / "my-comp" / "CLAUDE.md").read_text()
+    assert "pip install rkoren-kitchen -e ." in claude_md
+    assert "pip install -e ../kitchen-platform/kitchen -e ." not in claude_md.splitlines()[0:20]
+
+
+def test_init_next_steps_no_monorepo_install(tmp_path, monkeypatch):
+    """The next-steps output must not show the monorepo install as the primary command (SCF-012)."""
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    lines = result.output.splitlines()
+    install_lines = [ln for ln in lines if "pip install" in ln and "kitchen" in ln]
+    assert install_lines, "expected a pip install line in next-steps output"
+    primary = install_lines[0]
+    assert "rkoren-kitchen" in primary
+    assert "../kitchen-platform" not in primary
+
+
+# ---------------------------------------------------------------------------
+# SCF-013: suppress `cd .` from next-steps when --here is used
+# ---------------------------------------------------------------------------
+
+
+def test_init_here_next_steps_no_cd_dot(tmp_path, monkeypatch):
+    """When --here is used the next-steps output must not contain 'cd .' (SCF-013)."""
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp", "--here"], catch_exceptions=False)
+    assert "cd ." not in result.output
+
+
+def test_init_no_here_next_steps_has_cd(tmp_path, monkeypatch):
+    """Without --here the next-steps output must contain a cd line for the new directory."""
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    assert "cd my-comp" in result.output
+
+
 # ---------------------------------------------------------------------------
 # LML-006: Push results step in CI workflow
 # ---------------------------------------------------------------------------
