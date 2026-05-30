@@ -1179,6 +1179,67 @@ def test_init_baseline_rf_template(tmp_path, monkeypatch):
     assert "NotImplementedError" not in eval_src
 
 
+def test_init_baseline_xgb_params_yaml(tmp_path, monkeypatch):
+    """params.yaml for baseline-xgb should have xgb: section uncommented."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--template", "baseline-xgb"], catch_exceptions=False)
+    params = yaml.safe_load((tmp_path / "my-comp" / "params.yaml").read_text())
+    assert "xgb" in params["model"], "xgb: section should be uncommented for baseline-xgb"
+    assert params["model"]["xgb"]["n_estimators"] == 300
+
+
+def test_init_baseline_lgbm_params_yaml(tmp_path, monkeypatch):
+    """params.yaml for baseline-lgbm should have lgbm: section uncommented."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--template", "baseline-lgbm"], catch_exceptions=False)
+    params = yaml.safe_load((tmp_path / "my-comp" / "params.yaml").read_text())
+    assert "lgbm" in params["model"], "lgbm: section should be uncommented for baseline-lgbm"
+    assert params["model"]["lgbm"]["num_leaves"] == 31
+
+
+def test_init_baseline_lr_params_yaml(tmp_path, monkeypatch):
+    """params.yaml for baseline-lr should have lr: section uncommented."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--template", "baseline-lr"], catch_exceptions=False)
+    params = yaml.safe_load((tmp_path / "my-comp" / "params.yaml").read_text())
+    assert "lr" in params["model"], "lr: section should be uncommented for baseline-lr"
+    assert params["model"]["lr"]["C"] == 1.0
+
+
+def test_init_baseline_rf_params_yaml(tmp_path, monkeypatch):
+    """params.yaml for baseline-rf should have rf: section uncommented."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--template", "baseline-rf"], catch_exceptions=False)
+    params = yaml.safe_load((tmp_path / "my-comp" / "params.yaml").read_text())
+    assert "rf" in params["model"], "rf: section should be uncommented for baseline-rf"
+    assert params["model"]["rf"]["n_estimators"] == 300
+
+
+def test_init_baseline_xgb_pyproject_deps(tmp_path, monkeypatch):
+    """pyproject.toml for baseline-xgb should declare xgboost."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--template", "baseline-xgb"], catch_exceptions=False)
+    pyproject = (tmp_path / "my-comp" / "pyproject.toml").read_text()
+    assert "xgboost" in pyproject
+
+
+def test_init_baseline_lgbm_pyproject_deps(tmp_path, monkeypatch):
+    """pyproject.toml for baseline-lgbm should declare lightgbm."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--template", "baseline-lgbm"], catch_exceptions=False)
+    pyproject = (tmp_path / "my-comp" / "pyproject.toml").read_text()
+    assert "lightgbm" in pyproject
+
+
+def test_init_generic_pyproject_no_model_deps(tmp_path, monkeypatch):
+    """pyproject.toml with no template should not include xgboost or lightgbm."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    pyproject = (tmp_path / "my-comp" / "pyproject.toml").read_text()
+    assert "xgboost" not in pyproject
+    assert "lightgbm" not in pyproject
+
+
 def test_init_binary_cls_template_train(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
@@ -1306,7 +1367,7 @@ def test_init_tabular_ts_template_evaluate(tmp_path, monkeypatch):
 
 
 def test_init_tabular_ts_params_hint(tmp_path, monkeypatch):
-    """params.yaml should contain commented tabular-ts section with date_col and val_frac."""
+    """params.yaml for tabular-ts should have date_col and val_frac uncommented."""
     monkeypatch.chdir(tmp_path)
     runner.invoke(
         app,
@@ -1314,9 +1375,9 @@ def test_init_tabular_ts_params_hint(tmp_path, monkeypatch):
         catch_exceptions=False,
     )
     params_src = (tmp_path / "my-comp" / "params.yaml").read_text()
-    assert "tabular-ts" in params_src
     assert "date_col" in params_src
     assert "val_frac" in params_src
+    assert "  date_col:" in params_src  # uncommented, not a hint comment
 
 
 def test_init_tabular_ts_kaggle_params_hint(tmp_path, monkeypatch):

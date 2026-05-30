@@ -481,34 +481,10 @@ features:
   test_file: test.csv
 
 model:
-  target: label          # TODO: change to your actual target column name
+  target: label          # TODO: set to your actual target column name
   test_size: 0.2
   random_state: 42
-  # Add model-specific hyperparams here, e.g.:
-  # xgb:                       # --template baseline-xgb / binary-cls
-  #   n_estimators: 300
-  #   max_depth: 6
-  #   learning_rate: 0.05
-  # lgbm:                      # --template baseline-lgbm
-  #   n_estimators: 300
-  #   num_leaves: 31
-  #   max_depth: -1
-  #   learning_rate: 0.05
-  # lr:                        # --template baseline-lr
-  #   C: 1.0
-  #   max_iter: 1000
-  # rf:                        # --template baseline-rf
-  #   n_estimators: 300
-  #   max_depth: null
-  #   min_samples_leaf: 1
-  # tabular-ts:               # --template tabular-ts (chronological split, LightGBM regressor)
-  #   date_col: date          # column to sort by; omit if data is already time-ordered
-  #   val_frac: 0.2           # last val_frac of rows reserved for validation
-  #   lgbm:
-  #     n_estimators: 300
-  #     num_leaves: 31
-  #     max_depth: -1
-  #     learning_rate: 0.05
+$model_section
 
 mlflow:
   tracking_uri: sqlite:///mlruns.db
@@ -535,10 +511,10 @@ version = "0.1.0"
 description = "Kaggle $name — built on kitchen"
 requires-python = ">=3.11"
 dependencies = [
-    "kitchen",           # pip install -e ../kitchen-platform/kitchen
+    "kitchen",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
-]
+$model_deps]
 
 [project.optional-dependencies]
 dev = [
@@ -552,6 +528,65 @@ packages = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]
 """
+
+_MODEL_SECTION_XGB = """\
+  xgb:
+    n_estimators: 300
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8"""
+
+_MODEL_SECTION_LGBM = """\
+  lgbm:
+    n_estimators: 300
+    num_leaves: 31
+    max_depth: -1
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8"""
+
+_MODEL_SECTION_LR = """\
+  lr:
+    C: 1.0
+    max_iter: 1000"""
+
+_MODEL_SECTION_RF = """\
+  rf:
+    n_estimators: 300
+    max_depth: null
+    min_samples_leaf: 1"""
+
+_MODEL_SECTION_TS = """\
+  date_col: date
+  val_frac: 0.2
+  lgbm:
+    n_estimators: 300
+    num_leaves: 31
+    max_depth: -1
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8"""
+
+_MODEL_SECTION_GENERIC = """\
+  # Uncomment the section for your chosen --template:
+  # xgb:                # baseline-xgb / binary-cls / multiclass-cls / regression
+  #   n_estimators: 300
+  #   max_depth: 6
+  #   learning_rate: 0.05
+  # lgbm:               # baseline-lgbm
+  #   n_estimators: 300
+  #   num_leaves: 31
+  #   max_depth: -1
+  #   learning_rate: 0.05
+  # lr:                 # baseline-lr
+  #   C: 1.0
+  #   max_iter: 1000
+  # rf:                 # baseline-rf
+  #   n_estimators: 300
+  #   max_depth: null
+  #   min_samples_leaf: 1"""
+
 
 _PARAMS_YAML_KAGGLE = """\
 experiment: $name
@@ -572,43 +607,10 @@ features:
   test_file: test.csv
 
 model:
-  target: target        # TODO: match submission.target_col
+  target: target        # TODO: set to this competition's target column (match submission.target_col)
   test_size: 0.2
   random_state: 42
-  # XGBoost — uncomment if using --template baseline-xgb or binary-cls:
-  # xgb:
-  #   n_estimators: 300
-  #   max_depth: 6
-  #   learning_rate: 0.05
-  #   subsample: 0.8
-  #   colsample_bytree: 0.8
-  # LightGBM — uncomment if using --template baseline-lgbm:
-  # lgbm:
-  #   n_estimators: 300
-  #   num_leaves: 31
-  #   max_depth: -1
-  #   learning_rate: 0.05
-  #   subsample: 0.8
-  #   colsample_bytree: 0.8
-  # Logistic Regression — uncomment if using --template baseline-lr:
-  # lr:
-  #   C: 1.0
-  #   max_iter: 1000
-  # Random Forest — uncomment if using --template baseline-rf:
-  # rf:
-  #   n_estimators: 300
-  #   max_depth: null
-  #   min_samples_leaf: 1
-  # Tabular time series — uncomment if using --template tabular-ts:
-  # date_col: date          # column to sort by; omit if data is already time-ordered
-  # val_frac: 0.2           # last val_frac of rows reserved for validation
-  # lgbm:
-  #   n_estimators: 300
-  #   num_leaves: 31
-  #   max_depth: -1
-  #   learning_rate: 0.05
-  #   subsample: 0.8
-  #   colsample_bytree: 0.8
+$model_section
 
 mlflow:
   tracking_uri: sqlite:///mlruns.db
@@ -4669,6 +4671,26 @@ def init(
     params_tmpl = _PARAMS_YAML_KAGGLE if source == "kaggle" else _PARAMS_YAML
     params_extra = {"competition": competition} if source == "kaggle" else {}
 
+    params_extra["model_section"] = {
+        "baseline-xgb": _MODEL_SECTION_XGB,
+        "binary-cls": _MODEL_SECTION_XGB,
+        "multiclass-cls": _MODEL_SECTION_XGB,
+        "regression": _MODEL_SECTION_XGB,
+        "baseline-lgbm": _MODEL_SECTION_LGBM,
+        "tabular-ts": _MODEL_SECTION_TS,
+        "baseline-lr": _MODEL_SECTION_LR,
+        "baseline-rf": _MODEL_SECTION_RF,
+    }.get(template, _MODEL_SECTION_GENERIC)
+
+    model_deps = {
+        "baseline-xgb": '    "xgboost>=1.7",\n',
+        "binary-cls": '    "xgboost>=1.7",\n',
+        "multiclass-cls": '    "xgboost>=1.7",\n',
+        "regression": '    "xgboost>=1.7",\n',
+        "baseline-lgbm": '    "lightgbm>=4.0",\n',
+        "tabular-ts": '    "lightgbm>=4.0",\n',
+    }.get(template, "")
+
     train_tmpl = {
         "baseline-xgb": _TRAIN_RUN_XGB,
         "baseline-lgbm": _TRAIN_RUN_LGBM,
@@ -4696,7 +4718,7 @@ def init(
         (root / ".env.example", r(_ENV_EXAMPLE, name, class_name)),
         (root / ".gitignore", r(_GITIGNORE, name, class_name)),
         (root / "params.yaml", r(params_tmpl, name, class_name, **params_extra)),
-        (root / "pyproject.toml", r(_PYPROJECT_TOML, name, class_name)),
+        (root / "pyproject.toml", r(_PYPROJECT_TOML, name, class_name, model_deps=model_deps)),
         (root / "infra" / f"{name}.yaml", r(_INFRA_YAML, name, class_name)),
         (root / "src" / "__init__.py", ""),
         (root / "src" / "features" / "__init__.py", ""),
