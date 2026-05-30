@@ -401,6 +401,109 @@ def test_check_no_prep_section_outside_project(tmp_path, monkeypatch):
     assert "src/features/run.py" not in result.output
 
 
+_STUB_EVALUATE = """\
+from kitchen.steps import Evaluator
+
+class MyEvaluator(Evaluator):
+    def evaluate(self, model, df):
+        raise NotImplementedError("fill in your evaluator")
+"""
+
+_IMPLEMENTED_EVALUATE = """\
+from kitchen.steps import Evaluator
+
+class MyEvaluator(Evaluator):
+    def evaluate(self, model, df):
+        return {"val_accuracy": 0.9}
+"""
+
+_STUB_TRAIN = """\
+from kitchen.steps import Trainer
+
+class MyTrainer(Trainer):
+    model_flavour = "sklearn"
+
+    def fit(self, df, params):
+        raise NotImplementedError("fill in your trainer")
+"""
+
+
+def _write_stub_src(tmp_path, evaluate_content, train_content=None):
+    """Write src layout with controllable content for evaluate (and optionally train)."""
+    for subdir in ("features", "train", "evaluate"):
+        (tmp_path / "src" / subdir).mkdir(parents=True, exist_ok=True)
+    (tmp_path / "src" / "features" / "run.py").write_text("")
+    (tmp_path / "src" / "train" / "run.py").write_text(train_content or "")
+    (tmp_path / "src" / "evaluate" / "run.py").write_text(evaluate_content)
+
+
+def test_check_stub_evaluate_warns(tmp_path, monkeypatch):
+    """A scaffolded evaluate() with raise NotImplementedError → warn (not fail)."""
+    _write_stub_src(tmp_path, _STUB_EVALUATE)
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
+        )
+    assert "~ src/evaluate/run.py" in result.output
+    assert "evaluate() is a stub" in result.output
+    assert "✗ src/evaluate/run.py" not in result.output
+
+
+def test_check_implemented_evaluate_ok(tmp_path, monkeypatch):
+    """A fully implemented evaluate() → ✓ ok, no stub warning."""
+    _write_stub_src(tmp_path, _IMPLEMENTED_EVALUATE)
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
+        )
+    assert "✓ src/evaluate/run.py" in result.output
+    assert "stub" not in result.output
+
+
+def test_check_stub_train_warns(tmp_path, monkeypatch):
+    """Stub detection works for src/train/run.py (fit) too."""
+    _write_stub_src(tmp_path, _IMPLEMENTED_EVALUATE, train_content=_STUB_TRAIN)
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
+        )
+    assert "~ src/train/run.py" in result.output
+    assert "fit() is a stub" in result.output
+    assert "✓ src/evaluate/run.py" in result.output
+
+
+def test_check_stub_warns_but_exit_zero_when_no_other_failures(tmp_path, monkeypatch):
+    """Stub warnings do not cause a non-zero exit — they are informational only."""
+    _write_stub_src(tmp_path, _STUB_EVALUATE)
+    with (
+        patch("shutil.which", side_effect=lambda n: f"/usr/bin/{n}"),
+        patch("subprocess.check_output", return_value="v1.0\n"),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
+        )
+    assert result.exit_code == 0
+    assert "~ src/evaluate/run.py" in result.output
+
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------

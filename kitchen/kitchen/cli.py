@@ -1480,27 +1480,25 @@ Usage:
 from __future__ import annotations
 
 import os
+
 import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import mlflow
-from prefect import flow, task, get_run_logger
 
-from kitchen.tracking import Tracker, configure_from_env, init_experiment
 from kitchen.store import DataStore
+from kitchen.tracking import Tracker, configure_from_env, init_experiment
 
 EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT", "$name")
 VARIANT = "baseline"
 
 
-@task
 def run_variant(params: dict, variant: str) -> None:
     from src.features.run import build
     from src.train.run import train
 
-    log = get_run_logger()
     configure_from_env()
     init_experiment(EXPERIMENT)
 
@@ -1510,19 +1508,14 @@ def run_variant(params: dict, variant: str) -> None:
     with tracker.run(run_name=variant, params=params) as _run:
         mlflow.set_tag("model_variant", variant)
         build(params, store)
-        train(params, store, tracker)   # logs val_* metrics to the active run
-        log.info("%s run complete — see MLflow for val metrics", variant)
-
-
-@flow(name="$name-baseline")
-def baseline(params_file: str = "params.yaml") -> None:
-    with open(params_file) as f:
-        params = yaml.safe_load(f)
-    run_variant(params, VARIANT)
+        train(params, store, tracker)
+        print(f"{variant} run complete — see MLflow for val metrics")
 
 
 if __name__ == "__main__":
-    baseline()
+    with open("params.yaml") as f:
+        params = yaml.safe_load(f)
+    run_variant(params, VARIANT)
 """
 
 _CHALLENGER_PY = """\
@@ -1541,14 +1534,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from prefect import flow
-
 from experiments.baseline import run_variant
 
 VARIANT = "challenger"
 
 
-@flow(name="$name-challenger")
 def challenger(params_file: str = "params.yaml") -> None:
     with open(params_file) as f:
         params = yaml.safe_load(f)
@@ -1822,7 +1812,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Train
-        run: kitchen run train
+        run: kitchen run train --auto-promote
 
       - name: Evaluate
         run: kitchen run evaluate
@@ -1985,7 +1975,7 @@ jobs:
         run: kitchen ingest
 
       - name: Train
-        run: kitchen run train
+        run: kitchen run train --auto-promote
 
       - name: Evaluate
         run: kitchen run evaluate
@@ -3952,17 +3942,60 @@ def check(
         typer.echo(f"  - {params_file:<26}  not found (run from a project directory)")
 
     # --- Prep: project src modules ---
-    src_candidates = [
-        Path("src/features/run.py"),
-        Path("src/train/run.py"),
-        Path("src/evaluate/run.py"),
+    _step_probes = [
+        (Path("src/features/run.py"), "src.features.run", "FeatureBuilder", "build"),
+        (Path("src/train/run.py"),    "src.train.run",    "Trainer",        "fit"),
+        (Path("src/evaluate/run.py"), "src.evaluate.run", "Evaluator",      "evaluate"),
     ]
+    src_candidates = [p for p, *_ in _step_probes]
     if any(p.exists() for p in src_candidates):
-        for p in src_candidates:
-            if p.exists():
-                _ok(str(p))
-            else:
-                _fail(str(p), "implement to run the pipeline")
+        import inspect as _inspect
+
+        _check_cwd = str(Path.cwd())
+        if _check_cwd not in sys.path:
+            sys.path.insert(0, _check_cwd)
+
+        try:
+            from kitchen.steps import Evaluator as _Ev
+            from kitchen.steps import FeatureBuilder as _FB
+            from kitchen.steps import Trainer as _Tr
+            _base_map = {"FeatureBuilder": _FB, "Trainer": _Tr, "Evaluator": _Ev}
+        except Exception:
+            _base_map = {}
+
+        for _p, _mod_name, _base_name, _method_name in _step_probes:
+            if not _p.exists():
+                _fail(str(_p), "implement to run the pipeline")
+                continue
+            if not _base_map:
+                _ok(str(_p))
+                continue
+            try:
+                import importlib.util as _ilu_check
+
+                _file_path = Path(_check_cwd) / _p
+                _spec = _ilu_check.spec_from_file_location(_mod_name, str(_file_path))
+                if _spec is None or _spec.loader is None:
+                    raise ImportError(f"cannot load {_file_path}")
+                _mod = _ilu_check.module_from_spec(_spec)
+                _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+                _base_cls = _base_map[_base_name]
+                _is_stub = False
+                for _, _cls in _inspect.getmembers(_mod, _inspect.isclass):
+                    if issubclass(_cls, _base_cls) and _cls is not _base_cls:
+                        try:
+                            _method_src = _inspect.getsource(getattr(_cls, _method_name))
+                            if "NotImplementedError" in _method_src:
+                                _is_stub = True
+                        except (OSError, TypeError):
+                            pass
+                        break
+                if _is_stub:
+                    _warn(str(_p), f"{_method_name}() is a stub — fill in your implementation")
+                else:
+                    _ok(str(_p))
+            except Exception:
+                _ok(str(_p))  # can't probe (import failed) — treat as file-exists ✓
 
     # --- Project package importability ---
     # Read the package name from pyproject.toml so this works for any project,
