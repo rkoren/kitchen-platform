@@ -921,6 +921,89 @@ def test_run_evaluate_invalid_flavor(tmp_path, monkeypatch):
     assert "unknown flavor" in result.output
 
 
+def test_run_evaluate_flavor_autodetect_xgboost(tmp_path, monkeypatch):
+    """SCF-003: default sklearn flavor is auto-upgraded to xgboost from MLmodel manifest."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    imported_modules: list[str] = []
+    fake_loader = type("Loader", (), {"load_model": staticmethod(lambda uri: object())})()
+
+    def recording_import(name):
+        imported_modules.append(name)
+        return fake_loader
+
+    monkeypatch.setattr("importlib.import_module", recording_import)
+    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+
+    import mlflow.models as _mlflow_models
+    fake_info = type("Info", (), {"flavors": {"xgboost": {}, "python_function": {}}})()
+    monkeypatch.setattr(_mlflow_models, "get_model_info", lambda uri: fake_info)
+
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = lambda m, p, s: {"val_accuracy": 0.8}
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 0
+    assert "mlflow.xgboost" in imported_modules
+
+
+def test_run_evaluate_flavor_autodetect_lightgbm(tmp_path, monkeypatch):
+    """SCF-003: default sklearn flavor is auto-upgraded to lightgbm from MLmodel manifest."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    imported_modules: list[str] = []
+    fake_loader = type("Loader", (), {"load_model": staticmethod(lambda uri: object())})()
+
+    def recording_import(name):
+        imported_modules.append(name)
+        return fake_loader
+
+    monkeypatch.setattr("importlib.import_module", recording_import)
+    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+
+    import mlflow.models as _mlflow_models
+    fake_info = type("Info", (), {"flavors": {"lightgbm": {}, "python_function": {}}})()
+    monkeypatch.setattr(_mlflow_models, "get_model_info", lambda uri: fake_info)
+
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = lambda m, p, s: {"val_accuracy": 0.8}
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 0
+    assert "mlflow.lightgbm" in imported_modules
+
+
+def test_run_evaluate_flavor_autodetect_failure_falls_back(tmp_path, monkeypatch):
+    """SCF-003: if get_model_info raises, fall back to sklearn without crashing."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    imported_modules: list[str] = []
+    fake_loader = type("Loader", (), {"load_model": staticmethod(lambda uri: object())})()
+
+    def recording_import(name):
+        imported_modules.append(name)
+        return fake_loader
+
+    monkeypatch.setattr("importlib.import_module", recording_import)
+    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+
+    import mlflow.models as _mlflow_models
+    monkeypatch.setattr(_mlflow_models, "get_model_info", lambda uri: (_ for _ in ()).throw(Exception("registry unavailable")))
+
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = lambda m, p, s: {"val_accuracy": 0.8}
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 0
+    assert "mlflow.sklearn" in imported_modules
+
+
 def test_run_evaluate_missing_src_module(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
@@ -1006,6 +1089,13 @@ def test_init_baseline_xgb_template(tmp_path, monkeypatch):
     train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
     assert "XGBClassifier" in train_src
     assert "xgboost" in train_src
+    assert "train_val_split" in train_src
+    assert "classification_metrics" in train_src
+    assert "mlflow.log_metrics" in train_src
+    eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
+    assert "classification_metrics" in eval_src
+    assert "train_val_split" in eval_src
+    assert "NotImplementedError" not in eval_src
 
 
 def test_init_baseline_lr_template(tmp_path, monkeypatch):
@@ -1018,6 +1108,13 @@ def test_init_baseline_lr_template(tmp_path, monkeypatch):
     assert result.exit_code == 0
     train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
     assert "LogisticRegression" in train_src
+    assert "train_val_split" in train_src
+    assert "classification_metrics" in train_src
+    assert "mlflow.log_metrics" in train_src
+    eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
+    assert "classification_metrics" in eval_src
+    assert "train_val_split" in eval_src
+    assert "NotImplementedError" not in eval_src
 
 
 def test_init_invalid_template(tmp_path, monkeypatch):
@@ -1040,9 +1137,13 @@ def test_init_baseline_lgbm_template(tmp_path, monkeypatch):
     assert "lightgbm" in train_src
     assert 'model_flavour = "lightgbm"' in train_src
     assert "num_leaves" in train_src
-    # evaluate stub is unchanged for model-only templates
+    assert "train_val_split" in train_src
+    assert "classification_metrics" in train_src
+    assert "mlflow.log_metrics" in train_src
     eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
-    assert "NotImplementedError" in eval_src
+    assert "classification_metrics" in eval_src
+    assert "train_val_split" in eval_src
+    assert "NotImplementedError" not in eval_src
 
 
 def test_init_baseline_lgbm_params_hint(tmp_path, monkeypatch):
@@ -1069,9 +1170,13 @@ def test_init_baseline_rf_template(tmp_path, monkeypatch):
     train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
     assert "RandomForestClassifier" in train_src
     assert "sklearn.ensemble" in train_src
-    # evaluate stub is unchanged for model-only templates
+    assert "train_val_split" in train_src
+    assert "classification_metrics" in train_src
+    assert "mlflow.log_metrics" in train_src
     eval_src = (tmp_path / "my-comp" / "src" / "evaluate" / "run.py").read_text()
-    assert "NotImplementedError" in eval_src
+    assert "classification_metrics" in eval_src
+    assert "train_val_split" in eval_src
+    assert "NotImplementedError" not in eval_src
 
 
 def test_init_binary_cls_template_train(tmp_path, monkeypatch):

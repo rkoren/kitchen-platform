@@ -708,16 +708,18 @@ def train(params: dict, store: DataStore, tracker: Tracker) -> object:
 """
 
 _TRAIN_RUN_XGB = """\
-\"\"\"Model training for $name — XGBoost baseline.
+\"\"\"Model training for $name — XGBoost baseline (binary classification).
 
-Defaults to binary classification (XGBClassifier, eval_metric=logloss).
-For regression: swap XGBClassifier → XGBRegressor and eval_metric → rmse.
-For multiclass: set objective="multi:softprob" and num_class=<N>.
+Trains on a stratified train split, logs val_* metrics to the active MLflow
+run, and returns the fitted model.  Swap XGBClassifier → XGBRegressor and
+replace classification_metrics with regression_metrics for regression targets.
 \"\"\"
 from __future__ import annotations
 
+import mlflow
 import pandas as pd
 import xgboost as xgb
+from kitchen.modeling import classification_metrics, train_val_split
 from kitchen.steps import Trainer
 from kitchen.store import DataStore
 from kitchen.tracking import Tracker
@@ -728,8 +730,12 @@ class ${class_name}Trainer(Trainer):
 
     def fit(self, df: pd.DataFrame, params: dict) -> xgb.XGBClassifier:
         target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        train_df, val_df = train_val_split(df, target_col=target, seed=seed)
         features = [c for c in df.columns if c != target]
-        X, y = df[features], df[target]
+        X_train, y_train = train_df[features], train_df[target]
+        X_val, y_val = val_df[features], val_df[target]
 
         p = params["model"].get("xgb", {})
         model = xgb.XGBClassifier(
@@ -738,10 +744,15 @@ class ${class_name}Trainer(Trainer):
             learning_rate=p.get("learning_rate", 0.05),
             subsample=p.get("subsample", 0.8),
             colsample_bytree=p.get("colsample_bytree", 0.8),
-            random_state=params["model"].get("random_state", 42),
+            random_state=seed,
             eval_metric="logloss",
         )
-        model.fit(X, y)
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_val)
+        y_proba = model.predict_proba(X_val)[:, 1]
+        val_metrics = classification_metrics(y_val, y_pred, y_proba=y_proba)
+        mlflow.log_metrics({"val_" + k: v for k, v in val_metrics.items()})
         return model
 
 
@@ -750,16 +761,18 @@ def train(params: dict, store: DataStore, tracker: Tracker) -> object:
 """
 
 _TRAIN_RUN_LGBM = """\
-\"\"\"Model training for $name — LightGBM baseline.
+\"\"\"Model training for $name — LightGBM baseline (binary classification).
 
-Defaults to binary classification (LGBMClassifier, metric=binary_logloss).
-For regression: swap LGBMClassifier → LGBMRegressor.
-For multiclass: set objective="multiclass" and num_class=<N>.
+Trains on a stratified train split, logs val_* metrics to the active MLflow
+run, and returns the fitted model.  Swap LGBMClassifier → LGBMRegressor and
+replace classification_metrics with regression_metrics for regression targets.
 \"\"\"
 from __future__ import annotations
 
 import lightgbm as lgb
+import mlflow
 import pandas as pd
+from kitchen.modeling import classification_metrics, train_val_split
 from kitchen.steps import Trainer
 from kitchen.store import DataStore
 from kitchen.tracking import Tracker
@@ -770,8 +783,12 @@ class ${class_name}Trainer(Trainer):
 
     def fit(self, df: pd.DataFrame, params: dict) -> lgb.LGBMClassifier:
         target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        train_df, val_df = train_val_split(df, target_col=target, seed=seed)
         features = [c for c in df.columns if c != target]
-        X, y = df[features], df[target]
+        X_train, y_train = train_df[features], train_df[target]
+        X_val, y_val = val_df[features], val_df[target]
 
         p = params["model"].get("lgbm", {})
         model = lgb.LGBMClassifier(
@@ -781,10 +798,15 @@ class ${class_name}Trainer(Trainer):
             learning_rate=p.get("learning_rate", 0.05),
             subsample=p.get("subsample", 0.8),
             colsample_bytree=p.get("colsample_bytree", 0.8),
-            random_state=params["model"].get("random_state", 42),
+            random_state=seed,
             n_jobs=-1,
         )
-        model.fit(X, y)
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_val)
+        y_proba = model.predict_proba(X_val)[:, 1]
+        val_metrics = classification_metrics(y_val, y_pred, y_proba=y_proba)
+        mlflow.log_metrics({"val_" + k: v for k, v in val_metrics.items()})
         return model
 
 
@@ -793,11 +815,16 @@ def train(params: dict, store: DataStore, tracker: Tracker) -> object:
 """
 
 _TRAIN_RUN_LR = """\
-\"\"\"Model training for $name — Logistic Regression baseline.\"\"\"
+\"\"\"Model training for $name — Logistic Regression baseline (binary classification).
+
+Trains on a stratified train split and logs val_* metrics to the active MLflow run.
+\"\"\"
 from __future__ import annotations
 
+import mlflow
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+from kitchen.modeling import classification_metrics, train_val_split
 from kitchen.steps import Trainer
 from kitchen.store import DataStore
 from kitchen.tracking import Tracker
@@ -808,16 +835,25 @@ class ${class_name}Trainer(Trainer):
 
     def fit(self, df: pd.DataFrame, params: dict) -> LogisticRegression:
         target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        train_df, val_df = train_val_split(df, target_col=target, seed=seed)
         features = [c for c in df.columns if c != target]
-        X, y = df[features], df[target]
+        X_train, y_train = train_df[features], train_df[target]
+        X_val, y_val = val_df[features], val_df[target]
 
         p = params["model"].get("lr", {})
         model = LogisticRegression(
             C=p.get("C", 1.0),
             max_iter=p.get("max_iter", 1000),
-            random_state=params["model"].get("random_state", 42),
+            random_state=seed,
         )
-        model.fit(X, y)
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_val)
+        y_proba = model.predict_proba(X_val)[:, 1]
+        val_metrics = classification_metrics(y_val, y_pred, y_proba=y_proba)
+        mlflow.log_metrics({"val_" + k: v for k, v in val_metrics.items()})
         return model
 
 
@@ -826,15 +862,18 @@ def train(params: dict, store: DataStore, tracker: Tracker) -> object:
 """
 
 _TRAIN_RUN_RF = """\
-\"\"\"Model training for $name — Random Forest baseline.
+\"\"\"Model training for $name — Random Forest baseline (binary classification).
 
-Defaults to classification (RandomForestClassifier).
-For regression: swap RandomForestClassifier → RandomForestRegressor.
+Trains on a stratified train split and logs val_* metrics to the active MLflow run.
+Swap RandomForestClassifier → RandomForestRegressor and replace
+classification_metrics with regression_metrics for regression targets.
 \"\"\"
 from __future__ import annotations
 
+import mlflow
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from kitchen.modeling import classification_metrics, train_val_split
 from kitchen.steps import Trainer
 from kitchen.store import DataStore
 from kitchen.tracking import Tracker
@@ -845,18 +884,27 @@ class ${class_name}Trainer(Trainer):
 
     def fit(self, df: pd.DataFrame, params: dict) -> RandomForestClassifier:
         target = params["model"]["target"]
+        seed = params["model"].get("random_state", 42)
+
+        train_df, val_df = train_val_split(df, target_col=target, seed=seed)
         features = [c for c in df.columns if c != target]
-        X, y = df[features], df[target]
+        X_train, y_train = train_df[features], train_df[target]
+        X_val, y_val = val_df[features], val_df[target]
 
         p = params["model"].get("rf", {})
         model = RandomForestClassifier(
             n_estimators=p.get("n_estimators", 300),
             max_depth=p.get("max_depth", None),
             min_samples_leaf=p.get("min_samples_leaf", 1),
-            random_state=params["model"].get("random_state", 42),
+            random_state=seed,
             n_jobs=-1,
         )
-        model.fit(X, y)
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_val)
+        y_proba = model.predict_proba(X_val)[:, 1]
+        val_metrics = classification_metrics(y_val, y_pred, y_proba=y_proba)
+        mlflow.log_metrics({"val_" + k: v for k, v in val_metrics.items()})
         return model
 
 
@@ -3568,12 +3616,23 @@ def run_evaluate(
 
     configure_from_env()
 
-    _loaders = {"sklearn": "mlflow.sklearn", "xgboost": "mlflow.xgboost", "pyfunc": "mlflow.pyfunc"}
+    _loaders = {"sklearn": "mlflow.sklearn", "xgboost": "mlflow.xgboost", "lightgbm": "mlflow.lightgbm", "pyfunc": "mlflow.pyfunc"}
     if flavor not in _loaders:
         typer.echo(
             f"error: unknown flavor {flavor!r} — choose from: {', '.join(_loaders)}", err=True
         )
         raise typer.Exit(1)
+
+    if flavor == "sklearn":
+        try:
+            import mlflow as _mlflow_fl
+            _info = _mlflow_fl.models.get_model_info(model_uri)
+            for _f in ("xgboost", "lightgbm", "sklearn"):
+                if _f in _info.flavors and _f in _loaders:
+                    flavor = _f
+                    break
+        except Exception:
+            pass
 
     import importlib
 
@@ -4622,6 +4681,10 @@ def init(
     }.get(template, _TRAIN_RUN)
 
     eval_tmpl = {
+        "baseline-xgb": _EVALUATE_RUN_BINARY_CLS,
+        "baseline-lgbm": _EVALUATE_RUN_BINARY_CLS,
+        "baseline-lr": _EVALUATE_RUN_BINARY_CLS,
+        "baseline-rf": _EVALUATE_RUN_BINARY_CLS,
         "binary-cls": _EVALUATE_RUN_BINARY_CLS,
         "multiclass-cls": _EVALUATE_RUN_MULTICLASS_CLS,
         "regression": _EVALUATE_RUN_REGRESSION,
