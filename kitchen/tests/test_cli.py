@@ -1300,6 +1300,28 @@ def test_init_generic_pyproject_no_model_deps(tmp_path, monkeypatch):
     assert "lightgbm" not in pyproject
 
 
+def test_init_experiments_no_prefect(tmp_path, monkeypatch):
+    """experiments/baseline.py and challenger.py must not import Prefect (SCF-011)."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    baseline = (tmp_path / "my-comp" / "experiments" / "baseline.py").read_text()
+    challenger = (tmp_path / "my-comp" / "experiments" / "challenger.py").read_text()
+    assert "prefect" not in baseline
+    assert "prefect" not in challenger
+    assert "get_run_logger" not in baseline
+
+
+def test_init_experiments_baseline_runnable_structure(tmp_path, monkeypatch):
+    """baseline.py exposes run_variant() and uses __main__ guard (no Prefect flow entry point)."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    src = (tmp_path / "my-comp" / "experiments" / "baseline.py").read_text()
+    assert "def run_variant(" in src
+    assert 'if __name__ == "__main__"' in src
+    assert "@flow" not in src
+    assert "@task" not in src
+
+
 def test_init_binary_cls_template_train(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
@@ -1639,6 +1661,28 @@ def test_init_ci_local_no_ingest_step(tmp_path, monkeypatch):
     steps = content["jobs"]["train-evaluate"]["steps"]
     step_names = [s.get("name", "") for s in steps]
     assert "Ingest data" not in step_names
+
+
+def test_init_ci_train_step_uses_auto_promote(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    train_step = next(s for s in steps if s.get("name") == "Train")
+    assert "--auto-promote" in train_step["run"]
+
+
+def test_init_ci_kaggle_train_step_uses_auto_promote(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    steps = content["jobs"]["train-evaluate"]["steps"]
+    train_step = next(s for s in steps if s.get("name") == "Train")
+    assert "--auto-promote" in train_step["run"]
 
 
 def test_init_ci_note_in_output_for_kaggle(tmp_path, monkeypatch):
