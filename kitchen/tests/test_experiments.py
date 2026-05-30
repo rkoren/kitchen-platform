@@ -197,7 +197,7 @@ class TestLeaderboard:
             _make_run("a" * 32, "winner", metrics={"loto_brier": 0.164}),
             _make_run("b" * 32, "loser", metrics={"loto_brier": 0.172}),
         ]
-        result = self._invoke(runs)
+        result = self._invoke(runs, "--metric", "loto_brier")
         assert result.exit_code == 0
         assert "★" in result.output
         assert result.output.index("a" * 32) < result.output.index("b" * 32)
