@@ -15,6 +15,7 @@ venv/
 
 # Docs build output
 site/
+kitchen/docs/
 
 # DVC — ignore data directories, but commit .dvc pointer files
 .dvcignore
@@ -61,5 +62,9 @@ feedback.md
 # Scripts
 scripts
 
-# Internal docs
-docs
+# Internal docs (files below are committed but excluded from the public nav)
+docs/decisions/
+docs/backlog.md
+docs/secondary-backlog.md
+docs/feedback.md
+docs/architecture.md
