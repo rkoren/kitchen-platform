@@ -417,7 +417,7 @@ kitchen submit
 
 Both experiment scripts tag runs with `model_variant=baseline` or `model_variant=challenger`.
 `kitchen promote METRIC` promotes the best run to the `champion` alias.
-Load the champion with `mlflow.sklearn.load_model('models:/$name-model@champion')`.
+Load the champion with `mlflow.pyfunc.load_model('models:/$name-model@champion')`.
 """
 
 _ENV_EXAMPLE = """\
@@ -1397,7 +1397,7 @@ from __future__ import annotations
 # Uncomment once your champion model is promoted to the registry:
 # ---------------------------------------------------------------------------
 # import mlflow
-# model = mlflow.sklearn.load_model(\"models:/$name@champion\")
+# model = mlflow.pyfunc.load_model(\"models:/$name-model@champion\")
 
 # ---------------------------------------------------------------------------
 # Optional: typed OpenAPI schema (requires pydantic, already a FastAPI dep)
@@ -2747,6 +2747,20 @@ def _try_auto_promote(
         promote_model(resolved_model, reg_version, alias="champion")
         typer.echo(f"auto-promote: {new_run.info.run_id[:8]} → champion  ({reason})")
         typer.echo(f"             {resolved_model} v{reg_version} @ champion")
+        # Write run_id to metrics.json so `kitchen push` can resolve the champion.
+        import json as _json_ap
+
+        try:
+            _ap_cfg = KitchenConfig.from_yaml(params_file)
+            _ap_metrics_path = Path(_ap_cfg.metrics_file or "metrics.json")
+            if _ap_metrics_path.exists():
+                _ap_existing = _json_ap.loads(_ap_metrics_path.read_text(encoding="utf-8"))
+                _ap_existing["run_id"] = new_run.info.run_id
+                _ap_metrics_path.write_text(
+                    _json_ap.dumps(_ap_existing, indent=2) + "\n", encoding="utf-8"
+                )
+        except Exception:
+            pass
     else:
         typer.echo(f"auto-promote: skipped — new run did not beat champion  ({reason})")
 
@@ -3746,6 +3760,22 @@ def run_evaluate(
         typer.echo(f"error during evaluation: {exc}", err=True)
         raise typer.Exit(1)
 
+    # Patch run_id into metrics.json so `kitchen push` can identify the champion run.
+    import json as _json_eval
+
+    try:
+        import mlflow.tracking as _mlt_eval
+
+        _eval_client = _mlt_eval.MlflowClient()
+        _mv_eval = _eval_client.get_model_version_by_alias(model_name, alias)
+        _metrics_path = Path(params.get("metrics_file", "metrics.json"))
+        if _metrics_path.exists():
+            _existing = _json_eval.loads(_metrics_path.read_text(encoding="utf-8"))
+            _existing["run_id"] = _mv_eval.run_id
+            _metrics_path.write_text(_json_eval.dumps(_existing, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
     typer.echo(f"\nEvaluation results ({model_uri}):")
     for k, v in metrics.items():
         typer.echo(f"  {k}: {v:.6f}" if isinstance(v, float) else f"  {k}: {v}")
@@ -4388,7 +4418,7 @@ def promote(
     typer.echo(f"\nRegistered : {model_name} v{reg_version}")
     promote_model(model_name, reg_version, alias=alias)
     typer.echo(f"Promoted   : {model_name} v{reg_version} → {alias}")
-    typer.echo(f"Load with  : mlflow.sklearn.load_model('models:/{model_name}@{alias}')")
+    typer.echo(f"Load with  : mlflow.pyfunc.load_model('models:/{model_name}@{alias}')")
     typer.echo()
 
 
@@ -4932,7 +4962,7 @@ Done. Next steps:
   # Implement src/features/run.py, src/train/run.py, src/evaluate/run.py
   kitchen run train                   # features → train → log to MLflow
   kitchen run evaluate                # load champion model, compute metrics
-  kitchen experiments compare METRIC  # rank runs by metric
+  kitchen leaderboard                 # rank runs by primary metric
   kitchen promote METRIC              # promote best run to the registry
 {submit_step}{ci_note}{dvc_note}
 """)
