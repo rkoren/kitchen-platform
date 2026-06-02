@@ -129,6 +129,30 @@ class DataStore:
             f"{filename!r} not found in data/processed/ or data/raw/.\nAvailable files:\n{detail}"
         )
 
+    def is_stale(self, output_file: str | Path, deps: list[str | Path]) -> bool:
+        """Return True if any dep is newer than output_file, or output_file is missing.
+
+        Useful for skipping expensive feature regeneration when inputs haven't changed.
+        Paths are resolved relative to the store root when not absolute.
+
+        Args:
+            output_file: The generated artifact to check (e.g. "data/processed/features.parquet").
+            deps: Source files that output_file depends on (e.g. raw CSVs, feature scripts).
+
+        Returns:
+            True  — output_file is missing, or at least one dep has a newer mtime.
+            False — output_file exists and is newer than all deps.
+        """
+        out = Path(output_file) if Path(output_file).is_absolute() else self.root / output_file
+        if not out.exists():
+            return True
+        out_mtime = out.stat().st_mtime
+        for dep in deps:
+            dep_path = Path(dep) if Path(dep).is_absolute() else self.root / dep
+            if dep_path.exists() and dep_path.stat().st_mtime > out_mtime:
+                return True
+        return False
+
     @staticmethod
     def _preview_read(path: Path, n: int) -> pd.DataFrame:
         suffix = path.suffix.lower()
