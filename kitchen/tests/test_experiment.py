@@ -60,6 +60,33 @@ def test_seed_env_silently_ignores_bad_yaml(tmp_path, monkeypatch):
     _seed_env_from_params_yaml(tmp_path / "params.yaml")  # must not raise
 
 
+def test_seed_env_resolves_relative_sqlite_uri_to_absolute(tmp_path, monkeypatch):
+    """NB-005: relative sqlite:/// URI is resolved against the params.yaml directory."""
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    (tmp_path / "params.yaml").write_text("mlflow:\n  tracking_uri: sqlite:///mlruns.db\n")
+    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    uri = os.environ["MLFLOW_TRACKING_URI"]
+    assert uri.startswith("sqlite:////"), f"Expected absolute URI, got: {uri}"
+    assert str(tmp_path) in uri
+
+
+def test_seed_env_leaves_absolute_sqlite_uri_unchanged(tmp_path, monkeypatch):
+    """NB-005: a URI already using sqlite://// (absolute) is not double-resolved."""
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    abs_uri = f"sqlite:////{tmp_path}/mlruns.db"
+    (tmp_path / "params.yaml").write_text(f"mlflow:\n  tracking_uri: {abs_uri}\n")
+    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    assert os.environ["MLFLOW_TRACKING_URI"] == abs_uri
+
+
+def test_seed_env_leaves_http_uri_unchanged(tmp_path, monkeypatch):
+    """NB-005: remote HTTP tracking URIs are not touched."""
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    (tmp_path / "params.yaml").write_text("mlflow:\n  tracking_uri: http://mlflow.internal:5000\n")
+    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    assert os.environ["MLFLOW_TRACKING_URI"] == "http://mlflow.internal:5000"
+
+
 # ── ExperimentRun ─────────────────────────────────────────────────────────────
 
 

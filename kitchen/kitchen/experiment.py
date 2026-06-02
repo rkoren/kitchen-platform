@@ -80,6 +80,10 @@ def _seed_env_from_params_yaml(params_yaml: Path) -> None:
         tracking_uri = mlflow_cfg.get("tracking_uri")
         artifact_bucket = mlflow_cfg.get("artifact_bucket")
         if tracking_uri and not os.environ.get("MLFLOW_TRACKING_URI"):
+            if tracking_uri.startswith("sqlite:///") and not tracking_uri.startswith("sqlite:////"):
+                db_name = tracking_uri[len("sqlite:///"):]
+                abs_path = (params_yaml.parent / db_name).resolve()
+                tracking_uri = f"sqlite:///{abs_path}"
             os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
         if artifact_bucket and not os.environ.get("MLFLOW_ARTIFACT_BUCKET"):
             os.environ["MLFLOW_ARTIFACT_BUCKET"] = artifact_bucket

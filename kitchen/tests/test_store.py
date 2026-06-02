@@ -266,3 +266,97 @@ def test_list_default_stage_is_raw(tmp_path):
     store.raw_dir.mkdir(parents=True)
     (store.raw_dir / "train.csv").write_text("x\n1\n")
     assert store.list() == ["train.csv"]
+
+
+# ── DataStore.is_stale ────────────────────────────────────────────────────────
+
+
+def test_is_stale_returns_true_when_output_missing(tmp_path):
+    store = DataStore(root=tmp_path)
+    dep = tmp_path / "data" / "raw" / "train.csv"
+    dep.parent.mkdir(parents=True)
+    dep.write_text("x\n1\n")
+    assert store.is_stale("data/processed/features.parquet", ["data/raw/train.csv"]) is True
+
+
+def test_is_stale_returns_false_when_output_is_newer(tmp_path):
+    import time
+
+    store = DataStore(root=tmp_path)
+    dep = tmp_path / "data" / "raw" / "train.csv"
+    dep.parent.mkdir(parents=True)
+    dep.write_text("x\n1\n")
+
+    time.sleep(0.01)
+    out = tmp_path / "data" / "processed" / "features.parquet"
+    out.parent.mkdir(parents=True)
+    out.write_bytes(b"parquet")
+
+    assert store.is_stale("data/processed/features.parquet", ["data/raw/train.csv"]) is False
+
+
+def test_is_stale_returns_true_when_dep_is_newer(tmp_path):
+    import time
+
+    store = DataStore(root=tmp_path)
+    out = tmp_path / "data" / "processed" / "features.parquet"
+    out.parent.mkdir(parents=True)
+    out.write_bytes(b"parquet")
+
+    time.sleep(0.01)
+    dep = tmp_path / "data" / "raw" / "train.csv"
+    dep.parent.mkdir(parents=True)
+    dep.write_text("x\n1\n")
+
+    assert store.is_stale("data/processed/features.parquet", ["data/raw/train.csv"]) is True
+
+
+def test_is_stale_any_dep_triggers_stale(tmp_path):
+    import time
+
+    store = DataStore(root=tmp_path)
+    out = tmp_path / "data" / "processed" / "features.parquet"
+    out.parent.mkdir(parents=True)
+    out.write_bytes(b"old")
+
+    dep_old = tmp_path / "data" / "raw" / "a.csv"
+    dep_old.parent.mkdir(parents=True)
+    dep_old.write_text("a")
+
+    time.sleep(0.01)
+    out.write_bytes(b"newer")  # output refreshed after dep_old
+
+    time.sleep(0.01)
+    dep_new = tmp_path / "data" / "raw" / "b.csv"  # this dep is newest of all
+    dep_new.write_text("b")
+
+    assert store.is_stale("data/processed/features.parquet", ["data/raw/a.csv", "data/raw/b.csv"]) is True
+
+
+def test_is_stale_missing_dep_is_ignored(tmp_path):
+    import time
+
+    store = DataStore(root=tmp_path)
+    out = tmp_path / "data" / "processed" / "features.parquet"
+    out.parent.mkdir(parents=True)
+    out.write_bytes(b"parquet")
+
+    time.sleep(0.01)
+    # dep does not exist — should be skipped, not raise
+    assert store.is_stale("data/processed/features.parquet", ["data/raw/nonexistent.csv"]) is False
+
+
+def test_is_stale_accepts_absolute_paths(tmp_path):
+    store = DataStore(root=tmp_path)
+    dep = tmp_path / "train.csv"
+    dep.write_text("x")
+    # output missing — absolute dep path should still work
+    assert store.is_stale(tmp_path / "features.parquet", [dep]) is True
+
+
+def test_is_stale_empty_deps_returns_false_when_output_exists(tmp_path):
+    store = DataStore(root=tmp_path)
+    out = tmp_path / "data" / "processed" / "features.parquet"
+    out.parent.mkdir(parents=True)
+    out.write_bytes(b"parquet")
+    assert store.is_stale("data/processed/features.parquet", []) is False
