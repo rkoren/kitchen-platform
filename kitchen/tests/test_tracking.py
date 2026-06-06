@@ -22,6 +22,7 @@ from kitchen.tracking import (
 def clean_env(monkeypatch):
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     monkeypatch.delenv("MLFLOW_ARTIFACT_BUCKET", raising=False)
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
 
 
 # ── Tracker ───────────────────────────────────────────────────────────────────
