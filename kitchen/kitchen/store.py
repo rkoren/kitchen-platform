@@ -10,6 +10,8 @@ Usage::
     df = store.load_parquet("teams.parquet")
 """
 
+from __future__ import annotations
+
 import warnings
 from pathlib import Path
 
