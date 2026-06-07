@@ -740,6 +740,18 @@ wheels = [
 ]
 
 [[package]]
+name = "colorlog"
+version = "6.10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a2/61/f083b5ac52e505dfc1c624eafbf8c7589a0d7f32daa398d2e7590efa5fda/colorlog-6.10.1.tar.gz", hash = "sha256:eb4ae5cb65fe7fec7773c2306061a8e63e02efc2c72eba9d27b0fa23c94f1321", size = 17162, upload-time = "2025-10-16T16:14:11.978Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/c1/e419ef3723a074172b68aaa89c9f3de486ed4c2399e2dbd8113a4fdcaf9e/colorlog-6.10.1-py3-none-any.whl", hash = "sha256:2d7e8348291948af66122cff006c9f8da6255d224e7cf8e37d8de2df3bad8c9c", size = 11743, upload-time = "2025-10-16T16:14:10.512Z" },
+]
+
+[[package]]
 name = "configobj"
 version = "5.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -3133,6 +3145,24 @@ wheels = [
 ]
 
 [[package]]
+name = "optuna"
+version = "4.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "alembic" },
+    { name = "colorlog" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "sqlalchemy" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/aa/05f5e3f662cc96a4c478fc3446b8ed6359825a2b504ecb614a9ac84e4a4d/optuna-4.9.0.tar.gz", hash = "sha256:b322e5cbdf1655fb84c37646c4a7a1f391de1b47806bbe222e015825d0a82b87", size = 485834, upload-time = "2026-06-01T06:23:30.424Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/f3/e5fcd5d9b15771ed6dc10e3a7eeddc672e418f4f4c4653d216cc1d857e2d/optuna-4.9.0-py3-none-any.whl", hash = "sha256:f52f3be6148654850c92a5860d398fd88ec6b2c84ab68d9c3d07dcff02e7afee", size = 425553, upload-time = "2026-06-01T06:23:28.804Z" },
+]
+
+[[package]]
 name = "orjson"
 version = "3.11.8"
 source = { registry = "https://pypi.org/simple" }
@@ -4513,12 +4543,16 @@ dependencies = [
 dev = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "optuna" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
 dvc = [
     { name = "dvc", extra = ["s3"] },
+]
+search = [
+    { name = "optuna" },
 ]
 serve = [
     { name = "fastapi" },
@@ -4544,6 +4578,8 @@ requires-dist = [
     { name = "mangum", marker = "extra == 'serve'", specifier = ">=0.17" },
     { name = "mlflow", specifier = ">=3.0" },
     { name = "numpy", specifier = ">=1.26" },
+    { name = "optuna", marker = "extra == 'dev'", specifier = ">=3.0" },
+    { name = "optuna", marker = "extra == 'search'", specifier = ">=3.0" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "prefect", specifier = ">=3.0" },
     { name = "pyarrow", specifier = ">=14.0" },
@@ -4557,7 +4593,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'serve'", specifier = ">=0.29" },
     { name = "xgboost", specifier = ">=2.0" },
 ]
-provides-extras = ["dvc", "serve", "dev"]
+provides-extras = ["dvc", "serve", "search", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pylint", specifier = ">=4.0.5" }]

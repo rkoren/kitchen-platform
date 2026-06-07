@@ -18,7 +18,7 @@ from kitchen.modeling import (
     voting_predict,
 )
 from kitchen.monitoring import DriftReport
-from kitchen.search import grid_search, random_search
+from kitchen.search import bayes_search, grid_search, random_search
 from kitchen.steps import Evaluator, FeatureBuilder, Trainer
 from kitchen.store import DataStore
 from kitchen.tracking import Tracker
@@ -31,6 +31,7 @@ __all__ = [
     "KitchenConfig",
     "Tracker",
     "Trainer",
+    "bayes_search",
     "blend_predictions",
     "calibrate_model",
     "classification_metrics",

@@ -1,6 +1,8 @@
-"""Tests for kitchen.search.grid_search (SWEEP-002)."""
+"""Tests for kitchen.search (SWEEP-002, SWEEP-003, SWEEP-004)."""
 
 from __future__ import annotations
+
+from unittest.mock import MagicMock
 
 import mlflow
 import numpy as np
@@ -8,7 +10,7 @@ import pandas as pd
 import pytest
 
 from kitchen.modeling import regression_metrics
-from kitchen.search import _resolve_metric_key, grid_search, random_search
+from kitchen.search import _resolve_metric_key, _suggest_param, grid_search, random_search
 
 # ── A deterministic, param-driven estimator ───────────────────────────────────
 # Predicts 1 when the first feature exceeds `thresh`. On a dataset where the
@@ -370,6 +372,112 @@ def test_random_search_is_reproducible_with_seed(separable_df, mlflow_tmp):
     assert best["thresh"] in {c["thresh"] for c in expected}
 
 
+# ── _suggest_param (param_space DSL) ───────────────────────────────────────────
+
+
+def test_suggest_param_int_spec():
+    trial = MagicMock()
+    trial.suggest_int.return_value = 5
+    out = _suggest_param(trial, "max_depth", ("int", 3, 10))
+    trial.suggest_int.assert_called_once_with("max_depth", 3, 10)
+    assert out == 5
+
+
+def test_suggest_param_float_log_spec():
+    trial = MagicMock()
+    _suggest_param(trial, "eta", ("float", 0.01, 0.3, "log"))
+    trial.suggest_float.assert_called_once_with("eta", 0.01, 0.3, log=True)
+
+
+def test_suggest_param_categorical_tuple_and_list():
+    trial = MagicMock()
+    _suggest_param(trial, "kernel", ("categorical", ["rbf", "linear"]))
+    trial.suggest_categorical.assert_called_with("kernel", ["rbf", "linear"])
+    _suggest_param(trial, "k", [1, 2, 3])
+    trial.suggest_categorical.assert_called_with("k", [1, 2, 3])
+
+
+def test_suggest_param_rejects_unknown_kind():
+    with pytest.raises(ValueError, match="unknown param spec kind"):
+        _suggest_param(MagicMock(), "x", ("weird", 1, 2))
+
+
+def test_suggest_param_rejects_bare_tuple():
+    with pytest.raises(ValueError, match="invalid param_space spec"):
+        _suggest_param(MagicMock(), "x", (1, 2, 3))
+
+
+# ── bayes_search (SWEEP-004) ────────────────────────────────────────────────────
+
+
+def test_bayes_search_finds_good_threshold(separable_df, mlflow_tmp):
+    pytest.importorskip("optuna")
+    from kitchen.search import bayes_search
+
+    best = bayes_search(
+        trainer_fn=lambda p: ThresholdClassifier(**p),
+        param_space={"thresh": ("float", 0.0, 3.0)},
+        n_trials=15,
+        df=separable_df,
+        target_col="target",
+        metric="accuracy",
+    )
+    # Accuracy is maximised near thresh=0.5 (where y == (x0 > 0.5)).
+    assert 0.3 < best["thresh"] < 0.7
+
+
+def test_bayes_search_logs_one_nested_run_per_trial(separable_df, mlflow_tmp):
+    pytest.importorskip("optuna")
+    from kitchen.search import bayes_search
+
+    bayes_search(
+        trainer_fn=lambda p: ThresholdClassifier(**p),
+        param_space={"thresh": ("float", 0.0, 3.0)},
+        n_trials=6,
+        df=separable_df,
+        target_col="target",
+        metric="accuracy",
+        run_name="bayes-demo",
+    )
+    trials = _client().search_runs([_exp_id()], filter_string="tags.`sweep.trial` != ''")
+    assert len(trials) == 6
+    parent = _client().search_runs(
+        [_exp_id()], filter_string="tags.`mlflow.runName` = 'bayes-demo'"
+    )[0]
+    assert parent.data.tags["sweep.kind"] == "bayes"
+    assert parent.data.tags["sweep.n_trials"] == "6"
+
+
+def test_bayes_search_rejects_n_trials_below_one(separable_df, mlflow_tmp):
+    pytest.importorskip("optuna")
+    from kitchen.search import bayes_search
+
+    with pytest.raises(ValueError, match="n_trials must be"):
+        bayes_search(
+            trainer_fn=lambda p: ThresholdClassifier(**p),
+            param_space={"thresh": ("float", 0.0, 3.0)},
+            n_trials=0,
+            df=separable_df,
+            target_col="target",
+            metric="accuracy",
+        )
+
+
+def test_bayes_search_rejects_empty_param_space(separable_df, mlflow_tmp):
+    pytest.importorskip("optuna")
+    from kitchen.search import bayes_search
+
+    with pytest.raises(ValueError, match="param_space is empty"):
+        bayes_search(
+            trainer_fn=lambda p: ThresholdClassifier(**p),
+            param_space={},
+            n_trials=5,
+            df=separable_df,
+            target_col="target",
+            metric="accuracy",
+        )
+
+
 # ── Top-level re-export ────────────────────────────────────────────────────────
 
 
@@ -378,6 +486,8 @@ def test_search_helpers_exported_from_kitchen():
 
     assert hasattr(kitchen, "grid_search")
     assert hasattr(kitchen, "random_search")
+    assert hasattr(kitchen, "bayes_search")
     assert hasattr(kitchen, "search")
     assert kitchen.search.grid_search is kitchen.grid_search
     assert kitchen.search.random_search is kitchen.random_search
+    assert kitchen.search.bayes_search is kitchen.bayes_search
