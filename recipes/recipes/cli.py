@@ -130,6 +130,48 @@ def validate(
 
 
 @app.command()
+def plan(
+    spec_path: str = typer.Argument(..., metavar="SPEC", help="Path to YAML spec file"),
+    state_bucket: str = typer.Option(
+        ...,
+        envvar="RECIPES_STATE_BUCKET",
+        help="S3 bucket for Terraform state (or set RECIPES_STATE_BUCKET)",
+    ),
+):
+    """Preview the changes a YAML spec would make, without applying them.
+
+    Generates Terraform configs, initialises the S3 backend, and runs
+    `terraform plan` — a read-only preview of what `recipes apply` would do.
+    State is read from s3://<state-bucket>/<spec-name>/terraform.tfstate.
+    """
+    spec = _load_spec(spec_path)
+    workspace = _workspace(spec.name)
+
+    console.print(
+        f"\n[bold]recipes plan[/bold]  spec=[cyan]{spec_path}[/cyan]  project=[cyan]{spec.name}[/cyan]"
+    )
+    console.print(f"[dim]state: s3://{state_bucket}/{spec.name}/terraform.tfstate[/dim]")
+    console.print(f"[dim]workspace: {workspace}[/dim]\n")
+
+    _refresh_tf_files(spec, workspace)
+
+    for resource in spec.resources:
+        console.print(f"  [green]✓[/green] {resource.type}  [dim]{resource.name}[/dim]")
+    console.print()
+
+    if not _tf_init(spec, workspace, state_bucket):
+        raise typer.Exit(1)
+
+    console.print("\n[bold]→ terraform plan[/bold]\n")
+    rc = _run_tf(["plan"], workspace)
+    if rc != 0:
+        console.print("\n[red]plan failed[/red]")
+        raise typer.Exit(rc)
+
+    console.print(f"\n[bold green]✓ plan complete[/bold green]  [{spec.name}]")
+
+
+@app.command()
 def apply(
     spec_path: str = typer.Argument(..., metavar="SPEC", help="Path to YAML spec file"),
     state_bucket: str = typer.Option(

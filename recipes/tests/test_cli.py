@@ -155,6 +155,107 @@ def test_refresh_tf_files_writes_provider(tmp_path):
     assert 'region = "us-west-2"' in (tmp_path / "provider.tf").read_text()
 
 
+# ── plan ──────────────────────────────────────────────────────────────────────
+
+
+def test_plan_missing_spec_exits_nonzero():
+    result = runner.invoke(app, ["plan", "no-such-file.yaml", "--state-bucket", "my-bucket"])
+    assert result.exit_code != 0
+
+
+def test_plan_missing_state_bucket_exits_nonzero(tmp_path):
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+    result = runner.invoke(app, ["plan", str(spec)], env={"RECIPES_STATE_BUCKET": ""})
+    assert result.exit_code != 0
+
+
+def test_plan_runs_init_then_plan(tmp_path):
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+
+    mock_proc = MagicMock()
+    mock_proc.stdout = iter(["Terraform initialized\n", "No changes.\n"])
+    mock_proc.wait.return_value = None
+    mock_proc.returncode = 0
+
+    with (
+        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("shutil.which", return_value="/usr/bin/terraform"),
+        patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+    ):
+        result = runner.invoke(app, ["plan", str(spec), "--state-bucket", "my-bucket"])
+
+    assert result.exit_code == 0
+    calls = [c.args[0] for c in mock_popen.call_args_list]
+    assert any("init" in c for c in calls)
+    assert any("plan" in c for c in calls)
+    # plan is read-only: it must never apply.
+    assert not any("apply" in c for c in calls)
+
+
+def test_plan_does_not_prompt_for_confirmation(tmp_path):
+    """plan is read-only — it should run without --yes and never prompt."""
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+
+    mock_proc = MagicMock()
+    mock_proc.stdout = iter(["Plan: 2 to add.\n"])
+    mock_proc.wait.return_value = None
+    mock_proc.returncode = 0
+
+    with (
+        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("shutil.which", return_value="/usr/bin/terraform"),
+        patch("subprocess.Popen", return_value=mock_proc),
+    ):
+        # No stdin provided — a confirmation prompt would abort with a non-zero code.
+        result = runner.invoke(app, ["plan", str(spec), "--state-bucket", "my-bucket"])
+
+    assert result.exit_code == 0
+
+
+def test_plan_aborts_on_terraform_failure(tmp_path):
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+
+    mock_proc = MagicMock()
+    mock_proc.stdout = iter(["Error: backend init failed\n"])
+    mock_proc.wait.return_value = None
+    mock_proc.returncode = 1
+
+    with (
+        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("shutil.which", return_value="/usr/bin/terraform"),
+        patch("subprocess.Popen", return_value=mock_proc),
+    ):
+        result = runner.invoke(app, ["plan", str(spec), "--state-bucket", "my-bucket"])
+
+    assert result.exit_code != 0
+
+
+def test_plan_refreshes_tf_files(tmp_path):
+    """plan regenerates .tf files in the workspace before planning."""
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+
+    mock_proc = MagicMock()
+    mock_proc.stdout = iter(["No changes.\n"])
+    mock_proc.wait.return_value = None
+    mock_proc.returncode = 0
+
+    with (
+        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("shutil.which", return_value="/usr/bin/terraform"),
+        patch("subprocess.Popen", return_value=mock_proc),
+    ):
+        runner.invoke(app, ["plan", str(spec), "--state-bucket", "my-bucket"])
+
+    workspace = tmp_path / "test-infra"
+    assert (workspace / "provider.tf").exists()
+    assert any(workspace.glob("s3-*.tf"))
+
+
 # ── apply ─────────────────────────────────────────────────────────────────────
 
 

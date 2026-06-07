@@ -303,3 +303,148 @@ def random_search(
         run_name=run_name,
         kind="random",
     )
+
+
+def _suggest_param(trial: "Any", name: str, spec: "Any") -> "Any":
+    """Map a param_space entry to an optuna ``trial.suggest_*`` call.
+
+    Supported spec forms:
+      - ``("int", low, high)``
+      - ``("float", low, high)`` or ``("float", low, high, "log")``
+      - ``("categorical", [choices])``
+      - a plain ``list`` of values -> categorical
+    """
+    if isinstance(spec, list):
+        return trial.suggest_categorical(name, spec)
+    if isinstance(spec, tuple) and spec and isinstance(spec[0], str):
+        kind = spec[0]
+        if kind == "int":
+            return trial.suggest_int(name, spec[1], spec[2])
+        if kind == "float":
+            log = len(spec) > 3 and spec[3] == "log"
+            return trial.suggest_float(name, spec[1], spec[2], log=log)
+        if kind == "categorical":
+            return trial.suggest_categorical(name, list(spec[1]))
+        raise ValueError(
+            f"unknown param spec kind {kind!r} for {name!r}; use 'int', 'float', or 'categorical'"
+        )
+    raise ValueError(
+        f"invalid param_space spec for {name!r}: {spec!r}. Use a typed tuple "
+        "(e.g. ('int', 3, 10)) or a list of categorical values."
+    )
+
+
+def bayes_search(
+    trainer_fn: "Callable[[dict[str, Any]], Any]",
+    param_space: "Mapping[str, Any]",
+    n_trials: int,
+    df: "Any",
+    target_col: str,
+    metric: str,
+    *,
+    metric_fn: "Callable[..., dict[str, float]] | None" = None,
+    n_splits: int = 5,
+    higher_is_better: bool = True,
+    seed: int = 42,
+    stratify: bool = True,
+    return_proba: bool = False,
+    run_name: str = "bayes-search",
+) -> "dict[str, Any]":
+    """Bayesian (TPE) hyperparameter search via optuna.
+
+    Same contract as :func:`grid_search` / :func:`random_search`, but instead of
+    enumerating or randomly sampling a grid, optuna proposes each trial's params
+    adaptively from past results — more sample-efficient for high-dimensional
+    spaces. Each trial is a nested MLflow run; the best combination is returned.
+
+    Requires the optional ``optuna`` dependency: ``pip install 'kitchen[search]'``.
+
+    Args:
+        trainer_fn: Callable mapping a param combination to a fresh estimator
+            (see :func:`grid_search`).
+        param_space: Mapping of param name to a search spec consumed by
+            :func:`_suggest_param` — ``("int", low, high)``,
+            ``("float", low, high[, "log"])``, ``("categorical", choices)``, or a
+            plain list of categorical values.
+        n_trials: Number of optuna trials to run (must be >= 1).
+        df: Full dataset including the target column.
+        target_col: Name of the target column.
+        metric: Metric to optimise (base name or exact CV key — see
+            :func:`grid_search`).
+        metric_fn: Metric function; defaults to ``classification_metrics``.
+        n_splits: CV folds per trial.
+        higher_is_better: Direction — maximise (default) or minimise *metric*.
+        seed: Seed for the TPE sampler (reproducible proposals) and the CV splitter.
+        stratify: Forwarded to ``cross_validate``.
+        return_proba: Forwarded to ``cross_validate``.
+        run_name: Parent MLflow run name / child-run prefix.
+
+    Returns:
+        The best-scoring parameter combination as a plain ``dict``.
+
+    Raises:
+        ImportError: If optuna is not installed.
+        ValueError: If *n_trials* < 1, *param_space* is empty, a spec is invalid,
+            or *metric* is absent from the cross-validation result.
+    """
+    try:
+        import optuna
+    except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
+        raise ImportError(
+            "bayes_search requires optuna — install with `pip install 'kitchen[search]'`"
+        ) from exc
+
+    if n_trials < 1:
+        raise ValueError(f"n_trials must be >= 1, got {n_trials}.")
+    if not param_space:
+        raise ValueError("param_space is empty — nothing to search.")
+
+    mf = metric_fn if metric_fn is not None else classification_metrics
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    state: dict[str, str | None] = {"resolved_key": None}
+
+    parent = mlflow.active_run()
+    with contextlib.ExitStack() as stack:
+        if parent is None:
+            stack.enter_context(mlflow.start_run(run_name=run_name))
+
+        def objective(trial: "Any") -> float:
+            combo = {name: _suggest_param(trial, name, spec) for name, spec in param_space.items()}
+            with mlflow.start_run(run_name=f"{run_name}-{trial.number}", nested=True):
+                mlflow.log_params(_flatten(dict(combo)))
+                mlflow.set_tag("sweep.trial", str(trial.number))
+                cv = cross_validate(
+                    df,
+                    target_col=target_col,
+                    estimator_fn=lambda c=combo: trainer_fn(dict(c)),
+                    metric_fn=mf,
+                    n_splits=n_splits,
+                    seed=seed,
+                    stratify=stratify,
+                    return_proba=return_proba,
+                )
+                if state["resolved_key"] is None:
+                    state["resolved_key"] = _resolve_metric_key(metric, cv)
+                mlflow.log_metrics(cv)
+                return cv[state["resolved_key"]]
+
+        study = optuna.create_study(
+            direction="maximize" if higher_is_better else "minimize",
+            sampler=optuna.samplers.TPESampler(seed=seed),
+        )
+        study.optimize(objective, n_trials=n_trials)
+
+        best_params = dict(study.best_params)
+        resolved_key = state["resolved_key"]
+        mlflow.set_tags(
+            {
+                "sweep.kind": "bayes",
+                "sweep.metric": metric,
+                "sweep.n_trials": str(n_trials),
+                **{f"sweep.best.{k}": str(v) for k, v in best_params.items()},
+            }
+        )
+        if resolved_key is not None:
+            mlflow.log_metric(resolved_key, float(study.best_value))
+
+    return best_params

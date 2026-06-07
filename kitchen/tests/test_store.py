@@ -1,7 +1,9 @@
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
 
-from kitchen.store import DataStore
+from kitchen.store import DataStore, SchemaError
 
 # ---------------------------------------------------------------------------
 # Happy path
@@ -360,3 +362,92 @@ def test_is_stale_empty_deps_returns_false_when_output_exists(tmp_path):
     out.parent.mkdir(parents=True)
     out.write_bytes(b"parquet")
     assert store.is_stale("data/processed/features.parquet", []) is False
+
+
+# ---------------------------------------------------------------------------
+# Schema validation (DS-002)
+# ---------------------------------------------------------------------------
+
+
+def _df():
+    return pd.DataFrame({"a": [1, 2, 3], "b": [4.0, 5.0, 6.0]})
+
+
+def test_load_parquet_schema_match_passes(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.save_parquet(_df(), "f.parquet")
+    result = store.load_parquet("f.parquet", schema={"a": "int64", "b": "float64"})
+    assert list(result.columns) == ["a", "b"]
+
+
+def test_load_parquet_schema_dtype_mismatch_raises(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.save_parquet(_df(), "f.parquet")
+    with pytest.raises(SchemaError) as exc:
+        store.load_parquet("f.parquet", schema={"a": "float64"})
+    msg = str(exc.value)
+    assert "a:" in msg and "float64" in msg and "int64" in msg
+
+
+def test_load_parquet_schema_missing_column_raises(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.save_parquet(_df(), "f.parquet")
+    with pytest.raises(SchemaError, match="missing"):
+        store.load_parquet("f.parquet", schema={"c": "int64"})
+
+
+def test_load_parquet_schema_accepts_python_dtype(tmp_path):
+    """Schema values may be plain Python types (int/float), not just strings."""
+    store = DataStore(root=tmp_path)
+    store.save_parquet(_df(), "f.parquet")
+    result = store.load_parquet("f.parquet", schema={"a": int, "b": float})
+    assert len(result) == 3
+
+
+def test_load_csv_schema_mismatch_raises(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.raw_dir.mkdir(parents=True)
+    _df().to_csv(store.raw_dir / "r.csv", index=False)
+    with pytest.raises(SchemaError):
+        store.load_csv("r.csv", schema={"a": "float64"})
+
+
+def test_load_csv_schema_match_passes(tmp_path):
+    store = DataStore(root=tmp_path)
+    store.raw_dir.mkdir(parents=True)
+    _df().to_csv(store.raw_dir / "r.csv", index=False)
+    result = store.load_csv("r.csv", schema={"a": "int64", "b": "float64"})
+    assert len(result) == 3
+
+
+# ---------------------------------------------------------------------------
+# load_parquet(run_id=...) — fetch from MLflow artifacts (DS-003)
+# ---------------------------------------------------------------------------
+
+
+def test_load_parquet_run_id_fetches_from_mlflow(tmp_path):
+    """With run_id, the file is downloaded from MLflow artifacts, not the local stage."""
+    # Stage a parquet that download_artifacts will "return".
+    artifact = tmp_path / "downloaded.parquet"
+    _df().to_parquet(artifact, index=False)
+
+    store = DataStore(root=tmp_path)  # note: no local data/processed/f.parquet exists
+    with patch(
+        "mlflow.artifacts.download_artifacts", return_value=str(artifact)
+    ) as mock_dl:
+        result = store.load_parquet("f.parquet", run_id="abc123def456")
+
+    mock_dl.assert_called_once()
+    _, kwargs = mock_dl.call_args
+    assert kwargs["run_id"] == "abc123def456"
+    assert kwargs["artifact_path"] == "f.parquet"
+    pd.testing.assert_frame_equal(result, _df())
+
+
+def test_load_parquet_run_id_applies_schema(tmp_path):
+    artifact = tmp_path / "downloaded.parquet"
+    _df().to_parquet(artifact, index=False)
+    store = DataStore(root=tmp_path)
+    with patch("mlflow.artifacts.download_artifacts", return_value=str(artifact)):
+        with pytest.raises(SchemaError):
+            store.load_parquet("f.parquet", run_id="abc123def456", schema={"a": "float64"})

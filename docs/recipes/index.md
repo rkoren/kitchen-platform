@@ -30,3 +30,6 @@ recipes generate infra.yaml --out ./tf
 |---|---|
 | `recipes generate SPEC` | Generate Terraform configs from a spec |
 | `recipes validate SPEC` | Validate a spec without generating files |
+| `recipes plan SPEC --state-bucket B` | Preview changes (`terraform plan`) without applying |
+| `recipes apply SPEC --state-bucket B` | Provision resources (`terraform apply`) |
+| `recipes destroy SPEC --state-bucket B` | Tear down all resources in the spec |

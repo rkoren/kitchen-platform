@@ -26,6 +26,32 @@ _STAGE_COMMAND = {
 }
 
 
+class SchemaError(ValueError):
+    """Raised by DataStore.load_* when a loaded file does not match the expected schema."""
+
+
+def _validate_schema(df: pd.DataFrame, schema: dict, source: str) -> None:
+    """Raise SchemaError if df does not match schema (column name -> expected dtype).
+
+    Reports every mismatching or missing column at once so a schema drift is fixed
+    in one pass rather than column-by-column.
+    """
+    problems: list[str] = []
+    for col, expected in schema.items():
+        if col not in df.columns:
+            problems.append(f"  {col}: missing from file (expected {expected})")
+            continue
+        try:
+            expected_dtype = pd.api.types.pandas_dtype(expected)
+        except TypeError:
+            expected_dtype = expected
+        actual_dtype = df[col].dtype
+        if actual_dtype != expected_dtype:
+            problems.append(f"  {col}: expected {expected_dtype}, got {actual_dtype}")
+    if problems:
+        raise SchemaError(f"schema validation failed for {source}:\n" + "\n".join(problems))
+
+
 class DataStore:
     def __init__(self, root: Path | str | None = None) -> None:
         """Root defaults to cwd — the directory where dvc.yaml lives (if using DVC)."""
@@ -57,12 +83,22 @@ class DataStore:
             raise ValueError(f"Unknown stage {stage!r}. Valid stages: {sorted(_KNOWN_STAGES)}")
         return getattr(self, f"{stage}_dir")
 
-    def load_csv(self, filename: str, **kwargs: object) -> pd.DataFrame:
-        """Read a CSV from data/raw/."""
+    def load_csv(
+        self, filename: str, schema: dict | None = None, **kwargs: object
+    ) -> pd.DataFrame:
+        """Read a CSV from data/raw/.
+
+        When *schema* (``{column: dtype}``) is given, the loaded frame is checked
+        against it and a :class:`SchemaError` is raised on any missing column or
+        dtype mismatch — guarding against silent schema drift (DS-002).
+        """
         path = self.raw_dir / filename
         if not path.exists():
             raise FileNotFoundError(f"{path} not found — run `{_STAGE_COMMAND['raw']}` first")
-        return pd.read_csv(path, **kwargs)
+        df = pd.read_csv(path, **kwargs)
+        if schema is not None:
+            _validate_schema(df, schema, str(path))
+        return df
 
     def save_parquet(self, df: pd.DataFrame, filename: str, stage: str = "processed") -> Path:
         """Write df as Parquet to the given stage directory, creating it if needed."""
@@ -72,14 +108,46 @@ class DataStore:
         df.to_parquet(path, index=False)
         return path
 
-    def load_parquet(self, filename: str, stage: str = "processed") -> pd.DataFrame:
-        """Read a Parquet file from the given stage directory."""
+    def load_parquet(
+        self,
+        filename: str,
+        stage: str = "processed",
+        run_id: str | None = None,
+        schema: dict | None = None,
+    ) -> pd.DataFrame:
+        """Read a Parquet file from the given stage directory.
+
+        When *run_id* is given, the file is fetched from that MLflow run's logged
+        artifacts (artifact path == *filename*) instead of the local stage
+        directory — enabling exact reproduction of an older run without locating
+        the artifact URI by hand (DS-003).
+
+        When *schema* (``{column: dtype}``) is given, the loaded frame is validated
+        against it and a :class:`SchemaError` is raised on mismatch (DS-002).
+        """
+        if run_id is not None:
+            import tempfile
+
+            import mlflow.artifacts
+
+            with tempfile.TemporaryDirectory() as tmp:
+                local = mlflow.artifacts.download_artifacts(
+                    run_id=run_id, artifact_path=filename, dst_path=tmp
+                )
+                df = pd.read_parquet(local)
+            if schema is not None:
+                _validate_schema(df, schema, f"{filename} (run {run_id[:8]})")
+            return df
+
         dest_dir = self._stage_dir(stage)
         path = dest_dir / filename
         if not path.exists():
             cmd = _STAGE_COMMAND.get(stage, f"kitchen run {stage}")
             raise FileNotFoundError(f"{path} not found — run `{cmd}` first")
-        return pd.read_parquet(path)
+        df = pd.read_parquet(path)
+        if schema is not None:
+            _validate_schema(df, schema, str(path))
+        return df
 
     def list(self, stage: str = "raw") -> list[str]:
         """Return a sorted list of filenames in the given stage directory.

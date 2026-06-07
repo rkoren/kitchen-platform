@@ -56,11 +56,15 @@ serve = [
     "uvicorn>=0.29",
     "mangum>=0.17",
 ]
+search = [
+    "optuna>=3.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov",
     "fastapi>=0.110",  # for test_serve.py TestClient
     "httpx",
+    "optuna>=3.0",  # for test_search.py bayes_search coverage
     "ruff",
 ]
 
