@@ -48,6 +48,7 @@ EXPECTED_FILES = [
     "experiments/__init__.py",
     "experiments/baseline.py",
     "experiments/challenger.py",
+    "notebooks/exploration.ipynb",
     "flows/train_flow.py",
     "flows/promote.py",
     "flows/generate_submission.py",
@@ -146,6 +147,43 @@ def test_train_flow_imports_cleanly(scaffold):
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # must not raise on import
+
+
+# ---------------------------------------------------------------------------
+# Scaffolded exploration notebook (NB-009)
+# ---------------------------------------------------------------------------
+
+
+def test_exploration_notebook_is_valid_json(scaffold):
+    """The scaffolded notebook parses as JSON (and as a notebook document)."""
+    import json
+
+    raw = (scaffold / "notebooks/exploration.ipynb").read_text()
+    doc = json.loads(raw)  # must not raise
+    assert doc["nbformat"] == 4
+    assert len(doc["cells"]) >= 4
+
+
+def test_exploration_notebook_validates_as_nbformat(scaffold):
+    import nbformat
+
+    nb = nbformat.read(str(scaffold / "notebooks/exploration.ipynb"), as_version=4)
+    nbformat.validate(nb)  # raises if the document is malformed
+
+
+def test_exploration_notebook_references_project(scaffold):
+    """Notebook is project-specific: experiment slug + the project's Trainer class."""
+    raw = (scaffold / "notebooks/exploration.ipynb").read_text()
+    assert "my-competition" in raw
+    assert "MyCompetitionTrainer" in raw  # the swap-in hint references the project class
+
+
+def test_exploration_notebook_demonstrates_exploratory_loop(scaffold):
+    """Notebook shows the NB-007/NB-008 features so users discover them."""
+    raw = (scaffold / "notebooks/exploration.ipynb").read_text()
+    assert "exploratory=True" in raw
+    assert "log_model=False" in raw
+    assert "DataStore.preview" in raw or "store.preview" in raw
 
 
 def test_feature_builder_raises_not_implemented(scaffold, monkeypatch):

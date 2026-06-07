@@ -83,6 +83,7 @@ from kitchen._cli._templates import (
     _TRAIN_RUN_RF,
     _TRAIN_RUN_TABULAR_TS,
     _TRAIN_RUN_XGB,
+    _build_exploration_notebook,
 )
 from kitchen._cli.dvc import (
     _render,
@@ -1962,6 +1963,7 @@ def init(
         (root / "experiments" / "__init__.py", ""),
         (root / "experiments" / "baseline.py", r(_BASELINE_PY, name, class_name)),
         (root / "experiments" / "challenger.py", r(_CHALLENGER_PY, name, class_name)),
+        (root / "notebooks" / "exploration.ipynb", _build_exploration_notebook(name, class_name)),
         (root / "flows" / "train_flow.py", r(_TRAIN_FLOW_PY, name, class_name)),
         (root / "flows" / "promote.py", r(_PROMOTE_PY, name, class_name)),
         (root / "flows" / "generate_submission.py", r(_GENERATE_SUBMISSION_PY, name, class_name)),

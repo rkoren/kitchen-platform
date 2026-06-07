@@ -145,16 +145,22 @@ class Trainer(ABC):
         df = store.load_parquet(processed_file)
         store.models_dir.mkdir(parents=True, exist_ok=True)
         data_path = store.processed_dir / processed_file
+        # NB-008: getattr default is True so the model is logged unless a caller
+        # (kitchen.init_run(log_model=False)) explicitly opts out — keep the default
+        # here; mock-based tests rely on a truthy attribute meaning "log the model".
+        log_model = getattr(tracker, "log_model_enabled", True)
         if _mlflow.active_run() is not None:
             log_run_context(params=params, data_path=data_path)
             model = self.fit(df, params)
-            tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
+            if log_model:
+                tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
             _log_feature_importances(model)
             return model
         with tracker.run(run_name=params.get("run_name"), params=params):
             log_run_context(params=params, data_path=data_path)
             model = self.fit(df, params)
-            tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
+            if log_model:
+                tracker.log_model(model, artifact_path="model", flavour=self.model_flavour)
             _log_feature_importances(model)
             return model
 

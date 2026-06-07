@@ -2186,3 +2186,178 @@ _DVC_CONFIG = """\
 [remote "s3remote"]
     url = s3://YOUR-BUCKET/dvc
 """
+
+
+# ---------------------------------------------------------------------------
+# Exploration notebook (NB-009) — scaffolded into kitchen init as
+# notebooks/exploration.ipynb. Built programmatically (not via string.Template)
+# so notebook code containing `$` or `{}` never collides with substitution.
+# Placeholders __NAME__ / __CLASS__ are replaced with the project slug and class.
+# ---------------------------------------------------------------------------
+
+_NB_INTRO = """\
+# Exploration — __NAME__
+
+Notebook-first iteration on this project, using the same MLflow tracking the CLI uses.
+
+| Step | What | API |
+|------|------|-----|
+| 1 | Peek at processed features | `DataStore.preview()` |
+| 2 | Try a quick idea inline | `kitchen.experiment(exploratory=True)` |
+| 3 | Run a Trainer with tracking | `kitchen.init_run(exploratory=True, log_model=False)` |
+| 4 | Compare runs | `kitchen leaderboard` |
+
+**Prerequisite:** run `kitchen run features` first so `data/processed/` exists.
+
+Exploratory runs are tagged `run_type=exploratory`, so they stay separable from
+pipeline runs: `kitchen leaderboard --exclude-exploratory` hides them and
+`--only-exploratory` shows just these notebook sketches."""
+
+_NB_SETUP = """\
+import yaml
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+
+import kitchen
+from kitchen.store import DataStore
+
+with open("params.yaml") as f:
+    params = yaml.safe_load(f)
+
+EXPERIMENT = params.get("experiment", "__NAME__")
+TARGET = params.get("model", {}).get("target", "target")
+PROCESSED_FILE = params.get("features", {}).get("processed_file", "features.parquet")
+
+store = DataStore()
+print(f"experiment={EXPERIMENT}  target={TARGET}  features={PROCESSED_FILE}")"""
+
+_NB_STEP1 = """\
+## Step 1 — Peek at the processed features
+
+`preview()` searches `processed/` first, then `raw/`, and returns the first rows —
+just the filename, no path juggling."""
+
+_NB_PREVIEW = """store.preview(PROCESSED_FILE)"""
+
+_NB_STEP2 = """\
+## Step 2 — Try a quick idea with `kitchen.experiment()`
+
+Write model code directly in the cell — no `Trainer` subclass needed. `exploratory=True`
+tags the run so it stays out of the default leaderboard ranking.
+
+**Metric naming matters:** `kitchen leaderboard` ranks by the metric in your
+`thresholds:` section. Log under that exact name, or the run won't appear in the
+default view (`kitchen leaderboard --metric <name>` still finds it)."""
+
+_NB_EXPERIMENT = """\
+df = store.load_parquet(PROCESSED_FILE)
+if TARGET not in df.columns:
+    raise ValueError(
+        f"target column {TARGET!r} is not in the features ({list(df.columns)}). "
+        "Set model.target in params.yaml (or change TARGET in the setup cell)."
+    )
+
+X = df.drop(columns=[TARGET])
+y = df[TARGET]
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+with kitchen.experiment(EXPERIMENT, run_name="nb-logreg", exploratory=True) as run:
+    model = LogisticRegression(max_iter=200)
+    model.fit(X_train, y_train)
+    acc = accuracy_score(y_val, model.predict(X_val))
+    run.log(val_accuracy=acc)
+
+print(f"val_accuracy: {acc:.4f}  (run {run.run_id})")"""
+
+_NB_STEP3 = """\
+## Step 3 — Run a Trainer with `kitchen.init_run()`
+
+`init_run()` injects the same MLflow context that `kitchen run train` uses, so you can
+iterate on a `Trainer` in the notebook. `log_model=False` keeps these throwaway runs out
+of the model registry; `exploratory=True` tags them.
+
+The `SimpleTrainer` below is a stand-in so this cell runs on a fresh project. In your
+project, swap it for your own: `from src.train.run import __CLASS__Trainer`."""
+
+_NB_TRAINER = """\
+import mlflow
+
+from kitchen.steps import Trainer
+
+
+class SimpleTrainer(Trainer):
+    \"\"\"Stand-in Trainer — replace with __CLASS__Trainer from src/train/run.py.\"\"\"
+
+    def fit(self, df, params):
+        X = df.drop(columns=[TARGET])
+        y = df[TARGET]
+        X_tr, X_vl, y_tr, y_vl = train_test_split(X, y, test_size=0.2, random_state=42)
+        model = LogisticRegression(max_iter=300)
+        model.fit(X_tr, y_tr)
+        mlflow.log_metric("val_accuracy", accuracy_score(y_vl, model.predict(X_vl)))
+        return model
+
+
+with kitchen.init_run(params, run_name="nb-trainer", exploratory=True, log_model=False) as tracker:
+    SimpleTrainer().run(store, tracker, params)
+
+print("Logged — see it with: kitchen leaderboard --only-exploratory")"""
+
+_NB_STEP4 = """\
+## Step 4 — Compare runs
+
+From a terminal in this project directory:
+
+```bash
+kitchen leaderboard                       # ranked runs
+kitchen leaderboard --only-exploratory    # just these notebook sketches
+kitchen leaderboard --exclude-exploratory # just pipeline runs
+kitchen diff <run_a> <run_b>              # what changed between two runs
+kitchen ui                                # open the MLflow UI
+```
+
+Found a keeper? Promote it: `kitchen promote --run-id <run_id>`."""
+
+
+def _build_exploration_notebook(name: str, class_name: str) -> str:
+    """Return a project-specific exploration notebook (NB-009) as ipynb JSON text."""
+    import json
+
+    def _sub(text: str) -> str:
+        return text.replace("__NAME__", name).replace("__CLASS__", class_name)
+
+    def _cell(cell_id: str, cell_type: str, text: str) -> dict:
+        cell = {
+            "id": cell_id,
+            "cell_type": cell_type,
+            "metadata": {},
+            "source": _sub(text).splitlines(keepends=True),
+        }
+        if cell_type == "code":
+            cell["execution_count"] = None
+            cell["outputs"] = []
+        return cell
+
+    cells = [
+        _cell("nb-intro", "markdown", _NB_INTRO),
+        _cell("nb-setup", "code", _NB_SETUP),
+        _cell("nb-step1", "markdown", _NB_STEP1),
+        _cell("nb-preview", "code", _NB_PREVIEW),
+        _cell("nb-step2", "markdown", _NB_STEP2),
+        _cell("nb-experiment", "code", _NB_EXPERIMENT),
+        _cell("nb-step3", "markdown", _NB_STEP3),
+        _cell("nb-trainer", "code", _NB_TRAINER),
+        _cell("nb-step4", "markdown", _NB_STEP4),
+    ]
+    notebook = {
+        "cells": cells,
+        "metadata": {
+            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+            "language_info": {"name": "python"},
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    return json.dumps(notebook, indent=1) + "\n"
