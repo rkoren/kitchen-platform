@@ -428,7 +428,9 @@ def test_run_train_missing_src_module(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_override_single_int(tmp_path, monkeypatch):
+@pytest.fixture()
+def _captured_overrides(tmp_path, monkeypatch):
+    """Fake train pipeline that records the overrides kwarg."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text("experiment: test\n")
     captured = {}
@@ -437,57 +439,30 @@ def test_override_single_int(tmp_path, monkeypatch):
         captured["overrides"] = overrides
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
-    result = runner.invoke(app, ["run", "train", "--override", "model.max_depth=6"])
+    return captured
+
+
+@pytest.mark.parametrize(
+    "override_strs, expected",
+    [
+        (["model.max_depth=6"], {"model.max_depth": 6}),
+        (["model.max_depth=6", "model.eta=0.05"], {"model.max_depth": 6, "model.eta": 0.05}),
+        (["use_gpu=true", "shuffle=False"], {"use_gpu": True, "shuffle": False}),
+        (["model.objective=binary:logistic"], {"model.objective": "binary:logistic"}),
+    ],
+    ids=["single-int", "multiple", "bool-coercion", "string-value"],
+)
+def test_override_values(_captured_overrides, override_strs, expected):
+    args = ["run", "train"]
+    for s in override_strs:
+        args += ["--override", s]
+    result = runner.invoke(app, args)
     assert result.exit_code == 0
-    assert captured["overrides"] == {"model.max_depth": 6}
-
-
-def test_override_multiple(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "params.yaml").write_text("experiment: test\n")
-    captured = {}
-
-    def fake_pipeline(params_file="params.yaml", overrides=None):
-        captured["overrides"] = overrides
-
-    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
-    result = runner.invoke(
-        app,
-        ["run", "train", "--override", "model.max_depth=6", "--override", "model.eta=0.05"],
-    )
-    assert result.exit_code == 0
-    assert captured["overrides"] == {"model.max_depth": 6, "model.eta": 0.05}
-
-
-def test_override_bool_coercion(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "params.yaml").write_text("experiment: test\n")
-    captured = {}
-
-    def fake_pipeline(params_file="params.yaml", overrides=None):
-        captured["overrides"] = overrides
-
-    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
-    result = runner.invoke(
-        app, ["run", "train", "--override", "use_gpu=true", "--override", "shuffle=False"]
-    )
-    assert result.exit_code == 0
-    assert captured["overrides"]["use_gpu"] is True
-    assert captured["overrides"]["shuffle"] is False
-
-
-def test_override_string_value(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "params.yaml").write_text("experiment: test\n")
-    captured = {}
-
-    def fake_pipeline(params_file="params.yaml", overrides=None):
-        captured["overrides"] = overrides
-
-    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
-    result = runner.invoke(app, ["run", "train", "--override", "model.objective=binary:logistic"])
-    assert result.exit_code == 0
-    assert captured["overrides"] == {"model.objective": "binary:logistic"}
+    for k, v in expected.items():
+        actual = _captured_overrides["overrides"][k]
+        assert actual == v
+        if isinstance(v, bool):
+            assert isinstance(actual, bool)
 
 
 def test_override_invalid_format(tmp_path, monkeypatch):
@@ -499,18 +474,10 @@ def test_override_invalid_format(tmp_path, monkeypatch):
     assert "key=value" in result.output
 
 
-def test_no_override_passes_none(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "params.yaml").write_text("experiment: test\n")
-    captured = {}
-
-    def fake_pipeline(params_file="params.yaml", overrides=None):
-        captured["overrides"] = overrides
-
-    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
+def test_no_override_passes_none(_captured_overrides):
     result = runner.invoke(app, ["run", "train"])
     assert result.exit_code == 0
-    assert captured["overrides"] is None
+    assert _captured_overrides["overrides"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -518,40 +485,27 @@ def test_no_override_passes_none(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_coerce_int():
+@pytest.mark.parametrize(
+    "raw, expected, expected_type",
+    [
+        ("6", 6, int),
+        ("0.05", 0.05, float),
+        ("true", True, bool),
+        ("True", True, bool),
+        ("TRUE", True, bool),
+        ("false", False, bool),
+        ("False", False, bool),
+        ("binary:logistic", "binary:logistic", str),
+    ],
+    ids=["int", "float", "bool-true-lower", "bool-true-cap", "bool-true-upper",
+         "bool-false-lower", "bool-false-cap", "string"],
+)
+def test_coerce_override_value(raw, expected, expected_type):
     from kitchen.cli import _coerce_override_value
 
-    assert _coerce_override_value("6") == 6
-    assert isinstance(_coerce_override_value("6"), int)
-
-
-def test_coerce_float():
-    from kitchen.cli import _coerce_override_value
-
-    assert _coerce_override_value("0.05") == 0.05
-    assert isinstance(_coerce_override_value("0.05"), float)
-
-
-def test_coerce_bool_true():
-    from kitchen.cli import _coerce_override_value
-
-    assert _coerce_override_value("true") is True
-    assert _coerce_override_value("True") is True
-    assert _coerce_override_value("TRUE") is True
-
-
-def test_coerce_bool_false():
-    from kitchen.cli import _coerce_override_value
-
-    assert _coerce_override_value("false") is False
-    assert _coerce_override_value("False") is False
-
-
-def test_coerce_string_fallback():
-    from kitchen.cli import _coerce_override_value
-
-    assert _coerce_override_value("binary:logistic") == "binary:logistic"
-    assert isinstance(_coerce_override_value("binary:logistic"), str)
+    result = _coerce_override_value(raw)
+    assert result == expected
+    assert isinstance(result, expected_type)
 
 
 # ---------------------------------------------------------------------------
@@ -981,84 +935,44 @@ def test_run_evaluate_invalid_flavor(tmp_path, monkeypatch):
     assert "unknown flavor" in result.output
 
 
-def test_run_evaluate_flavor_autodetect_xgboost(tmp_path, monkeypatch):
-    """SCF-003: default sklearn flavor is auto-upgraded to xgboost from MLmodel manifest."""
+def _setup_flavor_autodetect(tmp_path, monkeypatch):
+    """Wire up recording importlib and a fake evaluate module; return imported_modules list."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
-
     imported_modules: list[str] = []
     fake_loader = type("Loader", (), {"load_model": staticmethod(lambda uri: object())})()
-
-    def recording_import(name):
-        imported_modules.append(name)
-        return fake_loader
-
-    monkeypatch.setattr("importlib.import_module", recording_import)
+    monkeypatch.setattr("importlib.import_module", lambda name: (imported_modules.append(name), fake_loader)[1])
     monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
-
-    import mlflow.models as _mlflow_models
-    fake_info = type("Info", (), {"flavors": {"xgboost": {}, "python_function": {}}})()
-    monkeypatch.setattr(_mlflow_models, "get_model_info", lambda uri: fake_info)
-
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = lambda m, p, s: {"val_accuracy": 0.8}
     monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
-
-    result = runner.invoke(app, ["run", "evaluate"])
-    assert result.exit_code == 0
-    assert "mlflow.xgboost" in imported_modules
+    return imported_modules
 
 
-def test_run_evaluate_flavor_autodetect_lightgbm(tmp_path, monkeypatch):
-    """SCF-003: default sklearn flavor is auto-upgraded to lightgbm from MLmodel manifest."""
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
-
-    imported_modules: list[str] = []
-    fake_loader = type("Loader", (), {"load_model": staticmethod(lambda uri: object())})()
-
-    def recording_import(name):
-        imported_modules.append(name)
-        return fake_loader
-
-    monkeypatch.setattr("importlib.import_module", recording_import)
-    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
-
+@pytest.mark.parametrize(
+    "model_flavors, expected_module",
+    [
+        ({"xgboost": {}, "python_function": {}}, "mlflow.xgboost"),
+        ({"lightgbm": {}, "python_function": {}}, "mlflow.lightgbm"),
+    ],
+    ids=["xgboost", "lightgbm"],
+)
+def test_run_evaluate_flavor_autodetect(tmp_path, monkeypatch, model_flavors, expected_module):
+    """SCF-003: default sklearn flavor is auto-upgraded from MLmodel manifest."""
+    imported_modules = _setup_flavor_autodetect(tmp_path, monkeypatch)
     import mlflow.models as _mlflow_models
-    fake_info = type("Info", (), {"flavors": {"lightgbm": {}, "python_function": {}}})()
+    fake_info = type("Info", (), {"flavors": model_flavors})()
     monkeypatch.setattr(_mlflow_models, "get_model_info", lambda uri: fake_info)
-
-    fake_mod = type(sys)("src.evaluate.run")
-    fake_mod.evaluate = lambda m, p, s: {"val_accuracy": 0.8}
-    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
-
     result = runner.invoke(app, ["run", "evaluate"])
     assert result.exit_code == 0
-    assert "mlflow.lightgbm" in imported_modules
+    assert expected_module in imported_modules
 
 
 def test_run_evaluate_flavor_autodetect_failure_falls_back(tmp_path, monkeypatch):
     """SCF-003: if get_model_info raises, fall back to sklearn without crashing."""
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
-
-    imported_modules: list[str] = []
-    fake_loader = type("Loader", (), {"load_model": staticmethod(lambda uri: object())})()
-
-    def recording_import(name):
-        imported_modules.append(name)
-        return fake_loader
-
-    monkeypatch.setattr("importlib.import_module", recording_import)
-    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
-
+    imported_modules = _setup_flavor_autodetect(tmp_path, monkeypatch)
     import mlflow.models as _mlflow_models
     monkeypatch.setattr(_mlflow_models, "get_model_info", lambda uri: (_ for _ in ()).throw(Exception("registry unavailable")))
-
-    fake_mod = type(sys)("src.evaluate.run")
-    fake_mod.evaluate = lambda m, p, s: {"val_accuracy": 0.8}
-    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
-
     result = runner.invoke(app, ["run", "evaluate"])
     assert result.exit_code == 0
     assert "mlflow.sklearn" in imported_modules
@@ -1578,6 +1492,15 @@ def test_init_kaggle_with_template(tmp_path, monkeypatch):
 _CI_WORKFLOW_PATH = ".github/workflows/train-evaluate.yml"
 
 
+@pytest.fixture()
+def _ci_local(tmp_path, monkeypatch):
+    """Scaffold a local (non-Kaggle) --ci project; return (raw_text, parsed_dict)."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    return raw, yaml.safe_load(raw)
+
+
 def test_init_ci_creates_workflow(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
@@ -1591,41 +1514,31 @@ def test_init_no_ci_no_workflow(tmp_path, monkeypatch):
     assert not (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).exists()
 
 
-def test_init_ci_workflow_valid_yaml(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
-    content = yaml.safe_load(raw)
-    assert content is not None
-    assert "jobs" in content
-    assert "train-evaluate" in content["jobs"]
+def test_init_ci_workflow_valid_yaml(_ci_local):
+    _, data = _ci_local
+    assert data is not None
+    assert "jobs" in data
+    assert "train-evaluate" in data["jobs"]
 
 
-def test_init_ci_workflow_contains_expected_steps(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    steps = content["jobs"]["train-evaluate"]["steps"]
-    step_names = [s.get("name", "") for s in steps]
+def test_init_ci_workflow_contains_expected_steps(_ci_local):
+    _, data = _ci_local
+    step_names = [s.get("name", "") for s in data["jobs"]["train-evaluate"]["steps"]]
     assert "Train" in step_names
     assert "Evaluate" in step_names
     assert "Report" in step_names
     assert "Upload metrics" in step_names
 
 
-def test_init_ci_workflow_substitutes_project_name(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+def test_init_ci_workflow_substitutes_project_name(_ci_local):
+    raw, _ = _ci_local
     assert "my-comp" in raw
     assert "$name" not in raw
 
 
-def test_init_ci_workflow_has_workflow_dispatch(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
+def test_init_ci_workflow_has_workflow_dispatch(_ci_local):
     # `on:` parses as boolean True in YAML; check raw text instead
-    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+    raw, _ = _ci_local
     assert "workflow_dispatch" in raw
 
 
@@ -1663,12 +1576,9 @@ def test_init_ci_local_no_ingest_step(tmp_path, monkeypatch):
     assert "Ingest data" not in step_names
 
 
-def test_init_ci_train_step_uses_auto_promote(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    steps = content["jobs"]["train-evaluate"]["steps"]
-    train_step = next(s for s in steps if s.get("name") == "Train")
+def test_init_ci_train_step_uses_auto_promote(_ci_local):
+    _, data = _ci_local
+    train_step = next(s for s in data["jobs"]["train-evaluate"]["steps"] if s.get("name") == "Train")
     assert "--auto-promote" in train_step["run"]
 
 
@@ -1747,44 +1657,31 @@ def test_init_no_here_next_steps_has_cd(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_init_ci_workflow_has_push_results_step(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    steps = content["jobs"]["train-evaluate"]["steps"]
-    step_names = [s.get("name", "") for s in steps]
+def test_init_ci_workflow_has_push_results_step(_ci_local):
+    _, data = _ci_local
+    step_names = [s.get("name", "") for s in data["jobs"]["train-evaluate"]["steps"]]
     assert "Push results" in step_names
 
 
-def test_init_ci_workflow_push_step_after_evaluate(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    steps = content["jobs"]["train-evaluate"]["steps"]
-    step_names = [s.get("name", "") for s in steps]
+def test_init_ci_workflow_push_step_after_evaluate(_ci_local):
+    _, data = _ci_local
+    step_names = [s.get("name", "") for s in data["jobs"]["train-evaluate"]["steps"]]
     assert step_names.index("Push results") > step_names.index("Evaluate")
 
 
-def test_init_ci_workflow_contents_write_permission(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    perms = content["jobs"]["train-evaluate"]["permissions"]
-    assert perms.get("contents") == "write"
+def test_init_ci_workflow_contents_write_permission(_ci_local):
+    _, data = _ci_local
+    assert data["jobs"]["train-evaluate"]["permissions"].get("contents") == "write"
 
 
-def test_init_ci_workflow_push_step_fetches_branch(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+def test_init_ci_workflow_push_step_fetches_branch(_ci_local):
+    raw, _ = _ci_local
     assert "git fetch origin results:results" in raw
 
 
-def test_init_ci_workflow_push_step_gated_on_main(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    steps = content["jobs"]["train-evaluate"]["steps"]
+def test_init_ci_workflow_push_step_gated_on_main(_ci_local):
+    _, data = _ci_local
+    steps = data["jobs"]["train-evaluate"]["steps"]
     push_step = next(s for s in steps if s.get("name") == "Push results")
     assert "refs/heads/main" in str(push_step.get("if", ""))
 
@@ -1832,49 +1729,31 @@ def test_init_ci_kaggle_contents_write_permission(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_init_ci_workflow_has_pr_comment_steps(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    steps = content["jobs"]["train-evaluate"]["steps"]
-    step_names = [s.get("name", "") for s in steps]
+def test_init_ci_workflow_has_pr_comment_steps(_ci_local):
+    _, data = _ci_local
+    step_names = [s.get("name", "") for s in data["jobs"]["train-evaluate"]["steps"]]
     assert "Find PR comment" in step_names
     assert "Post PR comment" in step_names
-
-
-def test_init_ci_workflow_has_download_base_metrics_step(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    steps = content["jobs"]["train-evaluate"]["steps"]
-    step_names = [s.get("name", "") for s in steps]
     assert "Download base metrics" in step_names
 
 
-def test_init_ci_workflow_download_step_is_pr_only(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    steps = content["jobs"]["train-evaluate"]["steps"]
+def test_init_ci_workflow_download_step_is_pr_only(_ci_local):
+    _, data = _ci_local
+    steps = data["jobs"]["train-evaluate"]["steps"]
     dl_step = next(s for s in steps if s.get("name") == "Download base metrics")
     assert "pull_request" in str(dl_step.get("if", ""))
 
 
-def test_init_ci_workflow_pr_comment_steps_are_pr_only(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    steps = content["jobs"]["train-evaluate"]["steps"]
+def test_init_ci_workflow_pr_comment_steps_are_pr_only(_ci_local):
+    _, data = _ci_local
+    steps = data["jobs"]["train-evaluate"]["steps"]
     post_step = next(s for s in steps if s.get("name") == "Post PR comment")
     assert "pull_request" in str(post_step.get("if", ""))
 
 
-def test_init_ci_workflow_has_pr_write_permission(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    perms = content["jobs"]["train-evaluate"].get("permissions", {})
-    assert perms.get("pull-requests") == "write"
+def test_init_ci_workflow_has_pr_write_permission(_ci_local):
+    _, data = _ci_local
+    assert data["jobs"]["train-evaluate"].get("permissions", {}).get("pull-requests") == "write"
 
 
 def test_init_ci_kaggle_workflow_has_pr_comment_steps(tmp_path, monkeypatch):
@@ -1892,10 +1771,8 @@ def test_init_ci_kaggle_workflow_has_pr_comment_steps(tmp_path, monkeypatch):
     assert "Post PR comment" in step_names
 
 
-def test_init_ci_workflow_report_step_has_compare_logic(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+def test_init_ci_workflow_report_step_has_compare_logic(_ci_local):
+    raw, _ = _ci_local
     assert "--compare" in raw
     assert "base-metrics/metrics.json" in raw
 
@@ -1907,45 +1784,34 @@ def test_init_ci_workflow_report_step_has_compare_logic(tmp_path, monkeypatch):
 _DASHBOARD_PATH = "docs/index.html"
 
 
+@pytest.fixture()
+def _dashboard_html(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
+    return (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
+
+
 def test_init_creates_dashboard(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
     assert (tmp_path / "my-comp" / _DASHBOARD_PATH).exists()
 
 
-def test_init_dashboard_name_substituted(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
-    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
-    assert "my-comp" in html
-    assert "$name" not in html
+def test_init_dashboard_name_substituted(_dashboard_html):
+    assert "my-comp" in _dashboard_html
+    assert "$name" not in _dashboard_html
 
 
-def test_init_dashboard_chartjs_script_tag(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
-    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
-    assert "cdn.jsdelivr.net/npm/chart.js" in html
+def test_init_dashboard_chartjs_script_tag(_dashboard_html):
+    assert "cdn.jsdelivr.net/npm/chart.js" in _dashboard_html
 
 
-def test_init_dashboard_has_canvas(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
-    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
-    assert "<canvas" in html
+def test_init_dashboard_has_canvas(_dashboard_html):
+    assert "<canvas" in _dashboard_html
 
 
-def test_init_dashboard_github_api_url(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
-    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
-    assert "contents/results?ref=results" in html
-
-
-def test_init_dashboard_created_without_ci_flag(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
-    assert (tmp_path / "my-comp" / _DASHBOARD_PATH).exists()
+def test_init_dashboard_github_api_url(_dashboard_html):
+    assert "contents/results?ref=results" in _dashboard_html
 
 
 def test_init_output_mentions_github_pages_when_ci(tmp_path, monkeypatch):
@@ -1965,35 +1831,26 @@ def test_init_output_no_pages_note_without_ci(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_init_ci_has_deploy_pages_job(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+def test_init_ci_has_deploy_pages_job(_ci_local):
+    raw, _ = _ci_local
     assert "deploy-pages:" in raw
 
 
-def test_init_ci_deploy_pages_gated_on_main(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+def test_init_ci_deploy_pages_gated_on_main(_ci_local):
+    _, data = _ci_local
     job = data["jobs"]["deploy-pages"]
     assert "push" in job["if"]
     assert "refs/heads/main" in job["if"]
 
 
-def test_init_ci_deploy_pages_uses_deploy_action(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    raw = (tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text()
+def test_init_ci_deploy_pages_uses_deploy_action(_ci_local):
+    raw, _ = _ci_local
     assert "actions/deploy-pages@" in raw
 
 
-def test_init_ci_deploy_pages_has_pages_write_permission(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    perms = data["jobs"]["deploy-pages"]["permissions"]
-    assert perms.get("pages") == "write"
+def test_init_ci_deploy_pages_has_pages_write_permission(_ci_local):
+    _, data = _ci_local
+    assert data["jobs"]["deploy-pages"]["permissions"].get("pages") == "write"
 
 
 def test_init_ci_kaggle_has_deploy_pages_job(tmp_path, monkeypatch):
@@ -2066,13 +1923,13 @@ def test_init_ci_deploy_pages_fetch_before_generate(tmp_path, monkeypatch):
     assert step_names.index("Fetch results branch") < step_names.index("Generate dashboard")
 
 
-def test_init_ci_deploy_pages_checkout_full_depth(tmp_path, monkeypatch):
+def test_init_ci_deploy_pages_checkout_full_depth(_ci_local):
     """deploy-pages checkout uses fetch-depth: 0 to get the results branch."""
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
-    deploy_steps = data["jobs"]["deploy-pages"]["steps"]
-    checkout = next(s for s in deploy_steps if (s.get("uses") or "").startswith("actions/checkout"))
+    _, data = _ci_local
+    checkout = next(
+        s for s in data["jobs"]["deploy-pages"]["steps"]
+        if (s.get("uses") or "").startswith("actions/checkout")
+    )
     assert checkout.get("with", {}).get("fetch-depth") == 0
 
 
@@ -2097,19 +1954,13 @@ def test_init_ci_deploy_pages_install_kitchen_before_generate(tmp_path, monkeypa
 # ---------------------------------------------------------------------------
 
 
-def test_init_dashboard_has_delta_column_header(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
-    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
-    assert "Δ" in html or "&#916;" in html or "&Delta;" in html
+def test_init_dashboard_has_delta_column_header(_dashboard_html):
+    assert "Δ" in _dashboard_html or "&#916;" in _dashboard_html or "&Delta;" in _dashboard_html
 
 
-def test_init_dashboard_delta_js_uses_champion(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp"], catch_exceptions=False)
-    html = (tmp_path / "my-comp" / _DASHBOARD_PATH).read_text()
-    assert "champ" in html
-    assert "toFixed" in html
+def test_init_dashboard_delta_js_uses_champion(_dashboard_html):
+    assert "champ" in _dashboard_html
+    assert "toFixed" in _dashboard_html
 
 
 # ---------------------------------------------------------------------------
@@ -2117,13 +1968,10 @@ def test_init_dashboard_delta_js_uses_champion(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_init_ci_deploy_pages_links_summary(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)
-    data = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+def test_init_ci_deploy_pages_links_summary(_ci_local):
+    _, data = _ci_local
     steps = data["jobs"]["deploy-pages"]["steps"]
-    summary_steps = [s for s in steps if "GITHUB_STEP_SUMMARY" in str(s.get("run", ""))]
-    assert summary_steps, "No step writes to GITHUB_STEP_SUMMARY in deploy-pages job"
+    assert any("GITHUB_STEP_SUMMARY" in str(s.get("run", "")) for s in steps)
 
 
 def test_init_ci_kaggle_deploy_pages_links_summary(tmp_path, monkeypatch):
@@ -2156,11 +2004,10 @@ def _ci_train_steps(tmp_path, kaggle=False):
     return data["jobs"]["train-evaluate"]["steps"]
 
 
-def test_ci_workflow_has_raw_data_check(tmp_path, monkeypatch):
+def test_ci_workflow_has_raw_data_check(_ci_local):
     """Non-Kaggle CI workflow includes the no-raw-data check step."""
-    monkeypatch.chdir(tmp_path)
-    steps = _ci_train_steps(tmp_path)
-    names = [s.get("name", "") for s in steps]
+    _, data = _ci_local
+    names = [s.get("name", "") for s in data["jobs"]["train-evaluate"]["steps"]]
     assert _RAW_DATA_STEP_NAME in names
 
 
@@ -2168,34 +2015,25 @@ def test_ci_kaggle_workflow_has_raw_data_check(tmp_path, monkeypatch):
     """Kaggle CI workflow includes the no-raw-data check step."""
     monkeypatch.chdir(tmp_path)
     steps = _ci_train_steps(tmp_path, kaggle=True)
-    names = [s.get("name", "") for s in steps]
-    assert _RAW_DATA_STEP_NAME in names
+    assert _RAW_DATA_STEP_NAME in [s.get("name", "") for s in steps]
 
 
-def test_ci_raw_data_check_runs_before_python_setup(tmp_path, monkeypatch):
+def test_ci_raw_data_check_runs_before_python_setup(_ci_local):
     """The raw-data check appears before setup-python so it fails fast with no install cost."""
-    monkeypatch.chdir(tmp_path)
-    steps = _ci_train_steps(tmp_path)
-    names = [s.get("name", "") or str(s.get("uses", "")) for s in steps]
+    _, data = _ci_local
+    names = [s.get("name", "") or str(s.get("uses", "")) for s in data["jobs"]["train-evaluate"]["steps"]]
     check_idx = next(i for i, n in enumerate(names) if _RAW_DATA_STEP_NAME in n)
     setup_idx = next(i for i, n in enumerate(names) if "setup-python" in n)
-    assert check_idx < setup_idx, "Raw-data check should run before setup-python"
+    assert check_idx < setup_idx
 
 
-def test_ci_raw_data_check_uses_git_ls_files(tmp_path, monkeypatch):
+def test_ci_raw_data_check_uses_git_ls_files(_ci_local):
     """The check step uses git ls-files to inspect tracked files in data/raw/."""
-    monkeypatch.chdir(tmp_path)
-    steps = _ci_train_steps(tmp_path)
+    _, data = _ci_local
+    steps = data["jobs"]["train-evaluate"]["steps"]
     check_step = next(s for s in steps if s.get("name", "") == _RAW_DATA_STEP_NAME)
     assert "git ls-files" in check_step["run"]
     assert "data/raw/" in check_step["run"]
-
-
-def test_ci_raw_data_check_excludes_gitkeep(tmp_path, monkeypatch):
-    """The check step filters out .gitkeep so the scaffold placeholder doesn't trigger it."""
-    monkeypatch.chdir(tmp_path)
-    steps = _ci_train_steps(tmp_path)
-    check_step = next(s for s in steps if s.get("name", "") == _RAW_DATA_STEP_NAME)
     assert ".gitkeep" in check_step["run"]
 
 
@@ -3536,7 +3374,7 @@ def test_dashboard_generate_serve_calls_serve_helper(tmp_path, monkeypatch):
     """--serve invokes _serve_local_dashboard with the output path."""
     monkeypatch.chdir(tmp_path)
     results = [_make_result_dict(sha="aabbccdd", champion=True)]
-    with patch("kitchen.cli._serve_local_dashboard") as mock_serve:
+    with patch("kitchen._cli.serve._serve_local_dashboard") as mock_serve:
         result = _dash_generate_invoke(results, extra_args=["--serve"])
     assert result.exit_code == 0
     mock_serve.assert_called_once()
@@ -3548,7 +3386,7 @@ def test_dashboard_generate_no_serve_skips_serve_helper(tmp_path, monkeypatch):
     """Without --serve, _serve_local_dashboard is never called."""
     monkeypatch.chdir(tmp_path)
     results = [_make_result_dict(sha="aabbccdd", champion=True)]
-    with patch("kitchen.cli._serve_local_dashboard") as mock_serve:
+    with patch("kitchen._cli.serve._serve_local_dashboard") as mock_serve:
         result = _dash_generate_invoke(results)
     assert result.exit_code == 0
     mock_serve.assert_not_called()
@@ -3583,7 +3421,7 @@ def test_serve_local_dashboard_starts_server_and_opens_browser(tmp_path, capsys)
     with (
         patch("http.server.HTTPServer", _FakeServer),
         patch("webbrowser.open"),
-        patch("kitchen.cli._find_free_port", return_value=19999),
+        patch("kitchen._cli.serve._find_free_port", return_value=19999),
         patch("threading.Thread"),  # prevent background thread from racing
     ):
         _serve_local_dashboard(html_file)
