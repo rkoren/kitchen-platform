@@ -1942,15 +1942,22 @@ _DASHBOARD_GENERATED_HTML = """\
     .dneg { color: #dc2626; }
     #status { color: #6b7280; margin-bottom: 1rem; font-size: 0.9rem; }
     .scroll-wrap { overflow-x: auto; margin-top: 1rem; }
+    h2 { font-size: 1.1rem; margin: 2rem 0 0.5rem; }
+    #lb-wrap { max-width: 860px; margin-bottom: 2rem; }
+    #fi-table td { text-align: center; font-variant-numeric: tabular-nums; }
+    #fi-table td.fi-empty { background: #f8fafc; color: #cbd5e1; }
+    #fi-table th:first-child, #fi-table td:first-child { text-align: left; font-weight: 500; }
   </style>
 </head>
 <body>
   <h1>__PROJECT_ESCAPED__ — Results Dashboard</h1>
   <p id="status">__STATUS_ESCAPED__</p>
   <div id="chart-wrap"><canvas id="chart"></canvas></div>
+  <div id="lb-wrap" style="display:none"><h2>Submission history — LB score vs local metric</h2><canvas id="lb-chart"></canvas></div>
   <div class="scroll-wrap">
     <table id="runs-table"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
   </div>
+  <div id="fi-wrap" style="display:none"><h2>Feature importance across runs</h2><div id="fi-heatmap" class="scroll-wrap"></div></div>
   <script>
     var RESULTS = __RESULTS_JSON__;
     var METRIC = __METRIC_JS__;
@@ -2051,6 +2058,107 @@ _DASHBOARD_GENERATED_HTML = """\
         tr.appendChild(std);
         tbody.appendChild(tr);
       });
+    }());
+
+    // DASH-007: submission history — lb_score (left) vs local primary metric (right).
+    // Activates when at least 2 results carry an lb_score. Diverging lines (local
+    // metric improving while LB flattens) signal overfitting the public test set.
+    (function () {
+      var withLb = RESULTS.filter(function (r) {
+        return r.lb_score !== null && r.lb_score !== undefined;
+      });
+      if (withLb.length < 2) { return; }
+      document.getElementById('lb-wrap').style.display = 'block';
+      var labels = withLb.map(function (r) {
+        return r.timestamp ? new Date(r.timestamp).toLocaleDateString() : (r.sha || '').slice(0, 8);
+      });
+      var datasets = [{
+        label: 'LB score',
+        data: withLb.map(function (r) { return r.lb_score; }),
+        borderColor: '#16a34a',
+        backgroundColor: 'rgba(22,163,74,0.08)',
+        yAxisID: 'yLb', tension: 0.2, spanGaps: true, pointRadius: 4
+      }];
+      if (METRIC) {
+        datasets.push({
+          label: METRIC + ' (local)',
+          data: withLb.map(function (r) {
+            var v = (r.metrics || {})[METRIC];
+            return (v === undefined) ? null : v;
+          }),
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.08)',
+          yAxisID: 'yMetric', tension: 0.2, spanGaps: true, pointRadius: 4
+        });
+      }
+      new Chart(document.getElementById('lb-chart').getContext('2d'), {
+        type: 'line',
+        data: { labels: labels, datasets: datasets },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: true } },
+          scales: {
+            yLb: { type: 'linear', position: 'left', title: { display: true, text: 'LB score' } },
+            yMetric: {
+              type: 'linear', position: 'right',
+              title: { display: true, text: METRIC || 'local metric' },
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      });
+    }());
+
+    // DASH-004: feature importance heatmap. Rows = union of the top features across
+    // runs (max 20), columns = runs by date, cell shade = importance normalised within
+    // each run. Activates when any result includes a top_features list (LML-010).
+    (function () {
+      var N = 20;
+      var withFi = RESULTS.filter(function (r) {
+        return Array.isArray(r.top_features) && r.top_features.length;
+      });
+      if (!withFi.length) { return; }
+      document.getElementById('fi-wrap').style.display = 'block';
+
+      var best = {};
+      withFi.forEach(function (r) {
+        r.top_features.slice(0, N).forEach(function (f) {
+          if (best[f.name] === undefined || f.importance > best[f.name]) {
+            best[f.name] = f.importance;
+          }
+        });
+      });
+      var feats = Object.keys(best).sort(function (a, b) { return best[b] - best[a]; }).slice(0, N);
+
+      var head = '<tr><th>feature</th>';
+      withFi.forEach(function (r) {
+        head += '<th>' + ((r.sha || '').slice(0, 7) || '—') + '</th>';
+      });
+      head += '</tr>';
+
+      var body = '';
+      feats.forEach(function (name) {
+        body += '<tr><td>' + name + '</td>';
+        withFi.forEach(function (r) {
+          var imp = null;
+          var maxImp = 0;
+          r.top_features.forEach(function (f) {
+            if (f.importance > maxImp) { maxImp = f.importance; }
+            if (f.name === name) { imp = f.importance; }
+          });
+          if (imp === null) {
+            body += '<td class="fi-empty">·</td>';
+          } else {
+            var intensity = maxImp > 0 ? imp / maxImp : 0;
+            var alpha = (0.10 + 0.90 * intensity).toFixed(2);
+            body += '<td style="background: rgba(59,130,246,' + alpha + ')" title="' +
+              imp.toFixed(4) + '">' + imp.toFixed(3) + '</td>';
+          }
+        });
+        body += '</tr>';
+      });
+      document.getElementById('fi-heatmap').innerHTML =
+        '<table id="fi-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
     }());
   </script>
 </body>
