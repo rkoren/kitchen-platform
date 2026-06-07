@@ -562,6 +562,20 @@ def leaderboard(
             help="Show per-fold metric sub-columns for any {metric}_{fold} keys logged by time_series_cv or loto_cv",
         ),
     ] = False,
+    exclude_exploratory: Annotated[
+        bool,
+        typer.Option(
+            "--exclude-exploratory",
+            help="Hide runs tagged run_type=exploratory (notebook sketches from kitchen.experiment)",
+        ),
+    ] = False,
+    only_exploratory: Annotated[
+        bool,
+        typer.Option(
+            "--only-exploratory",
+            help="Show only runs tagged run_type=exploratory",
+        ),
+    ] = False,
 ) -> None:
     """Rank runs by a metric; shows full run_id and lb_score for easy replay.
 
@@ -571,7 +585,17 @@ def leaderboard(
 
     [C] marks the promoted champion from the model registry. ★ marks the
     top-ranked run by metric (they may differ if a newer run hasn't been promoted yet).
+
+    --exclude-exploratory / --only-exploratory filter on the run_type tag set by
+    kitchen.experiment(exploratory=True), so notebook sketches can be isolated
+    from or suppressed in the ranked view.
     """
+    if exclude_exploratory and only_exploratory:
+        typer.echo(
+            "error: --exclude-exploratory and --only-exploratory are mutually exclusive.",
+            err=True,
+        )
+        raise typer.Exit(1)
     import os
 
     import mlflow.tracking
@@ -590,14 +614,45 @@ def leaderboard(
         metric, higher_is_better = _autodetect_metric(params_file, client, exp.experiment_id)
 
     order = "DESC" if higher_is_better else "ASC"
+    # Over-fetch when an exploratory filter is active so post-filtering still
+    # yields up to `limit` rows (MLflow's filter_string can't reliably express
+    # "tag absent or != value", so run_type filtering is done in Python below).
+    filtering = exclude_exploratory or only_exploratory
+    fetch_n = max(limit * 5, 100) if filtering else limit
     runs = client.search_runs(
         experiment_ids=[exp.experiment_id],
         filter_string=f"metrics.{metric} > -99999",
         order_by=[f"metrics.{metric} {order}"],
-        max_results=limit,
+        max_results=fetch_n,
     )
     if not runs:
-        typer.echo(f"No runs with metric {metric!r} found in {exp_name!r}.")
+        # NB-006: the configured/auto-detected metric may not match what runs
+        # actually logged — point the user at the val_* metrics that do exist.
+        sample = client.search_runs(
+            experiment_ids=[exp.experiment_id],
+            order_by=["start_time DESC"],
+            max_results=25,
+        )
+        val_metrics = sorted({k for r in sample for k in r.data.metrics if k.startswith("val_")})
+        msg = f"No runs with metric {metric!r} found in {exp_name!r}."
+        if val_metrics:
+            msg += (
+                f"\n  Runs logged these val_* metrics instead: {', '.join(val_metrics)}."
+                f"\n  Try: kitchen leaderboard --metric {val_metrics[0]}"
+                f"\n  (or log under {metric!r} so runs show up in the default leaderboard)."
+            )
+        typer.echo(msg)
+        return
+
+    # NB-007: filter notebook sketches in/out by the run_type tag.
+    if only_exploratory:
+        runs = [r for r in runs if r.data.tags.get("run_type") == "exploratory"]
+    elif exclude_exploratory:
+        runs = [r for r in runs if r.data.tags.get("run_type") != "exploratory"]
+    runs = runs[:limit]
+    if not runs:
+        which = "exploratory" if only_exploratory else "non-exploratory"
+        typer.echo(f"No {which} runs with metric {metric!r} found in {exp_name!r}.")
         return
 
     # Resolve the champion run_id from the model registry (best-effort — no crash if absent).

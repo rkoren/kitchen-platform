@@ -188,6 +188,35 @@ def test_experiment_calls_log_run_context():
             mock_lrc.assert_called_once()
 
 
+def test_experiment_exploratory_sets_run_type_tag():
+    """experiment(exploratory=True) tags the run run_type=exploratory (NB-007)."""
+    mock_mlflow, _ = _make_mock_mlflow()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment.log_run_context"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+    ):
+        with experiment("proj", exploratory=True):
+            mock_mlflow.set_tag.assert_called_once_with("run_type", "exploratory")
+
+
+def test_experiment_default_does_not_tag_run_type():
+    """Without exploratory=True, no run_type tag is set."""
+    mock_mlflow, _ = _make_mock_mlflow()
+    with (
+        patch("kitchen.experiment.mlflow", mock_mlflow),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment.log_run_context"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+    ):
+        with experiment("proj"):
+            pass
+        mock_mlflow.set_tag.assert_not_called()
+
+
 def test_experiment_falls_back_to_sqlite_on_configure_error():
     mock_mlflow, _ = _make_mock_mlflow()
     with (
@@ -288,6 +317,34 @@ def test_init_run_opens_tracker_run_with_params():
     ):
         with init_run(params, run_name="nb-trial"):
             mock_tracker.run.assert_called_once_with(run_name="nb-trial", params=params)
+
+
+def test_init_run_exploratory_sets_run_type_tag():
+    """init_run(exploratory=True) tags the run run_type=exploratory (NB-007)."""
+    mock_tracker = _make_tracker_mock()
+    with (
+        patch("kitchen.experiment.mlflow") as mock_mlflow,
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker", return_value=mock_tracker),
+    ):
+        with init_run({"experiment": "proj"}, exploratory=True):
+            mock_mlflow.set_tag.assert_called_once_with("run_type", "exploratory")
+
+
+def test_init_run_default_does_not_tag_run_type():
+    mock_tracker = _make_tracker_mock()
+    with (
+        patch("kitchen.experiment.mlflow") as mock_mlflow,
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker", return_value=mock_tracker),
+    ):
+        with init_run({"experiment": "proj"}):
+            pass
+        mock_mlflow.set_tag.assert_not_called()
 
 
 def test_init_run_uses_experiment_from_params():

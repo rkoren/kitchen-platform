@@ -3028,6 +3028,107 @@ def test_leaderboard_variant_empty_when_both_absent():
 
 
 # ---------------------------------------------------------------------------
+# kitchen leaderboard metric-mismatch hint (NB-006)
+# ---------------------------------------------------------------------------
+
+
+def _lb_invoke_no_match(metric: str, sample_runs: list) -> object:
+    """Invoke leaderboard where the metric query returns nothing.
+
+    First search_runs (the metric filter) returns []; the second (the NB-006
+    sample that inspects available val_* metrics) returns *sample_runs*.
+    """
+
+    def make_client():
+        client = MagicMock()
+        exp = MagicMock()
+        exp.experiment_id = "1"
+        client.get_experiment_by_name.return_value = exp
+        client.search_runs.side_effect = [[], sample_runs]
+        client.get_model_version_by_alias.side_effect = Exception("no champion")
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+    ):
+        return runner.invoke(
+            app,
+            ["leaderboard", "--experiment", "test-exp", "--metric", metric],
+            catch_exceptions=False,
+        )
+
+
+def test_leaderboard_suggests_val_metric_when_threshold_metric_absent():
+    """When no run logged the requested metric but val_* metrics exist, hint at them."""
+    sample = [_make_lb_run("a" * 32, 0.18)]  # logs val_accuracy
+    result = _lb_invoke_no_match("loto_brier", sample)
+    assert result.exit_code == 0
+    assert "No runs with metric 'loto_brier'" in result.output
+    assert "val_accuracy" in result.output
+    assert "kitchen leaderboard --metric val_accuracy" in result.output
+
+
+def test_leaderboard_no_match_and_no_val_metrics_basic_message():
+    """With neither the metric nor any val_* metric present, only the plain message shows."""
+    bare = _make_lb_run("a" * 32, 0.0)
+    bare.data.metrics = {"loss": 0.5}  # no val_* keys
+    result = _lb_invoke_no_match("loto_brier", [bare])
+    assert result.exit_code == 0
+    assert "No runs with metric 'loto_brier'" in result.output
+    assert "--metric" not in result.output  # no suggestion line
+
+
+# ---------------------------------------------------------------------------
+# kitchen leaderboard --exclude/--only-exploratory (NB-007)
+# ---------------------------------------------------------------------------
+
+
+def _make_lb_run_tagged(run_id: str, metric_val: float, run_type: str | None) -> MagicMock:
+    run = _make_lb_run(run_id, metric_val)
+    run.data.tags = {"run_type": run_type} if run_type else {}
+    return run
+
+
+def test_leaderboard_exclude_exploratory_hides_tagged_runs():
+    runs = [
+        _make_lb_run_tagged("a" * 32, 0.90, "exploratory"),
+        _make_lb_run_tagged("b" * 32, 0.80, None),
+    ]
+    result = _lb_invoke(runs, ["--metric", "val_accuracy", "--exclude-exploratory"])
+    assert result.exit_code == 0
+    assert "b" * 32 in result.output
+    assert "a" * 32 not in result.output
+
+
+def test_leaderboard_only_exploratory_keeps_just_tagged_runs():
+    runs = [
+        _make_lb_run_tagged("a" * 32, 0.90, "exploratory"),
+        _make_lb_run_tagged("b" * 32, 0.80, None),
+    ]
+    result = _lb_invoke(runs, ["--metric", "val_accuracy", "--only-exploratory"])
+    assert result.exit_code == 0
+    assert "a" * 32 in result.output
+    assert "b" * 32 not in result.output
+
+
+def test_leaderboard_exclude_and_only_exploratory_conflict():
+    runs = [_make_lb_run_tagged("a" * 32, 0.90, "exploratory")]
+    result = _lb_invoke(
+        runs, ["--metric", "val_accuracy", "--exclude-exploratory", "--only-exploratory"]
+    )
+    assert result.exit_code == 1
+    assert "mutually exclusive" in result.stderr
+
+
+def test_leaderboard_only_exploratory_none_present_reports_empty():
+    runs = [_make_lb_run_tagged("b" * 32, 0.80, None)]
+    result = _lb_invoke(runs, ["--metric", "val_accuracy", "--only-exploratory"])
+    assert result.exit_code == 0
+    assert "No exploratory runs" in result.output
+
+
+# ---------------------------------------------------------------------------
 # kitchen promote --run-id (LML-011)
 # ---------------------------------------------------------------------------
 
