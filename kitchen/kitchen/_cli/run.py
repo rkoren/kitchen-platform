@@ -296,6 +296,177 @@ def run_train(
         _try_auto_promote(params_file, promote_metric, lower_is_better, promote_model_name)  # type: ignore[arg-type]
 
 
+def run_sweep(
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
+    override: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--override",
+            help="Sweep a params.yaml value over multiple values: key=v1,v2,... (repeatable). "
+            "Multiple keys form a Cartesian product. Example: "
+            "--override model.max_depth=4,6,8 --override model.eta=0.05,0.1",
+        ),
+    ] = None,
+    metric: Annotated[
+        str | None,
+        typer.Option(
+            "--metric",
+            help="Metric to rank runs by. Auto-detected from params.yaml thresholds when omitted.",
+        ),
+    ] = None,
+    lower_is_better: Annotated[
+        bool,
+        typer.Option("--lower-is-better/--higher-is-better", help="Metric direction for ranking"),
+    ] = False,
+    max_combos: Annotated[
+        int,
+        typer.Option("--max-combos", help="Refuse to launch a sweep larger than this"),
+    ] = 50,
+) -> None:
+    """Run a hyperparameter sweep: train one run per param combination, rank, report.
+
+    Expands each ``--override key=v1,v2,...`` into a value list and runs the full
+    Cartesian product through the normal `kitchen run train` pipeline — one MLflow
+    run per combination, each tagged with ``override.<key>`` (like a single
+    ``--override`` run) plus a shared ``sweep.group`` id. After all runs complete,
+    the runs are ranked by *metric* and the best run is printed with a
+    copy-pasteable `kitchen promote --run-id` command.
+
+    Error handling: a failure on the *first* combination is treated as a setup
+    problem (e.g. ``src/`` not implemented) and aborts the sweep; a failure on a
+    later combination is reported and the sweep continues with the rest.
+    """
+    import itertools
+    import sys
+    import uuid
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    if not override:
+        typer.echo(
+            "error: --override is required — e.g. --override model.max_depth=4,6,8", err=True
+        )
+        raise typer.Exit(1)
+
+    # Parse each --override key=v1,v2,... into {key: [coerced values]}.
+    grid: dict[str, list] = {}
+    for item in override:
+        if "=" not in item:
+            typer.echo(f"error: --override {item!r} must be in key=value format", err=True)
+            raise typer.Exit(1)
+        key, _, raw_val = item.partition("=")
+        values = [_coerce_override_value(v.strip()) for v in raw_val.split(",") if v.strip()]
+        if not values:
+            typer.echo(f"error: --override {item!r} has no values", err=True)
+            raise typer.Exit(1)
+        grid[key.strip()] = values
+
+    keys = list(grid)
+    combos = [dict(zip(keys, vals)) for vals in itertools.product(*(grid[k] for k in keys))]
+    if len(combos) < 2:
+        typer.echo(
+            "error: a sweep needs more than one combination — pass multiple comma-separated "
+            "values (or use `kitchen run train --override` for a single run).",
+            err=True,
+        )
+        raise typer.Exit(1)
+    if len(combos) > max_combos:
+        typer.echo(
+            f"error: sweep would launch {len(combos)} runs (limit {max_combos}); "
+            "narrow the grid or raise --max-combos.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    if metric is None:
+        detected = _promote_metric_from_thresholds(params_file)
+        if detected is None:
+            typer.echo(
+                "error: --metric is required when params.yaml has no 'thresholds:' section "
+                "to auto-detect from.",
+                err=True,
+            )
+            raise typer.Exit(1)
+        metric, lower_is_better = detected
+
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    try:
+        from kitchen.flows.train_flow import train_pipeline
+    except ImportError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    import mlflow.tracking
+
+    from kitchen.tracking import configure_from_env
+
+    configure_from_env()
+    client = mlflow.tracking.MlflowClient()
+    group = uuid.uuid4().hex[:8]
+
+    direction = "lower=better" if lower_is_better else "higher=better"
+    typer.echo(
+        f"\nSweep {group}: {len(combos)} runs over {', '.join(keys)}  |  "
+        f"metric={metric} ({direction})\n"
+    )
+
+    results: list[tuple[dict, str | None, float | None]] = []
+    for i, combo in enumerate(combos):
+        combo_str = ", ".join(f"{k}={v}" for k, v in combo.items())
+        typer.echo(f"[{i + 1}/{len(combos)}] {combo_str}")
+        try:
+            run_id = train_pipeline(params_file=params_file, overrides=combo)
+        except Exception as exc:
+            if i == 0:
+                # First combo failing is a setup problem affecting all combos.
+                typer.echo(f"error: first sweep run failed — aborting: {exc}", err=True)
+                raise typer.Exit(1)
+            typer.echo(f"  ! run failed, skipping: {exc}", err=True)
+            results.append((combo, None, None))
+            continue
+
+        score: float | None = None
+        if run_id:
+            try:
+                client.set_tag(run_id, "sweep.group", group)
+                score = client.get_run(run_id).data.metrics.get(metric)
+            except Exception:
+                pass
+        results.append((combo, run_id, score))
+
+    scored = [(c, r, s) for c, r, s in results if s is not None]
+    if not scored:
+        typer.echo(f"\nNo runs logged metric {metric!r} — nothing to rank.", err=True)
+        raise typer.Exit(1)
+
+    scored.sort(key=lambda row: row[2], reverse=not lower_is_better)
+    best_combo, best_run_id, best_score = scored[0]
+
+    typer.echo(f"\nSweep results ({metric}, {direction}):")
+    for combo, run_id, score in scored:
+        marker = "★" if run_id == best_run_id else " "
+        combo_str = ", ".join(f"{k}={v}" for k, v in combo.items())
+        typer.echo(f"  {marker} {score:>12.6f}  {run_id[:8]}  {combo_str}")
+    # Surface any runs that produced no metric rather than dropping them silently.
+    for combo, run_id, score in results:
+        if score is None:
+            combo_str = ", ".join(f"{k}={v}" for k, v in combo.items())
+            rid = run_id[:8] if run_id else "(no run)"
+            typer.echo(f"    {'—':>12}  {rid}  {combo_str}")
+
+    best_str = ", ".join(f"{k}={v}" for k, v in best_combo.items())
+    typer.echo(f"\nBest: {best_run_id[:8]}  {metric}={best_score:.6f}  ({best_str})")
+    typer.echo(f"Promote it with: kitchen promote --run-id {best_run_id}")
+
+
 @run_app.command("evaluate")
 def run_evaluate(
     params_file: Annotated[

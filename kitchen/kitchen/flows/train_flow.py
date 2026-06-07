@@ -45,28 +45,34 @@ def _build(params: dict) -> None:
     build(params, DataStore())
 
 
-def _train(params: dict, overrides: dict | None = None) -> None:
+def _train(params: dict, overrides: dict | None = None) -> str | None:
     from src.train.run import train  # project-provided
 
     configure_from_env()
     experiment = params.get("experiment", EXPERIMENT)
     init_experiment(experiment)
     tracker = Tracker(experiment)
-    with tracker.run(run_name=params.get("run_name"), params=params):
+    with tracker.run(run_name=params.get("run_name"), params=params) as active_run:
         if overrides:
             mlflow.set_tags({f"override.{k}": str(v) for k, v in overrides.items()})
         train(params, DataStore(), tracker)
+        run_id = active_run.info.run_id
     print("Training complete — see MLflow for metrics.")
+    return run_id
 
 
-def train_pipeline(params_file: str = "params.yaml", overrides: dict | None = None) -> None:
-    """Run a single training pass: features → train → log to MLflow."""
+def train_pipeline(params_file: str = "params.yaml", overrides: dict | None = None) -> str | None:
+    """Run a single training pass: features → train → log to MLflow.
+
+    Returns the MLflow run_id of the training run (used by ``kitchen sweep`` to
+    rank runs); ``None`` only if the tracker did not expose an active run.
+    """
     with open(params_file, encoding="utf-8") as f:
         params = yaml.safe_load(f)
     if overrides:
         _apply_overrides(params, overrides)
     _build(params)
-    _train(params, overrides=overrides)
+    return _train(params, overrides=overrides)
 
 
 if __name__ == "__main__":
