@@ -96,6 +96,8 @@ def experiment(
     name: str,
     run_name: str | None = None,
     params: dict[str, Any] | None = None,
+    *,
+    exploratory: bool = False,
 ) -> Generator[ExperimentRun, None, None]:
     """Zero-ceremony MLflow experiment context manager.
 
@@ -104,10 +106,20 @@ def experiment(
     Falls back to the local SQLite store if the configured MLflow server is
     unreachable — never raises so notebook cells continue to run.
 
+    Metric naming matters: ``kitchen leaderboard`` ranks by the metric in your
+    ``thresholds:`` section (e.g. ``loto_brier``). Log under that exact name —
+    a run that logs ``val_brier`` when the threshold is ``loto_brier`` will not
+    appear in the default leaderboard (``kitchen leaderboard --metric val_brier``
+    still finds it, and the command hints at the mismatch).
+
     Args:
         name: MLflow experiment name.
         run_name: Optional display name for this run.
         params: Optional dict of hyperparameters to log at run start.
+        exploratory: When True, tags the run ``run_type=exploratory`` so notebook
+            sketches can be isolated from or suppressed in ``kitchen leaderboard``
+            via ``--only-exploratory`` / ``--exclude-exploratory``. Use it for
+            throwaway experiments that should not be mistaken for pipeline runs.
 
     Yields:
         ExperimentRun with .log(), .log_params(), and .set_tag() helpers.
@@ -128,6 +140,8 @@ def experiment(
         mlflow.set_experiment(name)
 
     with mlflow.start_run(run_name=run_name) as active_run:
+        if exploratory:
+            mlflow.set_tag("run_type", "exploratory")
         if params:
             mlflow.log_params(_flatten(params))
         log_run_context(params=params)
@@ -139,6 +153,7 @@ def init_run(
     params: dict[str, Any] | None = None,
     *,
     run_name: str | None = None,
+    exploratory: bool = False,
 ) -> Generator[Tracker, None, None]:
     """Context manager that opens a tracked MLflow run and yields a Tracker.
 
@@ -161,6 +176,9 @@ def init_run(
     Args:
         params: project params dict; auto-discovers and loads params.yaml when None.
         run_name: optional display name for this MLflow run.
+        exploratory: When True, tags the run ``run_type=exploratory`` (see
+            :func:`experiment`) so notebook runs can be filtered in
+            ``kitchen leaderboard``.
 
     Yields:
         Tracker configured for the project's MLflow experiment.
@@ -202,4 +220,6 @@ def init_run(
 
     tracker = Tracker(experiment_name)
     with tracker.run(run_name=run_name, params=params):
+        if exploratory:
+            mlflow.set_tag("run_type", "exploratory")
         yield tracker
