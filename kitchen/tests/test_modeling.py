@@ -466,10 +466,23 @@ def test_cv_kfold_no_stratify(cv_binary_df):
 # --- top-level import ---
 
 
-def test_cv_importable_from_kitchen():
-    from kitchen import cross_validate as cv_fn  # noqa: F401
-
-    assert callable(cv_fn)
+@pytest.mark.parametrize("name", [
+    "cross_validate",
+    "set_seed",
+    "clip_proba",
+    "clip_predictions",
+    "blend_predictions",
+    "rank_average",
+    "voting_predict",
+    "make_stack_features",
+    "calibrate_model",
+    "time_series_cv",
+    "loto_cv",
+])
+def test_importable_from_kitchen(name):
+    import importlib
+    mod = importlib.import_module("kitchen")
+    assert callable(getattr(mod, name))
 
 
 # ---------------------------------------------------------------------------
@@ -648,22 +661,6 @@ def test_set_seed_default_seed_is_42():
     np.testing.assert_array_equal(a, b)
 
 
-def test_set_seed_importable_from_kitchen():
-    from kitchen import set_seed as ss  # noqa: F401
-
-    assert callable(ss)
-
-
-def test_clip_proba_importable_from_kitchen():
-    from kitchen import clip_proba as cp  # noqa: F401
-
-    assert callable(cp)
-
-
-def test_clip_predictions_importable_from_kitchen():
-    from kitchen import clip_predictions as cpred  # noqa: F401
-
-    assert callable(cpred)
 
 
 # ---------------------------------------------------------------------------
@@ -943,28 +940,6 @@ def test_stack_no_stratify_regression(stack_data):
     assert np.all(np.isfinite(oof))
 
 
-def test_stack_importable_from_kitchen():
-    from kitchen import make_stack_features as msf  # noqa: F401
-
-    assert callable(msf)
-
-
-def test_blend_importable_from_kitchen():
-    from kitchen import blend_predictions as bp  # noqa: F401
-
-    assert callable(bp)
-
-
-def test_rank_average_importable_from_kitchen():
-    from kitchen import rank_average as ra  # noqa: F401
-
-    assert callable(ra)
-
-
-def test_voting_predict_importable_from_kitchen():
-    from kitchen import voting_predict as vp  # noqa: F401
-
-    assert callable(vp)
 
 
 # ---------------------------------------------------------------------------
@@ -1042,10 +1017,6 @@ def test_calibrate_invalid_method_raises(fitted_lr, cal_data):
         calibrate_model(fitted_lr, X_cal, y_cal, method="platt")
 
 
-def test_calibrate_importable_from_kitchen():
-    from kitchen import calibrate_model as cm  # noqa: F401
-
-    assert callable(cm)
 
 
 # ---------------------------------------------------------------------------
@@ -1145,10 +1116,6 @@ def test_ts_cv_std_nonnegative(ts_df):
     assert result["accuracy_std"] >= 0.0
 
 
-def test_ts_cv_importable_from_kitchen():
-    from kitchen import time_series_cv as tscv  # noqa: F401
-
-    assert callable(tscv)
 
 
 # ---------------------------------------------------------------------------
@@ -1225,7 +1192,3 @@ def test_loto_cv_n_groups_equals_folds(loto_df):
     assert len(per_group_keys) == 4
 
 
-def test_loto_cv_importable_from_kitchen():
-    from kitchen import loto_cv as lcv  # noqa: F401
-
-    assert callable(lcv)
