@@ -92,7 +92,7 @@ from kitchen._cli.dvc import (
     dvc_app,
 )
 from kitchen._cli.experiments import _autodetect_metric, experiments_app
-from kitchen._cli.run import _coerce_override_value, run_app  # noqa: F401
+from kitchen._cli.run import _coerce_override_value, run_app, run_sweep  # noqa: F401
 from kitchen._cli.serve import _serve_local_dashboard, dashboard_app, serve_app
 
 # Load .env from the project root (CWD) so MLFLOW_TRACKING_URI and other
@@ -1004,6 +1004,7 @@ def submit(
 
 
 app.add_typer(run_app, name="run")
+app.command(name="sweep")(run_sweep)
 
 # ---------------------------------------------------------------------------
 # Check command

@@ -282,6 +282,30 @@ def test_pipeline_missing_params_file_raises(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# run_id return value (SWEEP-005)
+# ---------------------------------------------------------------------------
+
+
+def test_train_returns_active_run_id(monkeypatch, train_env):
+    """_train returns the active MLflow run's run_id (used by `kitchen sweep`)."""
+    _inject_train_mod(monkeypatch)
+    active_run = train_env["Tracker"].return_value.run.return_value.__enter__.return_value
+    active_run.info.run_id = "run-xyz"
+    assert _train(PARAMS) == "run-xyz"
+
+
+def test_pipeline_propagates_run_id(tmp_path, monkeypatch):
+    """train_pipeline returns whatever run_id _train produced."""
+    monkeypatch.chdir(tmp_path)
+    params_file = _write_params(tmp_path)
+    with (
+        patch("kitchen.flows.train_flow._build"),
+        patch("kitchen.flows.train_flow._train", return_value="run-abc"),
+    ):
+        assert train_pipeline(params_file=params_file) == "run-abc"
+
+
+# ---------------------------------------------------------------------------
 # _apply_overrides (SWEEP-001)
 # ---------------------------------------------------------------------------
 

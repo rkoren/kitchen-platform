@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from kitchen.modeling import regression_metrics
-from kitchen.search import _resolve_metric_key, grid_search
+from kitchen.search import _resolve_metric_key, grid_search, random_search
 
 # ── A deterministic, param-driven estimator ───────────────────────────────────
 # Predicts 1 when the first feature exceeds `thresh`. On a dataset where the
@@ -264,12 +264,120 @@ def test_regression_metric_fn_with_lower_is_better(mlflow_tmp):
     assert best == {"alpha": 0.01}
 
 
+# ── random_search (SWEEP-003) ──────────────────────────────────────────────────
+
+
+def test_random_search_returns_best_sampled_params(separable_df, mlflow_tmp):
+    best = random_search(
+        trainer_fn=lambda p: ThresholdClassifier(**p),
+        param_distributions={"thresh": [0.0, 0.5, 2.0]},
+        n_iter=3,
+        df=separable_df,
+        target_col="target",
+        metric="accuracy",
+    )
+    assert best == {"thresh": 0.5}
+
+
+def test_random_search_samples_only_n_iter_combinations(separable_df, mlflow_tmp):
+    random_search(
+        trainer_fn=lambda p: ThresholdClassifier(**p),
+        param_distributions={"thresh": [0.0, 0.5, 2.0, 5.0]},
+        n_iter=2,
+        df=separable_df,
+        target_col="target",
+        metric="accuracy",
+    )
+    trials = _client().search_runs(
+        [_exp_id()], filter_string="tags.`sweep.trial` != ''"
+    )
+    assert len(trials) == 2  # only n_iter trials, not the full grid of 4
+
+
+def test_random_search_parent_tagged_kind_random(separable_df, mlflow_tmp):
+    random_search(
+        trainer_fn=lambda p: ThresholdClassifier(**p),
+        param_distributions={"thresh": [0.5, 2.0]},
+        n_iter=2,
+        df=separable_df,
+        target_col="target",
+        metric="accuracy",
+        run_name="rand-sweep",
+    )
+    parent = _client().search_runs(
+        [_exp_id()], filter_string="tags.`mlflow.runName` = 'rand-sweep'"
+    )[0]
+    assert parent.data.tags["sweep.kind"] == "random"
+
+
+def test_grid_search_parent_tagged_kind_grid(separable_df, mlflow_tmp):
+    grid_search(
+        trainer_fn=lambda p: ThresholdClassifier(**p),
+        param_grid={"thresh": [0.5, 2.0]},
+        df=separable_df,
+        target_col="target",
+        metric="accuracy",
+        run_name="grid-kind",
+    )
+    parent = _client().search_runs(
+        [_exp_id()], filter_string="tags.`mlflow.runName` = 'grid-kind'"
+    )[0]
+    assert parent.data.tags["sweep.kind"] == "grid"
+
+
+def test_random_search_warns_when_n_iter_exceeds_grid(separable_df, mlflow_tmp):
+    # All-discrete grid of size 2, but n_iter=10 — sampler caps without replacement.
+    with pytest.warns(UserWarning, match="capped"):
+        random_search(
+            trainer_fn=lambda p: ThresholdClassifier(**p),
+            param_distributions={"thresh": [0.5, 2.0]},
+            n_iter=10,
+            df=separable_df,
+            target_col="target",
+            metric="accuracy",
+        )
+
+
+def test_random_search_rejects_n_iter_below_one(separable_df, mlflow_tmp):
+    with pytest.raises(ValueError, match="n_iter must be"):
+        random_search(
+            trainer_fn=lambda p: ThresholdClassifier(**p),
+            param_distributions={"thresh": [0.5]},
+            n_iter=0,
+            df=separable_df,
+            target_col="target",
+            metric="accuracy",
+        )
+
+
+def test_random_search_is_reproducible_with_seed(separable_df, mlflow_tmp):
+    from scipy.stats import uniform
+    from sklearn.model_selection import ParameterSampler
+
+    # With a continuous distribution + fixed seed, the sampled combos are
+    # deterministic — assert random_search draws the same set ParameterSampler does.
+    dist = {"thresh": uniform(0, 3)}
+    expected = list(ParameterSampler(dist, n_iter=4, random_state=42))
+    best = random_search(
+        trainer_fn=lambda p: ThresholdClassifier(**p),
+        param_distributions=dist,
+        n_iter=4,
+        df=separable_df,
+        target_col="target",
+        metric="accuracy",
+        seed=42,
+    )
+    assert best["thresh"] in {c["thresh"] for c in expected}
+
+
 # ── Top-level re-export ────────────────────────────────────────────────────────
 
 
-def test_grid_search_exported_from_kitchen():
+def test_search_helpers_exported_from_kitchen():
     import kitchen
 
     assert hasattr(kitchen, "grid_search")
+    assert hasattr(kitchen, "random_search")
     assert hasattr(kitchen, "search")
     assert kitchen.search.grid_search is kitchen.grid_search
+    assert kitchen.search.random_search is kitchen.random_search
