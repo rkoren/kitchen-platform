@@ -7,7 +7,12 @@ from typing import Annotated
 
 import typer
 
-from kitchen._cli._templates import _DASHBOARD_HTML, _DVC_CONFIG, _DVC_YAML, _DVC_YAML_KAGGLE, _DVCIGNORE
+from kitchen._cli._templates import (
+    _DVC_CONFIG,
+    _DVC_YAML,
+    _DVC_YAML_KAGGLE,
+    _DVCIGNORE,
+)
 
 
 def _to_class_name(name: str) -> str:
@@ -88,7 +93,6 @@ def dvc_init(
     Requires the dvc binary: pip install kitchen[dvc]
     """
     import shutil as _shutil
-    import subprocess as _subprocess
 
     if not _shutil.which("dvc"):
         typer.echo(
