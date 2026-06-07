@@ -1,4 +1,4 @@
-from kitchen import evaluate, registry, tracking
+from kitchen import evaluate, registry, search, tracking
 from kitchen.config import KitchenConfig
 from kitchen.experiment import experiment, init_run
 from kitchen.modeling import (
@@ -18,6 +18,7 @@ from kitchen.modeling import (
     voting_predict,
 )
 from kitchen.monitoring import DriftReport
+from kitchen.search import grid_search
 from kitchen.steps import Evaluator, FeatureBuilder, Trainer
 from kitchen.store import DataStore
 from kitchen.tracking import Tracker
@@ -36,6 +37,7 @@ __all__ = [
     "clip_predictions",
     "clip_proba",
     "cross_validate",
+    "grid_search",
     "loto_cv",
     "make_stack_features",
     "rank_average",
@@ -49,4 +51,5 @@ __all__ = [
     "experiment",
     "init_run",
     "registry",
+    "search",
 ]
