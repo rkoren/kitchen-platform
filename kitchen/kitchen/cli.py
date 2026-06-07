@@ -35,7 +35,6 @@ Usage:
 from __future__ import annotations
 
 import re
-import string
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Annotated
@@ -48,9 +47,7 @@ from kitchen._cli._templates import (
     _CI_WORKFLOW,
     _CI_WORKFLOW_KAGGLE,
     _CLAUDE_MD,
-    _DASHBOARD_GENERATED_HTML,
     _DASHBOARD_HTML,
-    _DVC_CONFIG,
     _DVC_YAML,
     _DVC_YAML_KAGGLE,
     _DVCIGNORE,
@@ -87,7 +84,6 @@ from kitchen._cli._templates import (
     _TRAIN_RUN_TABULAR_TS,
     _TRAIN_RUN_XGB,
 )
-from kitchen._cli.experiments import _autodetect_metric, experiments_app
 from kitchen._cli.dvc import (
     _render,
     _run_dvc_init,
@@ -95,6 +91,7 @@ from kitchen._cli.dvc import (
     _write,
     dvc_app,
 )
+from kitchen._cli.experiments import _autodetect_metric, experiments_app
 from kitchen._cli.run import _coerce_override_value, run_app  # noqa: F401
 from kitchen._cli.serve import _serve_local_dashboard, dashboard_app, serve_app
 
