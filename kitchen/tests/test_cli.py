@@ -3286,14 +3286,16 @@ def _make_result_dict(
     metric_val=0.85,
     lb_score=None,
     params=None,
+    top_features=None,
+    timestamp="2026-01-01T10:00:00Z",
 ):
     return {
         "sha": sha,
-        "timestamp": "2026-01-01T10:00:00Z",
+        "timestamp": timestamp,
         "run_id": sha * 4,
         "metrics": {"val_accuracy": metric_val},
         "params": params,
-        "top_features": None,
+        "top_features": top_features,
         "calibration": None,
         "lb_score": lb_score,
         "champion": champion,
@@ -3457,6 +3459,64 @@ def test_dashboard_generate_champion_marker_in_html(tmp_path, monkeypatch):
     _dash_generate_invoke(results)
     html = (tmp_path / "dashboard" / "index.html").read_text()
     assert '"champion": true' in html
+
+
+# ---------------------------------------------------------------------------
+# DASH-007: submission history timeline  /  DASH-004: feature importance heatmap
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_generate_has_submission_timeline_scaffold(tmp_path, monkeypatch):
+    """The generated dashboard always carries the DASH-007 lb-vs-metric chart container."""
+    monkeypatch.chdir(tmp_path)
+    _dash_generate_invoke([_make_result_dict(champion=True)])
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert 'id="lb-wrap"' in html
+    assert 'id="lb-chart"' in html
+
+
+def test_dashboard_generate_has_feature_importance_scaffold(tmp_path, monkeypatch):
+    """The generated dashboard always carries the DASH-004 heatmap container."""
+    monkeypatch.chdir(tmp_path)
+    _dash_generate_invoke([_make_result_dict(champion=True)])
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert 'id="fi-wrap"' in html
+    assert 'id="fi-heatmap"' in html
+
+
+def test_dashboard_generate_embeds_top_features(tmp_path, monkeypatch):
+    """top_features feed the DASH-004 heatmap — feature names appear in the embedded JSON."""
+    monkeypatch.chdir(tmp_path)
+    results = [
+        _make_result_dict(
+            sha="aaaa1111",
+            champion=True,
+            top_features=[{"name": "seed_diff", "importance": 0.4}],
+            timestamp="2026-05-01T10:00:00Z",
+        ),
+        _make_result_dict(
+            sha="bbbb2222",
+            top_features=[{"name": "pace", "importance": 0.3}],
+            timestamp="2026-05-02T10:00:00Z",
+        ),
+    ]
+    _dash_generate_invoke(results)
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert "seed_diff" in html
+    assert "pace" in html
+
+
+def test_dashboard_generate_embeds_lb_scores_for_timeline(tmp_path, monkeypatch):
+    """Two lb_scores + distinct timestamps are embedded for the DASH-007 timeline."""
+    monkeypatch.chdir(tmp_path)
+    results = [
+        _make_result_dict(sha="aaaa1111", lb_score=0.78, timestamp="2026-05-01T10:00:00Z"),
+        _make_result_dict(sha="bbbb2222", champion=True, lb_score=0.80, timestamp="2026-05-02T10:00:00Z"),
+    ]
+    _dash_generate_invoke(results)
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert "0.78" in html
+    assert "0.8" in html
 
 
 # ---------------------------------------------------------------------------
