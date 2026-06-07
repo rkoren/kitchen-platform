@@ -145,6 +145,9 @@ class Tracker:
         if tracking_uri:
             mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
+        # NB-008: Trainer.run() honours this flag to skip model-artifact logging
+        # for throwaway sessions (set False by kitchen.init_run(log_model=False)).
+        self.log_model_enabled: bool = True
 
     @contextlib.contextmanager
     def run(

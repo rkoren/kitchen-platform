@@ -154,6 +154,7 @@ def init_run(
     *,
     run_name: str | None = None,
     exploratory: bool = False,
+    log_model: bool = True,
 ) -> Generator[Tracker, None, None]:
     """Context manager that opens a tracked MLflow run and yields a Tracker.
 
@@ -179,6 +180,10 @@ def init_run(
         exploratory: When True, tags the run ``run_type=exploratory`` (see
             :func:`experiment`) so notebook runs can be filtered in
             ``kitchen leaderboard``.
+        log_model: When False, ``Trainer.run()`` skips ``tracker.log_model()`` for
+            this session, so a throwaway notebook experiment does not persist a
+            model artifact alongside production candidates (NB-008). Validation
+            metrics and feature importances are still logged.
 
     Yields:
         Tracker configured for the project's MLflow experiment.
@@ -219,6 +224,7 @@ def init_run(
         mlflow.set_experiment(experiment_name)
 
     tracker = Tracker(experiment_name)
+    tracker.log_model_enabled = log_model
     with tracker.run(run_name=run_name, params=params):
         if exploratory:
             mlflow.set_tag("run_type", "exploratory")

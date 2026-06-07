@@ -347,6 +347,33 @@ def test_init_run_default_does_not_tag_run_type():
         mock_mlflow.set_tag.assert_not_called()
 
 
+def test_init_run_log_model_false_sets_flag_on_tracker():
+    """init_run(log_model=False) flips the tracker flag Trainer.run() honours (NB-008)."""
+    mock_tracker = _make_tracker_mock()
+    with (
+        patch("kitchen.experiment.mlflow"),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker", return_value=mock_tracker),
+    ):
+        with init_run({"experiment": "proj"}, log_model=False) as tracker:
+            assert tracker.log_model_enabled is False
+
+
+def test_init_run_log_model_defaults_true():
+    mock_tracker = _make_tracker_mock()
+    with (
+        patch("kitchen.experiment.mlflow"),
+        patch("kitchen.experiment.configure_from_env"),
+        patch("kitchen.experiment.init_experiment"),
+        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment.Tracker", return_value=mock_tracker),
+    ):
+        with init_run({"experiment": "proj"}) as tracker:
+            assert tracker.log_model_enabled is True
+
+
 def test_init_run_uses_experiment_from_params():
     mock_tracker = _make_tracker_mock()
     with (

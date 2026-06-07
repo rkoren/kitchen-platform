@@ -172,6 +172,39 @@ def test_trainer_model_flavour_override(tmp_path):
     assert kwargs["flavour"] == "xgboost"
 
 
+def test_trainer_run_skips_log_model_when_disabled(tmp_path):
+    """NB-008: log_model_enabled=False suppresses tracker.log_model but not importances."""
+    store = MagicMock()
+    store.load_parquet.return_value = pd.DataFrame({"x": [1, 2]})
+    store.models_dir = tmp_path
+
+    tracker = MagicMock()
+    tracker.log_model_enabled = False
+    tracker.run.return_value.__enter__ = MagicMock(return_value=MagicMock())
+    tracker.run.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch("kitchen.steps._log_feature_importances") as mock_fi:
+        ConstantTrainer().run(store, tracker, params={"processed_file": "features.parquet"})
+
+    tracker.log_model.assert_not_called()
+    mock_fi.assert_called_once()  # importances still logged even when model is not
+
+
+def test_trainer_run_logs_model_when_flag_true(tmp_path):
+    """Explicit log_model_enabled=True keeps the default logging behaviour."""
+    store = MagicMock()
+    store.load_parquet.return_value = pd.DataFrame({"x": [1, 2]})
+    store.models_dir = tmp_path
+
+    tracker = MagicMock()
+    tracker.log_model_enabled = True
+    tracker.run.return_value.__enter__ = MagicMock(return_value=MagicMock())
+    tracker.run.return_value.__exit__ = MagicMock(return_value=False)
+
+    ConstantTrainer().run(store, tracker, params={"processed_file": "features.parquet"})
+    tracker.log_model.assert_called_once()
+
+
 # --- Evaluator ---
 
 
