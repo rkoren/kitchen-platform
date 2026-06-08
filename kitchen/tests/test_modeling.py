@@ -13,6 +13,7 @@ from kitchen.modeling import (
     classification_metrics,
     clip_predictions,
     clip_proba,
+    compute_calibration_curve,
     cross_validate,
     loto_cv,
     make_stack_features,
@@ -476,6 +477,7 @@ def test_cv_kfold_no_stratify(cv_binary_df):
     "voting_predict",
     "make_stack_features",
     "calibrate_model",
+    "compute_calibration_curve",
     "time_series_cv",
     "loto_cv",
 ])
@@ -1192,3 +1194,49 @@ def test_loto_cv_n_groups_equals_folds(loto_df):
     assert len(per_group_keys) == 4
 
 
+
+
+# ---------------------------------------------------------------------------
+# compute_calibration_curve  (DASH-006)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_calibration_curve_schema_and_counts():
+    rng = np.random.default_rng(0)
+    y_prob = rng.uniform(0, 1, 400)
+    y_true = (rng.uniform(0, 1, 400) < y_prob).astype(int)
+
+    curve = compute_calibration_curve(y_true, y_prob, n_bins=5)
+
+    assert isinstance(curve, list) and curve
+    for entry in curve:
+        assert set(entry) == {"bin_center", "fraction_positive", "count"}
+        assert isinstance(entry["bin_center"], float)
+        assert isinstance(entry["fraction_positive"], float)
+        assert isinstance(entry["count"], int)
+    # every sample lands in exactly one bin
+    assert sum(e["count"] for e in curve) == 400
+    # bins are ordered by predicted probability
+    centers = [e["bin_center"] for e in curve]
+    assert centers == sorted(centers)
+
+
+def test_compute_calibration_curve_well_calibrated_tracks_diagonal():
+    # Perfectly calibrated synthetic data: P(y=1) == predicted prob.
+    rng = np.random.default_rng(1)
+    y_prob = rng.uniform(0, 1, 5000)
+    y_true = (rng.uniform(0, 1, 5000) < y_prob).astype(int)
+
+    curve = compute_calibration_curve(y_true, y_prob, n_bins=10)
+    for entry in curve:
+        assert entry["fraction_positive"] == pytest.approx(entry["bin_center"], abs=0.06)
+
+
+def test_compute_calibration_curve_omits_empty_bins():
+    # All predictions cluster in the low range — high bins are empty and dropped.
+    y_prob = np.array([0.02, 0.05, 0.08, 0.11, 0.04])
+    y_true = np.array([0, 0, 1, 0, 0])
+
+    curve = compute_calibration_curve(y_true, y_prob, n_bins=10)
+    assert all(e["bin_center"] < 0.2 for e in curve)
+    assert sum(e["count"] for e in curve) == 5

@@ -661,6 +661,55 @@ def calibrate_model(
     return calibrator
 
 
+def compute_calibration_curve(y_true, y_prob, n_bins: int = 10) -> list[dict]:
+    """Reliability-diagram data for a binary probabilistic classifier.
+
+    Bins predictions into ``n_bins`` equal-width intervals over ``[0, 1]`` and,
+    for each non-empty bin, returns the mean predicted probability, the observed
+    positive rate, and the number of samples.  This is the data a calibration
+    (reliability) plot needs: a perfectly calibrated model has
+    ``fraction_positive == bin_center`` in every bin.
+
+    Thin wrapper over :func:`sklearn.calibration.calibration_curve` (uniform
+    strategy) that also carries per-bin counts and serialises to plain Python
+    floats/ints so the result drops straight into ``metrics.json`` / results
+    JSON for the dashboard calibration chart (DASH-006).
+
+    Args:
+        y_true: Binary ground-truth labels (0/1).
+        y_prob: Predicted probability of the positive class.
+        n_bins: Number of equal-width probability bins.
+
+    Returns:
+        A list of ``{"bin_center", "fraction_positive", "count"}`` dicts, one
+        per non-empty bin, ordered by ``bin_center``.  Empty bins are omitted.
+    """
+    from sklearn.calibration import calibration_curve
+
+    y_true = np.asarray(y_true, dtype=float)
+    y_prob = np.asarray(y_prob, dtype=float)
+
+    # sklearn drops empty bins and returns (prob_true, prob_pred) ordered by bin.
+    frac_pos, mean_pred = calibration_curve(
+        y_true, y_prob, n_bins=n_bins, strategy="uniform"
+    )
+    # Per-bin counts, aligned to the same uniform binning sklearn used.
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    counts, _ = np.histogram(np.clip(y_prob, 0.0, 1.0), bins=edges)
+    nonempty_counts = counts[counts > 0]
+
+    curve = []
+    for center, frac, count in zip(mean_pred, frac_pos, nonempty_counts):
+        curve.append(
+            {
+                "bin_center": float(center),
+                "fraction_positive": float(frac),
+                "count": int(count),
+            }
+        )
+    return curve
+
+
 # ---------------------------------------------------------------------------
 # M-011: Ensemble helpers
 # ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -169,13 +169,44 @@ class Evaluator(ABC):
     """Scores a trained model and emits metrics."""
 
     @abstractmethod
-    def evaluate(self, model: object, df: pd.DataFrame) -> dict[str, float]:
-        """Return a flat dict of metric_name -> value."""
+    def evaluate(self, model: object, df: pd.DataFrame) -> dict[str, Any]:
+        """Return a flat dict of metric_name -> value.
 
-    def run(self, model: object, store: DataStore, params: dict) -> dict[str, float]:
-        """Load eval data, compute metrics, write metrics.json."""
+        Values are normally floats. Two keys are reserved for non-scalar
+        payloads that ``run()`` extracts before writing ``metrics.json`` so the
+        metrics file stays numeric:
+
+        - ``"calibration"`` — a reliability-curve list from
+          :func:`kitchen.modeling.compute_calibration_curve`; ``run()`` writes
+          it to a sibling ``calibration.json`` and logs it to the active MLflow
+          run, where ``kitchen push`` (DASH-006) picks it up for the dashboard.
+        """
+
+    def run(self, model: object, store: DataStore, params: dict) -> dict[str, Any]:
+        """Load eval data, compute metrics, write metrics.json.
+
+        Reserved non-scalar keys (currently ``"calibration"``) are split out of
+        the returned dict, persisted to sibling artifacts, and removed from
+        ``metrics.json`` so the leaderboard sees only scalar metrics.
+        """
         df = store.load_parquet(_resolve(params, "processed_file", "features.parquet"))
         metrics = self.evaluate(model, df)
         metrics_path = Path(_resolve(params, "metrics_file", "metrics.json"))
+
+        # DASH-006: split the calibration curve out of the scalar metrics. Write
+        # it next to metrics.json (so `kitchen push` can read it without a live
+        # MLflow server) and log it to the active run when one is open.
+        calibration = metrics.pop("calibration", None)
+        if isinstance(calibration, list) and calibration:
+            cal_path = metrics_path.parent / "calibration.json"
+            cal_path.write_text(json.dumps(calibration, indent=2), encoding="utf-8")
+            try:
+                import mlflow as _mlflow  # noqa: PLC0415 — lazy, optional at eval time
+
+                if _mlflow.active_run() is not None:
+                    _mlflow.log_dict(calibration, "calibration.json")
+            except Exception:
+                pass  # MLflow logging is best-effort; the disk copy is canonical
+
         metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
         return metrics

@@ -647,7 +647,11 @@ ordering). If your target uses other labels, inspect model.classes_ first.
 from __future__ import annotations
 
 import pandas as pd
-from kitchen.modeling import classification_metrics, train_val_split
+from kitchen.modeling import (
+    classification_metrics,
+    compute_calibration_curve,
+    train_val_split,
+)
 from kitchen.steps import Evaluator
 from kitchen.store import DataStore
 
@@ -677,7 +681,12 @@ class ${class_name}Evaluator(Evaluator):
         y_proba = (
             model.predict_proba(X_val)[:, 1] if hasattr(model, "predict_proba") else None
         )
-        return classification_metrics(y_val, y_pred, y_proba=y_proba)
+        metrics = classification_metrics(y_val, y_pred, y_proba=y_proba)
+        # DASH-006: reliability-curve data — split out of metrics.json by
+        # Evaluator.run() into calibration.json and surfaced on the dashboard.
+        if y_proba is not None:
+            metrics["calibration"] = compute_calibration_curve(y_val, y_proba)
+        return metrics
 
 
 def evaluate(model: object, params: dict, store: DataStore) -> dict[str, float]:
@@ -1943,7 +1952,8 @@ _DASHBOARD_GENERATED_HTML = """\
     #status { color: #6b7280; margin-bottom: 1rem; font-size: 0.9rem; }
     .scroll-wrap { overflow-x: auto; margin-top: 1rem; }
     h2 { font-size: 1.1rem; margin: 2rem 0 0.5rem; }
-    #lb-wrap, #fold-wrap { max-width: 860px; margin-bottom: 2rem; }
+    #lb-wrap, #fold-wrap, #pcoord-wrap, #cal-wrap { max-width: 860px; margin-bottom: 2rem; }
+    #pcoord-note, #cal-note { color: #6b7280; font-size: 0.8rem; margin: 0 0 0.5rem; }
     #fi-table td { text-align: center; font-variant-numeric: tabular-nums; }
     #fi-table td.fi-empty { background: #f8fafc; color: #cbd5e1; }
     #fi-table th:first-child, #fi-table td:first-child { text-align: left; font-weight: 500; }
@@ -1955,6 +1965,8 @@ _DASHBOARD_GENERATED_HTML = """\
   <div id="chart-wrap"><canvas id="chart"></canvas></div>
   <div id="lb-wrap" style="display:none"><h2>Submission history — LB score vs local metric</h2><canvas id="lb-chart"></canvas></div>
   <div id="fold-wrap" style="display:none"><h2>Per-fold metric breakdown</h2><canvas id="fold-chart"></canvas></div>
+  <div id="pcoord-wrap" style="display:none"><h2>Parameter parallel coordinates</h2><p id="pcoord-note"></p><canvas id="pcoord-chart"></canvas></div>
+  <div id="cal-wrap" style="display:none"><h2>Calibration (reliability) curve</h2><p id="cal-note">A perfectly calibrated model sits on the dashed diagonal.</p><canvas id="cal-chart"></canvas></div>
   <div class="scroll-wrap">
     <table id="runs-table"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
   </div>
@@ -2207,6 +2219,144 @@ _DASHBOARD_GENERATED_HTML = """\
       });
       document.getElementById('fi-heatmap').innerHTML =
         '<table id="fi-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
+    }());
+
+    // DASH-008: parameter parallel coordinates. One axis per numeric param, one
+    // polyline per run, coloured by the primary metric (greener = higher). Each
+    // axis is independently min-max normalised to [0, 1]; reveals which param
+    // combinations cluster around good outcomes. Activates with >=2 runs carrying
+    // params and >=2 numeric axes. MLflow params arrive as strings, so every
+    // candidate is parsed with parseFloat and non-numeric keys are dropped.
+    (function () {
+      var withParams = RESULTS.filter(function (r) {
+        return r.params && typeof r.params === 'object';
+      });
+      if (withParams.length < 2) { return; }
+
+      var numericByKey = {};
+      withParams.forEach(function (r) {
+        Object.keys(r.params).forEach(function (k) {
+          var v = parseFloat(r.params[k]);
+          if (!isNaN(v)) {
+            (numericByKey[k] = numericByKey[k] || []).push(v);
+          }
+        });
+      });
+      var axes = Object.keys(numericByKey).filter(function (k) {
+        return numericByKey[k].length >= 2;
+      }).sort();
+      if (axes.length < 2) { return; }
+
+      var bounds = {};
+      axes.forEach(function (k) {
+        var vals = numericByKey[k];
+        bounds[k] = { min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) };
+      });
+      function norm(k, raw) {
+        var b = bounds[k];
+        if (b.max === b.min) { return 0.5; }  // constant axis → centre line
+        return (raw - b.min) / (b.max - b.min);
+      }
+
+      var mvals = withParams.map(function (r) {
+        return METRIC ? (r.metrics || {})[METRIC] : null;
+      }).filter(function (v) { return v !== undefined && v !== null; });
+      var mMin = mvals.length ? Math.min.apply(null, mvals) : 0;
+      var mMax = mvals.length ? Math.max.apply(null, mvals) : 1;
+      function metricColour(r) {
+        var v = METRIC ? (r.metrics || {})[METRIC] : null;
+        if (v === undefined || v === null || mMax === mMin) { return '#94a3b8'; }
+        var t = (v - mMin) / (mMax - mMin);  // 0 = lowest, 1 = highest
+        return 'hsl(' + Math.round(t * 120) + ', 70%, 45%)';  // red → green
+      }
+
+      document.getElementById('pcoord-wrap').style.display = 'block';
+      document.getElementById('pcoord-note').textContent =
+        'Axes independently normalised 0–1' + (METRIC ? '; greener = higher ' + METRIC : '') + '.';
+
+      var datasets = withParams.map(function (r) {
+        return {
+          label: (r.sha || '').slice(0, 7) + (r.champion ? ' [C]' : ''),
+          data: axes.map(function (k) {
+            var raw = parseFloat(r.params[k]);
+            return isNaN(raw) ? null : norm(k, raw);
+          }),
+          borderColor: metricColour(r),
+          backgroundColor: metricColour(r),
+          spanGaps: true,
+          tension: 0,
+          pointRadius: 3
+        };
+      });
+      new Chart(document.getElementById('pcoord-chart').getContext('2d'), {
+        type: 'line',
+        data: { labels: axes, datasets: datasets },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: true } },
+          scales: {
+            y: { min: 0, max: 1, title: { display: true, text: 'normalised value' } },
+            x: { title: { display: true, text: 'parameter' } }
+          }
+        }
+      });
+    }());
+
+    // DASH-006: calibration (reliability) curve. Plots observed positive rate
+    // against mean predicted probability for the champion and most-recent runs,
+    // with a dashed diagonal as the perfectly-calibrated reference. Activates when
+    // any result carries a `calibration` list (DASH-006 / LML-010).
+    (function () {
+      function curveOf(r) {
+        return Array.isArray(r.calibration) && r.calibration.length ? r.calibration : null;
+      }
+      var withCal = RESULTS.filter(curveOf);
+      if (!withCal.length) { return; }
+      document.getElementById('cal-wrap').style.display = 'block';
+
+      var champ = withCal.find(function (r) { return r.champion; });
+      var recent = withCal[withCal.length - 1];
+      var picks = [];
+      if (champ) { picks.push({ run: champ, label: 'champion', colour: '#eab308' }); }
+      if (recent && recent !== champ) {
+        picks.push({ run: recent, label: 'most recent', colour: '#3b82f6' });
+      }
+      if (!picks.length) {
+        picks.push({ run: recent, label: 'latest', colour: '#3b82f6' });
+      }
+
+      var datasets = picks.map(function (p) {
+        return {
+          label: p.label + ' (' + (p.run.sha || '').slice(0, 7) + ')',
+          data: curveOf(p.run).map(function (b) {
+            return { x: b.bin_center, y: b.fraction_positive };
+          }),
+          borderColor: p.colour,
+          backgroundColor: p.colour,
+          tension: 0.2,
+          pointRadius: 4
+        };
+      });
+      datasets.push({
+        label: 'perfectly calibrated',
+        data: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+        borderColor: '#9ca3af',
+        borderDash: [6, 4],
+        pointRadius: 0,
+        fill: false
+      });
+      new Chart(document.getElementById('cal-chart').getContext('2d'), {
+        type: 'line',
+        data: { datasets: datasets },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: true } },
+          scales: {
+            x: { type: 'linear', min: 0, max: 1, title: { display: true, text: 'mean predicted probability' } },
+            y: { min: 0, max: 1, title: { display: true, text: 'observed positive rate' } }
+          }
+        }
+      });
     }());
   </script>
 </body>

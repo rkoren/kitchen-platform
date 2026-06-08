@@ -3289,6 +3289,7 @@ def _make_result_dict(
     top_features=None,
     timestamp="2026-01-01T10:00:00Z",
     extra_metrics=None,
+    calibration=None,
 ):
     return {
         "sha": sha,
@@ -3297,7 +3298,7 @@ def _make_result_dict(
         "metrics": {"val_accuracy": metric_val, **(extra_metrics or {})},
         "params": params,
         "top_features": top_features,
-        "calibration": None,
+        "calibration": calibration,
         "lb_score": lb_score,
         "champion": champion,
     }
@@ -3545,6 +3546,65 @@ def test_dashboard_generate_embeds_lb_scores_for_timeline(tmp_path, monkeypatch)
     html = (tmp_path / "dashboard" / "index.html").read_text()
     assert "0.78" in html
     assert "0.8" in html
+
+
+def test_dashboard_generate_has_parallel_coords_scaffold(tmp_path, monkeypatch):
+    """The generated dashboard always carries the DASH-008 parallel-coords container."""
+    monkeypatch.chdir(tmp_path)
+    _dash_generate_invoke([_make_result_dict(champion=True)])
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert 'id="pcoord-wrap"' in html
+    assert 'id="pcoord-chart"' in html
+
+
+def test_dashboard_generate_embeds_params_for_parallel_coords(tmp_path, monkeypatch):
+    """Per-run params are embedded so DASH-008 can build the axes."""
+    monkeypatch.chdir(tmp_path)
+    results = [
+        _make_result_dict(
+            sha="aaaa1111",
+            champion=True,
+            params={"model.max_depth": "4", "model.eta": "0.1"},
+            timestamp="2026-05-01T10:00:00Z",
+        ),
+        _make_result_dict(
+            sha="bbbb2222",
+            params={"model.max_depth": "8", "model.eta": "0.05"},
+            timestamp="2026-05-02T10:00:00Z",
+        ),
+    ]
+    _dash_generate_invoke(results)
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert "model.max_depth" in html
+    assert "model.eta" in html
+
+
+def test_dashboard_generate_has_calibration_scaffold(tmp_path, monkeypatch):
+    """The generated dashboard always carries the DASH-006 calibration container."""
+    monkeypatch.chdir(tmp_path)
+    _dash_generate_invoke([_make_result_dict(champion=True)])
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert 'id="cal-wrap"' in html
+    assert 'id="cal-chart"' in html
+
+
+def test_dashboard_generate_embeds_calibration_curve(tmp_path, monkeypatch):
+    """A calibration list is embedded so DASH-006 can draw the reliability curve."""
+    monkeypatch.chdir(tmp_path)
+    results = [
+        _make_result_dict(
+            sha="aaaa1111",
+            champion=True,
+            calibration=[
+                {"bin_center": 0.123456, "fraction_positive": 0.11, "count": 50},
+            ],
+            timestamp="2026-05-01T10:00:00Z",
+        ),
+    ]
+    _dash_generate_invoke(results)
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert "0.123456" in html
+    assert "fraction_positive" in html
 
 
 # ---------------------------------------------------------------------------
