@@ -241,6 +241,79 @@ def test_evaluator_run_returns_metrics():
     assert "accuracy" in result
 
 
+# --- DASH-006: calibration curve handling ---
+
+
+class CalibratedEvaluator(Evaluator):
+    """Evaluator that emits the reserved ``calibration`` key."""
+
+    def evaluate(self, model: object, df: pd.DataFrame) -> dict:
+        return {
+            "accuracy": 0.9,
+            "calibration": [
+                {"bin_center": 0.1, "fraction_positive": 0.08, "count": 30},
+                {"bin_center": 0.9, "fraction_positive": 0.92, "count": 25},
+            ],
+        }
+
+
+def test_evaluator_run_splits_calibration_into_sibling_file(tmp_path):
+    store = MagicMock()
+    store.load_parquet.return_value = pd.DataFrame({"x": [1]})
+
+    metrics_file = tmp_path / "out" / "metrics.json"
+    metrics_file.parent.mkdir()
+    result = CalibratedEvaluator().run(
+        model=object(),
+        store=store,
+        params={"metrics_file": str(metrics_file)},
+    )
+
+    # calibration is stripped from the scalar metrics and metrics.json
+    assert "calibration" not in result
+    metrics_data = json.loads(metrics_file.read_text())
+    assert "calibration" not in metrics_data
+    assert metrics_data["accuracy"] == pytest.approx(0.9)
+
+    # ... and persisted to a sibling calibration.json (next to metrics_file).
+    cal_file = metrics_file.parent / "calibration.json"
+    assert cal_file.exists()
+    cal = json.loads(cal_file.read_text())
+    assert len(cal) == 2
+    assert cal[0]["bin_center"] == pytest.approx(0.1)
+
+
+def test_evaluator_run_logs_calibration_to_active_run(tmp_path):
+    store = MagicMock()
+    store.load_parquet.return_value = pd.DataFrame({"x": [1]})
+
+    metrics_file = tmp_path / "metrics.json"
+    fake_mlflow = MagicMock()
+    fake_mlflow.active_run.return_value = object()  # a run is active
+    with patch.dict("sys.modules", {"mlflow": fake_mlflow}):
+        CalibratedEvaluator().run(
+            model=object(), store=store, params={"metrics_file": str(metrics_file)}
+        )
+
+    fake_mlflow.log_dict.assert_called_once()
+    args = fake_mlflow.log_dict.call_args[0]
+    assert args[1] == "calibration.json"
+
+
+def test_evaluator_run_no_calibration_file_when_absent(tmp_path):
+    store = MagicMock()
+    store.load_parquet.return_value = pd.DataFrame({"x": [1]})
+
+    metrics_file = tmp_path / "metrics.json"
+    AccuracyEvaluator().run(
+        model=object(),
+        store=store,
+        params={"metrics_file": str(metrics_file)},
+    )
+
+    assert not (tmp_path / "calibration.json").exists()
+
+
 # --- _resolve: flat vs nested params ---
 
 

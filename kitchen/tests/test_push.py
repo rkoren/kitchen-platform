@@ -420,6 +420,53 @@ def test_push_calibration_absent_is_nonfatal(git_repo):
     assert payload["calibration"] is None
 
 
+def test_push_reads_calibration_from_sibling_file(git_repo):
+    """DASH-006: when the MLflow artifact is absent, push falls back to a
+    calibration.json written next to metrics.json by Evaluator.run()."""
+    run_id = "e" * 32
+    _write_metrics(git_repo, {"val_accuracy": 0.88, "run_id": run_id})
+    curve = [
+        {"bin_center": 0.1, "fraction_positive": 0.08, "count": 40},
+        {"bin_center": 0.9, "fraction_positive": 0.93, "count": 35},
+    ]
+    (git_repo / "calibration.json").write_text(json.dumps(curve))
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_cls,
+        patch("mlflow.artifacts.download_artifacts", side_effect=Exception("no artifact")),
+    ):
+        mock_cls.return_value.get_run.return_value.data.params = {}
+        result = runner.invoke(app, ["push"])
+
+    assert result.exit_code == 0, result.output
+    sha8 = _git_sha(git_repo)[:8]
+    payload = _read_result_file(git_repo, "results", sha8)
+    assert payload["calibration"] == curve
+
+
+def test_push_calibration_sibling_resolves_from_metrics_path(git_repo):
+    """The sibling calibration.json is resolved next to --metrics, not cwd."""
+    sub = git_repo / "out"
+    sub.mkdir()
+    (sub / "metrics.json").write_text(json.dumps({"val_accuracy": 0.8, "run_id": "d" * 32}))
+    curve = [{"bin_center": 0.5, "fraction_positive": 0.5, "count": 10}]
+    (sub / "calibration.json").write_text(json.dumps(curve))
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_cls,
+        patch("mlflow.artifacts.download_artifacts", side_effect=Exception("no artifact")),
+    ):
+        mock_cls.return_value.get_run.return_value.data.params = {}
+        result = runner.invoke(app, ["push", "--metrics", "out/metrics.json"])
+
+    assert result.exit_code == 0, result.output
+    sha8 = _git_sha(git_repo)[:8]
+    payload = _read_result_file(git_repo, "results", sha8)
+    assert payload["calibration"] == curve
+
+
 def test_push_mlflow_fetch_errors_are_nonfatal(git_repo):
     """Any MLflow fetch failure leaves all metadata fields None; push still succeeds."""
     run_id = "f" * 32

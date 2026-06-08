@@ -1792,6 +1792,17 @@ def push(
         except ImportError:
             pass  # mlflow not installed — all metadata fields remain None
 
+    # DASH-006: calibration.json disk fallback. In the CLI evaluate flow no MLflow
+    # run is active, so Evaluator.run() writes the curve next to metrics.json rather
+    # than as a run artifact — read it here when the MLflow lookup above came up empty.
+    if calibration_data is None:
+        _cal_sibling = metrics_path.parent / "calibration.json"
+        if _cal_sibling.exists():
+            try:
+                calibration_data = json.loads(_cal_sibling.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
     # Fill in run metrics not already present in metrics.json (metrics.json wins).
     for _k, _v in run_metrics.items():
         metrics.setdefault(_k, _v)
