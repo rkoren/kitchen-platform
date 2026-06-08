@@ -3288,12 +3288,13 @@ def _make_result_dict(
     params=None,
     top_features=None,
     timestamp="2026-01-01T10:00:00Z",
+    extra_metrics=None,
 ):
     return {
         "sha": sha,
         "timestamp": timestamp,
         "run_id": sha * 4,
-        "metrics": {"val_accuracy": metric_val},
+        "metrics": {"val_accuracy": metric_val, **(extra_metrics or {})},
         "params": params,
         "top_features": top_features,
         "calibration": None,
@@ -3482,6 +3483,33 @@ def test_dashboard_generate_has_feature_importance_scaffold(tmp_path, monkeypatc
     html = (tmp_path / "dashboard" / "index.html").read_text()
     assert 'id="fi-wrap"' in html
     assert 'id="fi-heatmap"' in html
+
+
+def test_dashboard_generate_has_per_fold_scaffold(tmp_path, monkeypatch):
+    """The generated dashboard always carries the DASH-005 per-fold chart container."""
+    monkeypatch.chdir(tmp_path)
+    _dash_generate_invoke([_make_result_dict(champion=True)])
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert 'id="fold-wrap"' in html
+    assert 'id="fold-chart"' in html
+
+
+def test_dashboard_generate_embeds_per_fold_metrics(tmp_path, monkeypatch):
+    """Per-fold metric keys ({metric}_{fold}) are embedded so DASH-005 can chart them."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: t\nthresholds:\n  loto_brier:\n    max: 0.5\n")
+    results = [
+        _make_result_dict(
+            sha="aaaa1111",
+            champion=True,
+            extra_metrics={"loto_brier": 0.17, "loto_brier_mean": 0.17, "loto_brier_2019": 0.19, "loto_brier_2020": 0.16},
+            timestamp="2026-05-01T10:00:00Z",
+        ),
+    ]
+    _dash_generate_invoke(results, extra_args=["--metric", "loto_brier"])
+    html = (tmp_path / "dashboard" / "index.html").read_text()
+    assert "loto_brier_2019" in html
+    assert "loto_brier_2020" in html
 
 
 def test_dashboard_generate_embeds_top_features(tmp_path, monkeypatch):

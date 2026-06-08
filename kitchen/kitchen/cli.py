@@ -1719,6 +1719,7 @@ def push(
     params_from_run: dict | None = None
     top_features: list | None = None
     calibration_data: list | None = None
+    run_metrics: dict = {}
 
     if run_id:
         try:
@@ -1735,10 +1736,20 @@ def push(
                 except Exception:
                     pass
 
-            # Params from the MLflow run (stored as strings by MLflow)
+            # Params + metrics from the MLflow run.
             try:
-                _p = dict(_client.get_run(run_id).data.params)
+                _run = _client.get_run(run_id)
+                _p = dict(_run.data.params)
                 params_from_run = _p if _p else None
+                # LML-010 follow-up: surface per-fold/aggregate metrics logged to the
+                # run (e.g. by loto_cv / time_series_cv) into the results JSON so the
+                # dashboard can render them (DASH-005). Exclude fi.* (feature-importance
+                # metrics) and lb_score (carried as a top-level field).
+                run_metrics = {
+                    k: float(v)
+                    for k, v in _run.data.metrics.items()
+                    if not k.startswith("fi.") and k != "lb_score"
+                }
             except Exception:
                 pass
 
@@ -1780,6 +1791,10 @@ def push(
 
         except ImportError:
             pass  # mlflow not installed — all metadata fields remain None
+
+    # Fill in run metrics not already present in metrics.json (metrics.json wins).
+    for _k, _v in run_metrics.items():
+        metrics.setdefault(_k, _v)
 
     # --- lb_score ---
     lb_score: float | None = metrics.pop("kaggle_public_score", None)

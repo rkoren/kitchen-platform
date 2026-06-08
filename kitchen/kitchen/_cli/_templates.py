@@ -1943,7 +1943,7 @@ _DASHBOARD_GENERATED_HTML = """\
     #status { color: #6b7280; margin-bottom: 1rem; font-size: 0.9rem; }
     .scroll-wrap { overflow-x: auto; margin-top: 1rem; }
     h2 { font-size: 1.1rem; margin: 2rem 0 0.5rem; }
-    #lb-wrap { max-width: 860px; margin-bottom: 2rem; }
+    #lb-wrap, #fold-wrap { max-width: 860px; margin-bottom: 2rem; }
     #fi-table td { text-align: center; font-variant-numeric: tabular-nums; }
     #fi-table td.fi-empty { background: #f8fafc; color: #cbd5e1; }
     #fi-table th:first-child, #fi-table td:first-child { text-align: left; font-weight: 500; }
@@ -1954,6 +1954,7 @@ _DASHBOARD_GENERATED_HTML = """\
   <p id="status">__STATUS_ESCAPED__</p>
   <div id="chart-wrap"><canvas id="chart"></canvas></div>
   <div id="lb-wrap" style="display:none"><h2>Submission history — LB score vs local metric</h2><canvas id="lb-chart"></canvas></div>
+  <div id="fold-wrap" style="display:none"><h2>Per-fold metric breakdown</h2><canvas id="fold-chart"></canvas></div>
   <div class="scroll-wrap">
     <table id="runs-table"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
   </div>
@@ -2104,6 +2105,53 @@ _DASHBOARD_GENERATED_HTML = """\
               title: { display: true, text: METRIC || 'local metric' },
               grid: { drawOnChartArea: false }
             }
+          }
+        }
+      });
+    }());
+
+    // DASH-005: per-fold metric breakdown — grouped bar chart, one bar group per
+    // fold (the {METRIC}_{fold} keys emitted by loto_cv / time_series_cv), one bar
+    // per run. Activates when any per-fold key for the primary metric is present.
+    (function () {
+      if (!METRIC) { return; }
+      var prefix = METRIC + '_';
+      var foldSet = {};
+      RESULTS.forEach(function (r) {
+        Object.keys(r.metrics || {}).forEach(function (k) {
+          if (k.indexOf(prefix) === 0) {
+            var suffix = k.slice(prefix.length);
+            if (suffix !== 'mean' && suffix !== 'std') { foldSet[suffix] = true; }
+          }
+        });
+      });
+      var folds = Object.keys(foldSet).sort();
+      if (!folds.length) { return; }
+      document.getElementById('fold-wrap').style.display = 'block';
+
+      var runsWithFolds = RESULTS.filter(function (r) {
+        return folds.some(function (f) { return (r.metrics || {})[prefix + f] !== undefined; });
+      });
+      var palette = ['#3b82f6', '#16a34a', '#eab308', '#dc2626', '#8b5cf6', '#0891b2', '#db2777', '#65a30d'];
+      var datasets = runsWithFolds.map(function (r, i) {
+        return {
+          label: ((r.sha || '').slice(0, 7) || ('run ' + (i + 1))) + (r.champion ? ' [C]' : ''),
+          data: folds.map(function (f) {
+            var v = (r.metrics || {})[prefix + f];
+            return (v === undefined) ? null : v;
+          }),
+          backgroundColor: palette[i % palette.length]
+        };
+      });
+      new Chart(document.getElementById('fold-chart').getContext('2d'), {
+        type: 'bar',
+        data: { labels: folds, datasets: datasets },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: true } },
+          scales: {
+            y: { title: { display: true, text: METRIC } },
+            x: { title: { display: true, text: 'fold / period' } }
           }
         }
       });
