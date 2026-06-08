@@ -259,6 +259,56 @@ def test_push_params_from_mlflow_run(git_repo):
     assert payload["params"] == {"model.max_depth": "6", "model.eta": "0.05"}
 
 
+def test_push_merges_run_metrics_excluding_fi_and_lb(git_repo):
+    """DASH-005: per-fold/aggregate run metrics are merged into results; fi.* and lb_score excluded."""
+    run_id = "c" * 32
+    # metrics.json has the aggregate; the per-fold keys live only on the MLflow run.
+    _write_metrics(git_repo, {"loto_brier_mean": 0.170, "run_id": run_id})
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_cls,
+        patch("mlflow.artifacts.download_artifacts", side_effect=Exception("no artifact")),
+    ):
+        mock_cls.return_value.get_run.return_value.data.params = {}
+        mock_cls.return_value.get_run.return_value.data.metrics = {
+            "loto_brier_mean": 0.999,  # should NOT override metrics.json
+            "loto_brier_2019": 0.19,
+            "loto_brier_2020": 0.16,
+            "fi.seed_diff": 0.42,  # excluded (feature-importance metric)
+            "lb_score": 0.80,  # excluded (carried as a top-level field)
+        }
+        result = runner.invoke(app, ["push"])
+
+    assert result.exit_code == 0
+    sha8 = _git_sha(git_repo)[:8]
+    m = _read_result_file(git_repo, "results", sha8)["metrics"]
+    assert m["loto_brier_mean"] == 0.170  # metrics.json wins on conflict
+    assert m["loto_brier_2019"] == 0.19  # merged from the run
+    assert m["loto_brier_2020"] == 0.16
+    assert "fi.seed_diff" not in m
+    assert "lb_score" not in m
+
+
+def test_push_run_metrics_skipped_when_run_fetch_fails(git_repo):
+    """If the MLflow run can't be fetched, push still succeeds with metrics.json only."""
+    run_id = "d" * 32
+    _write_metrics(git_repo, {"val_accuracy": 0.9, "run_id": run_id})
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_cls,
+        patch("mlflow.artifacts.download_artifacts", side_effect=Exception("no artifact")),
+    ):
+        mock_cls.return_value.get_run.side_effect = Exception("run not found")
+        result = runner.invoke(app, ["push"])
+
+    assert result.exit_code == 0
+    sha8 = _git_sha(git_repo)[:8]
+    m = _read_result_file(git_repo, "results", sha8)["metrics"]
+    assert m == {"val_accuracy": 0.9}
+
+
 def test_push_top_features_from_artifact(git_repo, tmp_path):
     """top_features is populated from the feature_importances.json MLflow artifact."""
     import json as _json
