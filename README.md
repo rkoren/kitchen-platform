@@ -211,7 +211,13 @@ test → infra-apply (S3, ECR, IAM) → docker-build → lambda-deploy
 test → infra-plan (shows Terraform diff as a check)
 ```
 
-AWS authentication uses OIDC — no long-lived credentials stored in GitHub. See [`scripts/bootstrap-aws.sh`](scripts/bootstrap-aws.sh) for one-time account setup.
+AWS authentication uses OIDC — no long-lived credentials stored in GitHub. Run the one-time account setup with your repo, then add the two printed values as GitHub Actions secrets:
+
+```bash
+GITHUB_REPO=<owner>/<repo> bash scripts/bootstrap-aws.sh
+```
+
+The script is parameterised (`AWS_REGION`, `CI_ROLE_NAME`, `TF_STATE_BUCKET`, … all override via the environment) and idempotent — safe to re-run; it reuses an existing OIDC provider, state bucket, or CI role rather than failing. See [`scripts/bootstrap-aws.sh`](scripts/bootstrap-aws.sh) for the full list of variables.
 
 ---
 

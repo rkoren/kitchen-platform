@@ -8,7 +8,13 @@ from unittest.mock import MagicMock, patch
 import mlflow.exceptions
 import pytest
 
-from kitchen.registry import get_best_run, get_production_uri, promote_model, register_model
+from kitchen.registry import (
+    get_best_run,
+    get_champion_metrics,
+    get_production_uri,
+    promote_model,
+    register_model,
+)
 
 # ---------------------------------------------------------------------------
 # register_model
@@ -176,3 +182,49 @@ def test_get_production_uri_custom_alias():
         MockClient.return_value.get_model_version_by_alias.return_value = MagicMock()
         result = get_production_uri("my-model", alias="staging")
     assert result == "models:/my-model@staging"
+
+
+# ---------------------------------------------------------------------------
+# get_champion_metrics  (GH-011)
+# ---------------------------------------------------------------------------
+
+
+def test_get_champion_metrics_returns_run_metrics_excluding_fi_and_lb():
+    with patch("mlflow.tracking.MlflowClient") as MockClient:
+        client = MockClient.return_value
+        client.get_model_version_by_alias.return_value = MagicMock(run_id="run123")
+        client.get_run.return_value.data.metrics = {
+            "val_accuracy": 0.91,
+            "val_log_loss": 0.30,
+            "fi.feature_a": 0.5,  # feature importance — excluded
+            "lb_score": 0.80,     # carried separately — excluded
+        }
+        result = get_champion_metrics("my-model")
+    assert result == {"val_accuracy": 0.91, "val_log_loss": 0.30}
+
+
+def test_get_champion_metrics_returns_none_when_no_champion():
+    with patch("mlflow.tracking.MlflowClient") as MockClient:
+        MockClient.return_value.get_model_version_by_alias.side_effect = (
+            mlflow.exceptions.MlflowException("alias not found")
+        )
+        result = get_champion_metrics("my-model")
+    assert result is None
+
+
+def test_get_champion_metrics_returns_none_when_run_missing():
+    with patch("mlflow.tracking.MlflowClient") as MockClient:
+        client = MockClient.return_value
+        client.get_model_version_by_alias.return_value = MagicMock(run_id="gone")
+        client.get_run.side_effect = mlflow.exceptions.MlflowException("run not found")
+        result = get_champion_metrics("my-model")
+    assert result is None
+
+
+def test_get_champion_metrics_default_alias_is_champion():
+    with patch("mlflow.tracking.MlflowClient") as MockClient:
+        client = MockClient.return_value
+        client.get_model_version_by_alias.return_value = MagicMock(run_id="r")
+        client.get_run.return_value.data.metrics = {}
+        get_champion_metrics("my-model")
+    client.get_model_version_by_alias.assert_called_once_with("my-model", "champion")

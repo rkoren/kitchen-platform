@@ -89,3 +89,29 @@ def get_production_uri(name: str, alias: str = "champion") -> str | None:
     except mlflow.exceptions.MlflowException:
         return None
     return f"models:/{name}@{alias}"
+
+
+def get_champion_metrics(name: str, alias: str = "champion") -> dict[str, float] | None:
+    """Return the champion run's logged metrics, or None if no champion exists.
+
+    Resolves the model version behind ``alias`` and reads the metrics logged to
+    its source run — the source of truth for a comparison baseline (a
+    ``metrics.json`` artifact is not always logged, but ``run.data.metrics``
+    always is). Feature-importance metrics (``fi.*``) and the Kaggle
+    ``lb_score`` are excluded so the result matches the keys a project's
+    ``metrics.json`` carries.
+
+    Returns None when the alias is unset or the run can't be read, so callers can
+    fall back gracefully (e.g. the first PR of a project, before any promote).
+    """
+    client = mlflow.tracking.MlflowClient()
+    try:
+        mv = client.get_model_version_by_alias(name, alias)
+        run = client.get_run(mv.run_id)
+    except mlflow.exceptions.MlflowException:
+        return None
+    return {
+        k: float(v)
+        for k, v in run.data.metrics.items()
+        if not k.startswith("fi.") and k != "lb_score"
+    }

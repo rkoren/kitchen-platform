@@ -1368,11 +1368,23 @@ def report(
         str, typer.Option("--format", help="Output format: github, plain")
     ] = "github",
     compare: Annotated[
-        str | None, typer.Option("--compare", help="Path to base metrics.json for delta comparison")
+        str | None,
+        typer.Option(
+            "--compare",
+            help=(
+                "Baseline for delta comparison: a path to a base metrics.json, or the "
+                "literal 'champion' to auto-fetch the registry champion's metrics (GH-011)."
+            ),
+        ),
+    ] = None,
+    model_name: Annotated[
+        str | None,
+        typer.Option("--model-name", help="Registered model name for --compare champion lookup"),
     ] = None,
 ) -> None:
     """Write a metrics summary to stdout (pipe to $GITHUB_STEP_SUMMARY in CI)."""
     import json
+    import os
 
     metrics_path = Path(metrics_file)
     if not metrics_path.exists():
@@ -1385,19 +1397,6 @@ def report(
         typer.echo(f"error: could not parse {metrics_file}: {exc}", err=True)
         raise typer.Exit(1)
 
-    base_metrics: dict | None = None
-    if compare is not None:
-        compare_path = Path(compare)
-        if not compare_path.exists():
-            typer.echo(f"error: compare file {compare} not found", err=True)
-            raise typer.Exit(1)
-        try:
-            base_metrics = json.loads(compare_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            typer.echo(f"error: could not parse {compare}: {exc}", err=True)
-            raise typer.Exit(1)
-        base_metrics.pop("_run", None)
-
     experiment = "unknown"
     cfg = None
     params_path = Path(params_file)
@@ -1409,6 +1408,37 @@ def report(
             experiment = cfg.experiment
         except Exception:
             pass
+
+    base_metrics: dict | None = None
+    if compare == "champion":
+        # GH-011: auto-fetch the registry champion's metrics as the baseline.
+        # No champion (e.g. the first PR before any promote) is not an error —
+        # warn and fall back to a plain single-column report so CI stays green.
+        from kitchen.registry import get_champion_metrics
+        from kitchen.tracking import configure_from_env
+
+        configure_from_env()
+        resolved_name = model_name or os.environ.get(
+            "MLFLOW_MODEL_NAME", f"{experiment}-model"
+        )
+        base_metrics = get_champion_metrics(resolved_name)
+        if base_metrics is None:
+            typer.echo(
+                f"warning: no champion registered for {resolved_name!r} — "
+                "skipping comparison (run `kitchen promote` first).",
+                err=True,
+            )
+    elif compare is not None:
+        compare_path = Path(compare)
+        if not compare_path.exists():
+            typer.echo(f"error: compare file {compare} not found", err=True)
+            raise typer.Exit(1)
+        try:
+            base_metrics = json.loads(compare_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            typer.echo(f"error: could not parse {compare}: {exc}", err=True)
+            raise typer.Exit(1)
+        base_metrics.pop("_run", None)
 
     run_meta = metrics.pop("_run", {}) if isinstance(metrics.get("_run"), dict) else {}
     run_name = run_meta.get("run_name") or run_meta.get("run_id", "")
