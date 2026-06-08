@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
@@ -486,3 +487,65 @@ def test_report_kaggle_score_with_threshold_violation(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "Kaggle Public Leaderboard" in result.output
     assert "Threshold Violations" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --compare champion (GH-011): auto-fetch champion baseline from the registry
+# ---------------------------------------------------------------------------
+
+
+def test_report_compare_champion_fetches_baseline(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.91})
+    (tmp_path / "params.yaml").write_text(MINIMAL_PARAMS)
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("kitchen.registry.get_champion_metrics", return_value={"accuracy": 0.88}),
+    ):
+        result = runner.invoke(app, ["report", "--compare", "champion"])
+    assert result.exit_code == 0, result.output
+    assert "| Metric | Base | PR | Delta |" in result.output
+    assert "0.880000" in result.output
+    assert "+0.030000" in result.output
+
+
+def test_report_compare_champion_resolves_model_name_from_experiment(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.91})
+    (tmp_path / "params.yaml").write_text(MINIMAL_PARAMS)
+    monkeypatch.delenv("MLFLOW_MODEL_NAME", raising=False)
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("kitchen.registry.get_champion_metrics", return_value={}) as mock_fetch,
+    ):
+        runner.invoke(app, ["report", "--compare", "champion"])
+    mock_fetch.assert_called_once_with("test-project-model")
+
+
+def test_report_compare_champion_model_name_override(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.91})
+    (tmp_path / "params.yaml").write_text(MINIMAL_PARAMS)
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("kitchen.registry.get_champion_metrics", return_value={}) as mock_fetch,
+    ):
+        runner.invoke(app, ["report", "--compare", "champion", "--model-name", "custom-model"])
+    mock_fetch.assert_called_once_with("custom-model")
+
+
+def test_report_compare_champion_no_champion_is_graceful(tmp_path, monkeypatch):
+    """The realistic SQLite-CI path: no champion → warn, exit 0, plain report."""
+    _write_metrics(tmp_path / "metrics.json", {"accuracy": 0.91})
+    (tmp_path / "params.yaml").write_text(MINIMAL_PARAMS)
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("kitchen.registry.get_champion_metrics", return_value=None),
+    ):
+        result = runner.invoke(app, ["report", "--compare", "champion"])
+    assert result.exit_code == 0
+    assert "no champion registered" in result.output
+    # Falls back to the single-column report — no delta table.
+    assert "| Metric | Base | PR | Delta |" not in result.output
+    assert "| Metric | Value |" in result.output

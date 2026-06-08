@@ -22,6 +22,13 @@ The workflow runs on every push to `main` and on every pull request:
 | PR comment | Posts (or updates) a comment with the metrics table and delta vs. `main` |
 | Artifacts | Uploads `metrics.json` and the Evidently HTML report as downloadable artifacts |
 
+### Comparison baseline
+
+`kitchen report` shows a delta column against a baseline. There are two ways to supply it:
+
+- **`--compare <path>`** — a base `metrics.json`. The scaffolded CI uses this, downloading the previous successful `main` run's `metrics.json` as a GitHub artifact. This is the default because the scaffold's MLflow store is local SQLite (`sqlite:///mlruns.db`), which is **not** persisted across CI jobs — so a PR job has no champion in the registry to compare against.
+- **`--compare champion`** (GH-011) — auto-fetches the registry champion's metrics. Use this when `MLFLOW_TRACKING_URI` points at a **remote** MLflow server (so the champion persists across runs), or locally/ad-hoc. If no champion is registered yet, it warns and falls back to a plain report (exit 0) rather than failing — so it's safe to wire into CI on a remote-tracking project.
+
 ## Secrets management
 
 ### Required secrets
