@@ -43,6 +43,13 @@ def test_script_carries_no_personal_values():
         assert needle not in text, f"personal value {needle!r} still present"
 
 
+def test_state_bucket_has_default_encryption():
+    # SEC-005: the state bucket enforces server-side encryption at rest.
+    text = SCRIPT.read_text()
+    assert "put-bucket-encryption" in text
+    assert "AES256" in text
+
+
 @pytest.mark.parametrize(
     "var",
     ["AWS_REGION", "CI_ROLE_NAME", "POLICY_NAME", "TF_STATE_BUCKET", "OIDC_THUMBPRINT"],

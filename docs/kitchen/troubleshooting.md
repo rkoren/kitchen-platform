@@ -141,6 +141,13 @@ mlflow:
 
 ## Terraform state
 
+The generated S3 backend encrypts state at rest (`encrypt = true`) and locks it using
+the S3-native lockfile (`use_lockfile = true`) — no DynamoDB table is required. The
+`bootstrap-aws.sh` state bucket also enables default SSE (AES256) and versioning.
+S3-native locking needs **Terraform >= 1.10**; the backend declares
+`required_version = ">= 1.10"`, so older Terraform fails `init` with a clear version
+error rather than running unlocked.
+
 ### `Error: No valid credential sources found`
 
 Terraform cannot authenticate to AWS when running `terraform apply`.

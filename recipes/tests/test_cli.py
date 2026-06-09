@@ -71,6 +71,19 @@ def test_generate_provider_contains_region(tmp_path):
     assert 'region = "eu-west-1"' in (out / "provider.tf").read_text()
 
 
+def test_generate_provider_hardens_backend(tmp_path):
+    """SEC-005/SEC-006: generated backend encrypts state and locks via S3 lockfile."""
+    spec = tmp_path / "infra.yaml"
+    spec.write_text("name: x\nregion: us-east-1\nresources: []\n")
+    out = tmp_path / "tf"
+    runner.invoke(app, ["generate", str(spec), "--out", str(out)])
+    provider = (out / "provider.tf").read_text()
+    assert "encrypt      = true" in provider, "state must be encrypted at rest (SEC-005)"
+    assert "use_lockfile = true" in provider, "state must use S3-native locking (SEC-006)"
+    # use_lockfile needs Terraform >= 1.10 — the gate must be explicit.
+    assert 'required_version = ">= 1.10"' in provider
+
+
 def test_generate_creates_resource_tf_files(tmp_path):
     spec = tmp_path / "infra.yaml"
     spec.write_text(VALID_SPEC)
