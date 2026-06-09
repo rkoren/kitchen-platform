@@ -35,18 +35,23 @@ resources: []
 
 ### `s3`
 
-Provisions an S3 bucket with optional versioning.
+Provisions an S3 bucket. Encryption and public-access-block are on by default
+(secure-by-default); set them to `false` to omit those resources.
 
 ```yaml
 - type: s3
   name: my-bucket
   versioning: true
+  lifecycle_expiration_days: 90   # expire objects after 90 days
 ```
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `name` | string | yes | — | Bucket name |
 | `versioning` | bool | no | `false` | Enable S3 versioning |
+| `encryption` | bool | no | `true` | Default SSE-S3 (AES256) encryption at rest |
+| `public_access_block` | bool | no | `true` | Block all public access (ACLs + policies) |
+| `lifecycle_expiration_days` | int | no | — | Expire objects after N days (omit for no lifecycle rule) |
 
 ---
 
@@ -58,7 +63,8 @@ Provisions an ECR repository for Docker images.
 - type: ecr
   name: my-project-serve
   scan_on_push: true
-  lambda_access: true     # adds resource policy so Lambda can pull images
+  lambda_access: true       # adds resource policy so Lambda can pull images
+  lifecycle_keep_last: 10   # expire all but the 10 most recent images
 ```
 
 | Field | Type | Required | Default | Description |
@@ -67,6 +73,7 @@ Provisions an ECR repository for Docker images.
 | `scan_on_push` | bool | no | `true` | Enable image vulnerability scanning on push |
 | `image_tag_mutability` | string | no | `"MUTABLE"` | `"MUTABLE"` or `"IMMUTABLE"` |
 | `lambda_access` | bool | no | `false` | Attach resource policy allowing Lambda to pull images from this repo |
+| `lifecycle_keep_last` | int | no | — | Keep only the N most recent images; expire older (omit for no lifecycle policy) |
 
 !!! tip
     Set `lambda_access: true` on any ECR repo that a Lambda function will pull from. This adds the `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, and `ecr:BatchCheckLayerAvailability` resource policies automatically.
@@ -139,6 +146,11 @@ Provisions a Lambda function. Supports both image-based (ECR) and zip-based depl
 | `memory` | int | no | `128` | Memory in MB |
 | `timeout` | int | no | `3` | Timeout in seconds |
 | `environment` | dict | no | `{}` | Environment variables injected at function invocation |
+| `function_url` | bool | no | `false` | Expose the function over HTTPS via a Lambda function URL |
+| `function_url_auth` | string | no | `"AWS_IAM"` | `"AWS_IAM"` (SigV4-signed) or `"NONE"` (public) — only used when `function_url: true` |
+
+!!! tip "Serving over HTTP"
+    Set `function_url: true` to get a direct HTTPS endpoint for the function — the simplest way to serve an inference Lambda. The URL is exposed as a Terraform output (`<name>_url`). Auth defaults to `AWS_IAM` (callers sign requests with SigV4); set `function_url_auth: NONE` for a public endpoint, which also adds the `lambda:InvokeFunctionUrl` permission for public access.
 
 !!! note "Package type"
     Set either image fields (`ecr_repo` or `image_uri`) **or** zip fields (`runtime` + `handler`), not both. `ecr_repo` and `image_uri` are mutually exclusive with `runtime`/`handler`.

@@ -20,16 +20,23 @@ recipes generate infra.yaml --out ./tf
 
 | Type | Description |
 |---|---|
-| `s3` | S3 bucket with optional versioning |
+| `s3` | S3 bucket — versioning, default encryption, public-access-block, lifecycle expiration |
+| `ecr` | ECR repository — scan-on-push, tag mutability, lifecycle policy, Lambda pull access |
 | `iam_role` | IAM role with assume-role policy and managed policy attachments |
-| `lambda` | Lambda function — image (ECR) or zip deployment |
+| `lambda` | Lambda function — image (ECR) or zip deployment, optional HTTPS function URL |
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `recipes generate SPEC` | Generate Terraform configs from a spec |
+| `recipes generate SPEC [--check] [--validate]` | Generate Terraform configs (optionally `terraform fmt`/`validate` the output) |
 | `recipes validate SPEC` | Validate a spec without generating files |
+| `recipes schema [--out PATH]` | Export the recipe YAML JSON Schema (draft 2020-12) |
+| `recipes doctor [--state-bucket B]` | Pre-flight checks: Terraform, AWS credentials, state-bucket access |
 | `recipes plan SPEC --state-bucket B` | Preview changes (`terraform plan`) without applying |
 | `recipes apply SPEC --state-bucket B` | Provision resources (`terraform apply`) |
 | `recipes destroy SPEC --state-bucket B` | Tear down all resources in the spec |
+
+## Examples
+
+See [`recipes/examples/`](https://github.com/rkoren/kitchen-platform/tree/main/recipes/examples) — including `ecr-lambda-inference-api.yaml`, a complete containerised model-inference API (ECR repo + Lambda behind an HTTPS function URL + an artifacts bucket).

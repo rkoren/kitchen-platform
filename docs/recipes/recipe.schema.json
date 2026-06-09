@@ -31,6 +31,18 @@
           "default": false,
           "title": "Lambda Access",
           "type": "boolean"
+        },
+        "lifecycle_keep_last": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lifecycle Keep Last"
         }
       },
       "required": [
@@ -154,6 +166,20 @@
           "default": {},
           "title": "Environment",
           "type": "object"
+        },
+        "function_url": {
+          "default": false,
+          "title": "Function Url",
+          "type": "boolean"
+        },
+        "function_url_auth": {
+          "default": "AWS_IAM",
+          "enum": [
+            "AWS_IAM",
+            "NONE"
+          ],
+          "title": "Function Url Auth",
+          "type": "string"
         }
       },
       "required": [
@@ -180,6 +206,28 @@
           "default": false,
           "title": "Versioning",
           "type": "boolean"
+        },
+        "encryption": {
+          "default": true,
+          "title": "Encryption",
+          "type": "boolean"
+        },
+        "public_access_block": {
+          "default": true,
+          "title": "Public Access Block",
+          "type": "boolean"
+        },
+        "lifecycle_expiration_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lifecycle Expiration Days"
         }
       },
       "required": [

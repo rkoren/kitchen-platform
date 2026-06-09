@@ -290,3 +290,113 @@ def test_generate_resource_dispatches_ecr():
 def test_generate_resource_dispatches_lambda():
     spec = LambdaSpec(type="lambda", name="fn", role="r", ecr_repo="my-repo")
     assert "aws_lambda_function" in generate_resource(spec)
+
+
+# --- S3: encryption / public access block / lifecycle (R-009) ---
+
+
+def test_s3_encryption_enabled_by_default():
+    out = s3_generate(S3Spec(type="s3", name="my-bucket"))
+    assert 'resource "aws_s3_bucket_server_side_encryption_configuration" "my_bucket"' in out
+    assert 'sse_algorithm = "AES256"' in out
+
+
+def test_s3_encryption_can_be_disabled():
+    out = s3_generate(S3Spec(type="s3", name="my-bucket", encryption=False))
+    assert "aws_s3_bucket_server_side_encryption_configuration" not in out
+
+
+def test_s3_public_access_block_enabled_by_default():
+    out = s3_generate(S3Spec(type="s3", name="my-bucket"))
+    assert 'resource "aws_s3_bucket_public_access_block" "my_bucket"' in out
+    assert "restrict_public_buckets = true" in out
+
+
+def test_s3_public_access_block_can_be_disabled():
+    out = s3_generate(S3Spec(type="s3", name="my-bucket", public_access_block=False))
+    assert "aws_s3_bucket_public_access_block" not in out
+
+
+def test_s3_no_lifecycle_by_default():
+    out = s3_generate(S3Spec(type="s3", name="my-bucket"))
+    assert "aws_s3_bucket_lifecycle_configuration" not in out
+
+
+def test_s3_lifecycle_expiration_days():
+    out = s3_generate(S3Spec(type="s3", name="my-bucket", lifecycle_expiration_days=30))
+    assert 'resource "aws_s3_bucket_lifecycle_configuration" "my_bucket"' in out
+    assert "days = 30" in out
+
+
+# --- ECR: lifecycle policy (R-010) ---
+
+
+def test_ecr_no_lifecycle_by_default():
+    out = ecr_generate(ECRSpec(type="ecr", name="my-repo"))
+    assert "aws_ecr_lifecycle_policy" not in out
+
+
+def test_ecr_lifecycle_keep_last():
+    out = ecr_generate(ECRSpec(type="ecr", name="my-repo", lifecycle_keep_last=5))
+    assert 'resource "aws_ecr_lifecycle_policy" "my_repo"' in out
+    assert "imageCountMoreThan" in out
+    assert "countNumber = 5" in out
+
+
+# --- Lambda: function URL (R-011) ---
+
+
+def test_lambda_no_function_url_by_default():
+    out = lambda_generate(LambdaSpec(type="lambda", name="fn", role="r", image_uri="x:latest"))
+    assert "aws_lambda_function_url" not in out
+    assert "aws_lambda_permission" not in out
+
+
+def test_lambda_function_url_defaults_to_iam_auth():
+    out = lambda_generate(
+        LambdaSpec(type="lambda", name="fn", role="r", image_uri="x:latest", function_url=True)
+    )
+    assert 'resource "aws_lambda_function_url" "fn"' in out
+    assert 'authorization_type = "AWS_IAM"' in out
+    # IAM-authed URLs need no public-invoke permission.
+    assert "aws_lambda_permission" not in out
+
+
+def test_lambda_function_url_public_adds_invoke_permission():
+    out = lambda_generate(
+        LambdaSpec(
+            type="lambda",
+            name="fn",
+            role="r",
+            image_uri="x:latest",
+            function_url=True,
+            function_url_auth="NONE",
+        )
+    )
+    assert 'authorization_type = "NONE"' in out
+    assert 'resource "aws_lambda_permission" "fn_url"' in out
+    assert "lambda:InvokeFunctionUrl" in out
+    assert 'principal              = "*"' in out
+
+
+def test_lambda_function_url_emits_output():
+    out = lambda_generate(
+        LambdaSpec(type="lambda", name="fn", role="r", image_uri="x:latest", function_url=True)
+    )
+    assert 'output "fn_url"' in out
+    assert "aws_lambda_function_url.fn.function_url" in out
+
+
+def test_lambda_environment_variables_aligned():
+    """Multiple env vars: the `=` align so `terraform fmt` is a no-op."""
+    spec = LambdaSpec(
+        type="lambda",
+        name="fn",
+        role="r",
+        image_uri="x:latest",
+        environment={"SHORT": "a", "MUCH_LONGER_KEY": "b"},
+    )
+    out = lambda_generate(spec)
+    var_lines = [ln for ln in out.splitlines() if ln.strip().endswith('"a"') or ln.strip().endswith('"b"')]
+    assert len(var_lines) == 2
+    assert len({ln.index("=") for ln in var_lines}) == 1, "env var `=` are not aligned"

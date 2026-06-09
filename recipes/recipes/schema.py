@@ -11,6 +11,11 @@ class S3Spec(BaseModel):
     type: Literal["s3"]
     name: str
     versioning: bool = False
+    # Secure-by-default; set false to omit the block.
+    encryption: bool = True  # SSE-S3 (AES256) default encryption
+    public_access_block: bool = True  # block all public access
+    # Expire objects after N days; omit for no lifecycle rule.
+    lifecycle_expiration_days: int | None = None
 
 
 class IAMRoleSpec(BaseModel):
@@ -30,6 +35,8 @@ class ECRSpec(BaseModel):
     scan_on_push: bool = True
     image_tag_mutability: Literal["MUTABLE", "IMMUTABLE"] = "MUTABLE"
     lambda_access: bool = False
+    # Keep only the most recent N images; omit for no lifecycle policy.
+    lifecycle_keep_last: int | None = None
 
 
 class LambdaSpec(BaseModel):
@@ -45,6 +52,10 @@ class LambdaSpec(BaseModel):
     image_uri: str | None = None
     ecr_repo: str | None = None  # logical name of an ecr resource; generates a TF reference
     environment: dict[str, str] = {}
+    # Expose the function over HTTPS via a Lambda function URL (opt-in).
+    function_url: bool = False
+    # Auth for the function URL; AWS_IAM (SigV4) by default, "NONE" for a public endpoint.
+    function_url_auth: Literal["AWS_IAM", "NONE"] = "AWS_IAM"
 
     @model_validator(mode="after")
     def _validate_package_type(self) -> "LambdaSpec":

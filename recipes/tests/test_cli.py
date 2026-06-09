@@ -1,7 +1,11 @@
 """Tests for the recipes CLI."""
 
+import shutil
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from recipes.cli import _refresh_tf_files, _workspace, app
@@ -366,3 +370,134 @@ def test_destroy_calls_terraform_destroy(tmp_path):
 
     calls = [c.args[0] for c in mock_popen.call_args_list]
     assert any("destroy" in c for c in calls)
+
+
+# ── R-004: terraform fmt / validate checks on generated HCL ──────────────────────
+
+
+@pytest.mark.skipif(shutil.which("terraform") is None, reason="terraform not installed")
+def test_generate_check_passes_on_generated_hcl(tmp_path):
+    """The generator must emit canonically-formatted HCL (terraform fmt -check)."""
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+    out = tmp_path / "tf"
+    result = runner.invoke(app, ["generate", str(spec), "--out", str(out), "--check"])
+    assert result.exit_code == 0, result.output
+    assert "terraform fmt" in result.output
+
+
+def test_generate_check_fails_when_terraform_missing(tmp_path):
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+    out = tmp_path / "tf"
+    with patch("recipes.cli.shutil.which", return_value=None):
+        result = runner.invoke(app, ["generate", str(spec), "--out", str(out), "--check"])
+    assert result.exit_code == 1
+    assert "terraform not found" in result.output
+    # Files are still generated before the check runs.
+    assert (out / "provider.tf").exists()
+
+
+# ── R-002: recipes doctor ────────────────────────────────────────────────────────
+
+
+def _fake_which(mapping):
+    return lambda name: mapping.get(name)
+
+
+def _fake_run(responses):
+    """Return a subprocess.run stub keyed on a substring of the command."""
+
+    def run(cmd, *args, **kwargs):
+        key = next((k for k in responses if k in cmd), None)
+        rc, out = responses.get(key, (0, ""))
+        return SimpleNamespace(returncode=rc, stdout=out, stderr="")
+
+    return run
+
+
+def test_doctor_all_present():
+    which = _fake_which({"terraform": "/usr/bin/terraform", "aws": "/usr/bin/aws"})
+    runs = _fake_run({
+        "version": (0, '{"terraform_version": "1.10.5"}'),
+        "sts": (0, "123456789012\n"),
+    })
+    with patch("recipes.cli.shutil.which", side_effect=which), \
+         patch("recipes.cli.subprocess.run", side_effect=runs):
+        result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 0, result.output
+    assert "All checks passed" in result.output
+    assert "123456789012" in result.output
+
+
+def test_doctor_fails_without_terraform():
+    which = _fake_which({"aws": "/usr/bin/aws"})  # no terraform
+    runs = _fake_run({"sts": (0, "123456789012\n")})
+    with patch("recipes.cli.shutil.which", side_effect=which), \
+         patch("recipes.cli.subprocess.run", side_effect=runs):
+        result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 1
+    assert "terraform not found" in result.output
+
+
+def test_doctor_fails_on_bad_aws_credentials():
+    which = _fake_which({"terraform": "/usr/bin/terraform", "aws": "/usr/bin/aws"})
+    runs = _fake_run({
+        "version": (0, '{"terraform_version": "1.10.5"}'),
+        "sts": (255, ""),  # get-caller-identity fails
+    })
+    with patch("recipes.cli.shutil.which", side_effect=which), \
+         patch("recipes.cli.subprocess.run", side_effect=runs):
+        result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 1
+    assert "AWS credentials not found" in result.output
+
+
+def test_doctor_warns_on_old_terraform():
+    which = _fake_which({"terraform": "/usr/bin/terraform", "aws": "/usr/bin/aws"})
+    runs = _fake_run({
+        "version": (0, '{"terraform_version": "1.9.8"}'),
+        "sts": (0, "123456789012\n"),
+    })
+    with patch("recipes.cli.shutil.which", side_effect=which), \
+         patch("recipes.cli.subprocess.run", side_effect=runs):
+        result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 0
+    assert "< 1.10" in result.output
+
+
+def test_doctor_checks_state_bucket_access():
+    which = _fake_which({"terraform": "/usr/bin/terraform", "aws": "/usr/bin/aws"})
+    runs = _fake_run({
+        "version": (0, '{"terraform_version": "1.10.5"}'),
+        "sts": (0, "123456789012\n"),
+        "head-bucket": (255, ""),  # bucket inaccessible
+    })
+    with patch("recipes.cli.shutil.which", side_effect=which), \
+         patch("recipes.cli.subprocess.run", side_effect=runs):
+        result = runner.invoke(app, ["doctor", "--state-bucket", "my-bucket"])
+    assert result.exit_code == 1
+    assert "cannot access state bucket" in result.output
+
+
+# ── R-006: ECR + Lambda inference API example ────────────────────────────────────
+
+_INFERENCE_EXAMPLE = Path(__file__).parent.parent / "examples" / "ecr-lambda-inference-api.yaml"
+
+
+def test_generate_inference_api_example(tmp_path):
+    out = tmp_path / "tf"
+    result = runner.invoke(app, ["generate", str(_INFERENCE_EXAMPLE), "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    lambda_tf = (out / "lambda-inference-api.tf").read_text()
+    assert "aws_lambda_function_url" in lambda_tf
+    assert 'output "inference_api_url"' in lambda_tf
+
+
+@pytest.mark.skipif(shutil.which("terraform") is None, reason="terraform not installed")
+def test_inference_api_example_is_canonical_hcl(tmp_path):
+    out = tmp_path / "tf"
+    result = runner.invoke(
+        app, ["generate", str(_INFERENCE_EXAMPLE), "--out", str(out), "--check"]
+    )
+    assert result.exit_code == 0, result.output

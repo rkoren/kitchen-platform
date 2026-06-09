@@ -1,0 +1,55 @@
+# Example: a containerised model-inference API on AWS Lambda.
+#
+# The serving image lives in ECR; a Lambda runs it behind an HTTPS function URL;
+# an S3 bucket holds model artifacts. This is the shape the kitchen serving stack
+# deploys to.
+#
+# Deploy:
+#   recipes doctor                                  # check Terraform + AWS creds
+#   recipes generate ecr-lambda-inference-api.yaml --out ./tf --validate
+#   recipes apply ecr-lambda-inference-api.yaml --state-bucket <your-tf-state-bucket>
+#
+# After apply, the endpoint is the `inference_api_url` Terraform output.
+#
+# NOTE: function_url_auth is set to NONE here so the endpoint is public and curl-able
+# for demonstration. For anything non-public, drop it (auth defaults to AWS_IAM) and
+# sign requests with SigV4.
+name: inference-api
+region: us-east-1
+
+resources:
+  # Model artifacts. Encryption + public-access-block are on by default; objects
+  # expire after a year.
+  - type: s3
+    name: inference-api-artifacts
+    versioning: true
+    lifecycle_expiration_days: 365
+
+  # Serving image repository. Immutable tags + keep only the 10 most recent images;
+  # lambda_access lets the function pull from it.
+  - type: ecr
+    name: inference-api
+    scan_on_push: true
+    image_tag_mutability: IMMUTABLE
+    lambda_access: true
+    lifecycle_keep_last: 10
+
+  - type: iam_role
+    name: inference-api-exec
+    service: lambda.amazonaws.com
+    policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # The function pulls the image from the ECR repo above (by logical name, so no
+  # hard-coded account ID) and is exposed over HTTPS.
+  - type: lambda
+    name: inference-api
+    role: inference-api-exec
+    ecr_repo: inference-api
+    memory: 1024
+    timeout: 30
+    function_url: true
+    function_url_auth: NONE
+    environment:
+      KITCHEN_MODEL_NAME: my-project
+      KITCHEN_PREDICTOR_DIR: /var/task/src/serve
