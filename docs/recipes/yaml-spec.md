@@ -2,6 +2,27 @@
 
 Every spec file has a root object with metadata and a list of resources.
 
+## Machine-readable schema
+
+This reference is generated from the same Pydantic models the CLI validates against.
+A JSON Schema (draft 2020-12) is exported by the CLI and checked in at
+[`recipe.schema.json`](recipe.schema.json):
+
+```bash
+recipes schema                       # print the schema to stdout
+recipes schema --out recipe.schema.json
+```
+
+Point your editor's YAML tooling at it for inline validation and autocompletion, e.g.
+with the VS Code YAML extension:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/rkoren/kitchen-platform/main/docs/recipes/recipe.schema.json
+name: my-project
+region: us-east-1
+resources: []
+```
+
 ## Root fields
 
 | Field | Type | Required | Default | Description |

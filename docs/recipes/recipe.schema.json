@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ECRSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "ecr",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "scan_on_push": {
+          "default": true,
+          "title": "Scan On Push",
+          "type": "boolean"
+        },
+        "image_tag_mutability": {
+          "default": "MUTABLE",
+          "enum": [
+            "MUTABLE",
+            "IMMUTABLE"
+          ],
+          "title": "Image Tag Mutability",
+          "type": "string"
+        },
+        "lambda_access": {
+          "default": false,
+          "title": "Lambda Access",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "name"
+      ],
+      "title": "ECRSpec",
+      "type": "object"
+    },
+    "IAMRoleSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "iam_role",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "service": {
+          "title": "Service",
+          "type": "string"
+        },
+        "policies": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Policies",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "service"
+      ],
+      "title": "IAMRoleSpec",
+      "type": "object"
+    },
+    "LambdaSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "lambda",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime"
+        },
+        "handler": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Handler"
+        },
+        "memory": {
+          "default": 128,
+          "title": "Memory",
+          "type": "integer"
+        },
+        "timeout": {
+          "default": 3,
+          "title": "Timeout",
+          "type": "integer"
+        },
+        "image_uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Uri"
+        },
+        "ecr_repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ecr Repo"
+        },
+        "environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Environment",
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "role"
+      ],
+      "title": "LambdaSpec",
+      "type": "object"
+    },
+    "S3Spec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "s3",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "versioning": {
+          "default": false,
+          "title": "Versioning",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "name"
+      ],
+      "title": "S3Spec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "region": {
+      "default": "us-east-1",
+      "title": "Region",
+      "type": "string"
+    },
+    "resources": {
+      "default": [],
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "ecr": "#/$defs/ECRSpec",
+            "iam_role": "#/$defs/IAMRoleSpec",
+            "lambda": "#/$defs/LambdaSpec",
+            "s3": "#/$defs/S3Spec"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/S3Spec"
+          },
+          {
+            "$ref": "#/$defs/IAMRoleSpec"
+          },
+          {
+            "$ref": "#/$defs/ECRSpec"
+          },
+          {
+            "$ref": "#/$defs/LambdaSpec"
+          }
+        ]
+      },
+      "title": "Resources",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "RecipeSpec",
+  "type": "object"
+}
