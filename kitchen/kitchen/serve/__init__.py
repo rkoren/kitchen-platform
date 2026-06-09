@@ -8,12 +8,15 @@ Public API::
 
     from kitchen.serve import load_predictor, load_predictor_bundle
     from kitchen.serve import PredictorBundle, PredictorLoadError, PredictFn
+    from kitchen.serve import lazy_model  # defer model load to first prediction
 """
 
 from kitchen.serve.loader import (
+    LazyModel,
     PredictFn,
     PredictorBundle,
     PredictorLoadError,
+    lazy_model,
     load_predictor,
     load_predictor_bundle,
 )
@@ -24,4 +27,6 @@ __all__ = [
     "PredictorBundle",
     "PredictorLoadError",
     "PredictFn",
+    "lazy_model",
+    "LazyModel",
 ]
