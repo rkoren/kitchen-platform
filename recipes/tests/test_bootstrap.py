@@ -13,9 +13,15 @@ import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "bootstrap-aws.sh"
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("bash") is None, reason="bash not available"
-)
+# The bootstrap script is intentionally gitignored (local-only), so it is absent in a
+# fresh CI checkout. Skip these guards when it isn't present rather than fail; they run
+# wherever the script exists (e.g. a maintainer's working tree).
+pytestmark = [
+    pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available"),
+    pytest.mark.skipif(
+        not SCRIPT.exists(), reason="scripts/bootstrap-aws.sh not present (gitignored, local-only)"
+    ),
+]
 
 
 def test_script_exists_and_executable():
