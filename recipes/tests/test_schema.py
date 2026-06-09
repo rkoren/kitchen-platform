@@ -246,3 +246,15 @@ def test_example_lambda_api_yaml_validates():
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)
     assert spec.name == "my-api"
+
+
+def test_example_inference_api_yaml_validates():
+    example = Path(__file__).parent.parent / "examples" / "ecr-lambda-inference-api.yaml"
+    data = yaml.safe_load(example.read_text())
+    spec = RecipeSpec.model_validate(data)
+    assert spec.name == "inference-api"
+    types = [r.type for r in spec.resources]
+    assert types == ["s3", "ecr", "iam_role", "lambda"]
+    lambda_spec = next(r for r in spec.resources if r.type == "lambda")
+    assert lambda_spec.function_url is True
+    assert lambda_spec.ecr_repo == "inference-api"

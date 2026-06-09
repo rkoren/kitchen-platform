@@ -81,6 +81,46 @@ def _run_tf(args: list[str], workspace: Path) -> int:
     return proc.returncode
 
 
+def _terraform_or_exit() -> str:
+    """Return the terraform binary path, or exit 1 with an install hint."""
+    tf = shutil.which("terraform")
+    if not tf:
+        console.print(
+            "[red]error:[/red] terraform not found on PATH. Install via: brew install hashicorp/tap/terraform"
+        )
+        raise typer.Exit(1)
+    return tf
+
+
+def _fmt_check(out_dir: Path) -> None:
+    """Fail if any generated .tf in out_dir is not canonically formatted (R-004)."""
+    tf = _terraform_or_exit()
+    rc = subprocess.run([tf, "fmt", "-check", "-diff", str(out_dir)], check=False).returncode
+    if rc != 0:
+        console.print("[red]✗[/red] generated HCL is not canonically formatted (see diff above)")
+        raise typer.Exit(rc)
+    console.print("  [green]✓[/green] terraform fmt")
+
+
+def _validate_hcl(out_dir: Path) -> None:
+    """Run `terraform validate` on out_dir (R-004) — downloads providers, needs network."""
+    tf = _terraform_or_exit()
+    init = subprocess.run(
+        [tf, f"-chdir={out_dir}", "init", "-backend=false", "-input=false", "-no-color"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if init.returncode != 0:
+        console.print(f"[red]✗[/red] terraform init failed:\n{init.stderr}")
+        raise typer.Exit(init.returncode)
+    rc = subprocess.run([tf, f"-chdir={out_dir}", "validate", "-no-color"], check=False).returncode
+    if rc != 0:
+        console.print("[red]✗[/red] terraform validate failed")
+        raise typer.Exit(rc)
+    console.print("  [green]✓[/green] terraform validate")
+
+
 def _tf_init(spec: RecipeSpec, workspace: Path, state_bucket: str) -> bool:
     """Run terraform init with S3 backend config. Returns True on success."""
     console.print(f"\n[bold]→ terraform init[/bold]  (workspace: {workspace})\n")
@@ -105,6 +145,14 @@ def _tf_init(spec: RecipeSpec, workspace: Path, state_bucket: str) -> bool:
 def generate(
     spec_path: str = typer.Argument(..., metavar="SPEC", help="Path to YAML spec file"),
     out: str = typer.Option("./tf", help="Output directory for generated configs"),
+    check: bool = typer.Option(
+        False, "--check", help="Run `terraform fmt -check` on the generated HCL"
+    ),
+    validate: bool = typer.Option(
+        False,
+        "--validate",
+        help="Run `terraform validate` on the generated HCL (downloads providers; needs network)",
+    ),
 ):
     """Generate Terraform configs from a YAML spec."""
     spec = _load_spec(spec_path)
@@ -120,6 +168,12 @@ def generate(
     total = len(spec.resources) + 1  # +1 for provider.tf
     console.print(f"\n[bold]Generated {total} file(s) → {out_dir}[/bold]")
 
+    # R-004: verify the generated HCL is canonical (and optionally valid).
+    if check or validate:
+        _fmt_check(out_dir)
+    if validate:
+        _validate_hcl(out_dir)
+
 
 @app.command()
 def validate(
@@ -128,6 +182,89 @@ def validate(
     """Validate a YAML spec without generating any files."""
     _load_spec(spec_path)
     console.print("[green]✓[/green] spec is valid")
+
+
+@app.command()
+def doctor(
+    state_bucket: str = typer.Option(
+        None,
+        envvar="RECIPES_STATE_BUCKET",
+        help="Optional: check read access to this Terraform state bucket",
+    ),
+):
+    """Pre-flight checks: Terraform, AWS credentials, and (optionally) state-bucket access.
+
+    Exits non-zero if a hard requirement (Terraform, AWS credentials) is missing, so it
+    can gate a CI job before `recipes plan`/`apply`.
+    """
+    ok = True
+
+    # Terraform — required, and >= 1.10 for the S3-native state locking the backend uses.
+    tf = shutil.which("terraform")
+    if tf:
+        ver = subprocess.run(
+            [tf, "version", "-json"], check=False, capture_output=True, text=True
+        )
+        version = ""
+        if ver.returncode == 0:
+            try:
+                version = json.loads(ver.stdout).get("terraform_version", "")
+            except json.JSONDecodeError:
+                version = ""
+        console.print(f"[green]✓[/green] terraform{f' {version}' if version else ''}")
+        if version and tuple(int(p) for p in version.split(".")[:2]) < (1, 10):
+            console.print(
+                "  [yellow]⚠[/yellow] terraform < 1.10 — the generated backend uses S3-native "
+                "state locking (use_lockfile), which needs >= 1.10"
+            )
+    else:
+        console.print("[red]✗[/red] terraform not found on PATH")
+        ok = False
+
+    # AWS credentials — required for plan/apply; checked via the AWS CLI.
+    aws = shutil.which("aws")
+    if not aws:
+        console.print(
+            "[yellow]⚠[/yellow] aws CLI not found — skipping credential check "
+            "(Terraform can still use environment credentials)"
+        )
+    else:
+        ident = subprocess.run(
+            [aws, "sts", "get-caller-identity", "--query", "Account", "--output", "text"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if ident.returncode == 0:
+            console.print(f"[green]✓[/green] AWS credentials (account {ident.stdout.strip()})")
+        else:
+            console.print("[red]✗[/red] AWS credentials not found or invalid")
+            ok = False
+
+    # State bucket — optional; only checked when configured.
+    if not state_bucket:
+        console.print(
+            "[yellow]⚠[/yellow] no state bucket configured "
+            "(pass --state-bucket or set RECIPES_STATE_BUCKET to check access)"
+        )
+    elif not aws:
+        console.print("[yellow]⚠[/yellow] state-bucket check skipped (aws CLI not found)")
+    else:
+        head = subprocess.run(
+            [aws, "s3api", "head-bucket", "--bucket", state_bucket],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if head.returncode == 0:
+            console.print(f"[green]✓[/green] state bucket accessible ({state_bucket})")
+        else:
+            console.print(f"[red]✗[/red] cannot access state bucket: {state_bucket}")
+            ok = False
+
+    if not ok:
+        raise typer.Exit(1)
+    console.print("\n[bold green]All checks passed[/bold green]")
 
 
 def _recipe_json_schema() -> dict:

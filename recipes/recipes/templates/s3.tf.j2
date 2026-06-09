@@ -10,3 +10,41 @@ resource "aws_s3_bucket_versioning" "{{ name | tf_id }}" {
   }
 }
 {% endif %}
+{% if encryption %}
+resource "aws_s3_bucket_server_side_encryption_configuration" "{{ name | tf_id }}" {
+  bucket = aws_s3_bucket.{{ name | tf_id }}.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+    bucket_key_enabled = true
+  }
+}
+{% endif %}
+{% if public_access_block %}
+resource "aws_s3_bucket_public_access_block" "{{ name | tf_id }}" {
+  bucket = aws_s3_bucket.{{ name | tf_id }}.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+{% endif %}
+{% if lifecycle_expiration_days %}
+resource "aws_s3_bucket_lifecycle_configuration" "{{ name | tf_id }}" {
+  bucket = aws_s3_bucket.{{ name | tf_id }}.id
+
+  rule {
+    id     = "expire-objects"
+    status = "Enabled"
+
+    filter {}
+
+    expiration {
+      days = {{ lifecycle_expiration_days }}
+    }
+  }
+}
+{% endif %}

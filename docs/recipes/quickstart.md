@@ -52,11 +52,29 @@ Output:
 Generated 4 file(s) → tf/
 ```
 
+Check that the generated HCL is canonically formatted (and optionally valid):
+
+```bash
+recipes generate infra.yaml --out ./tf --check      # terraform fmt -check
+recipes generate infra.yaml --out ./tf --validate   # also terraform validate (downloads providers)
+```
+
 ## Validate without generating
 
 ```bash
 recipes validate infra.yaml
 # ✓ spec is valid
+```
+
+## Pre-flight checks
+
+`recipes doctor` verifies your environment before `plan`/`apply` — Terraform (≥ 1.10 for
+the S3-native state locking the backend uses), AWS credentials, and optionally state-bucket
+access. It exits non-zero if a hard requirement is missing, so it can gate a CI job.
+
+```bash
+recipes doctor
+recipes doctor --state-bucket my-tf-state   # also check bucket access
 ```
 
 ## Apply with Terraform

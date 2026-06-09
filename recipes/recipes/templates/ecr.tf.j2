@@ -6,6 +6,24 @@ resource "aws_ecr_repository" "{{ name | tf_id }}" {
     scan_on_push = {{ scan_on_push | lower }}
   }
 }
+{% if lifecycle_keep_last %}
+resource "aws_ecr_lifecycle_policy" "{{ name | tf_id }}" {
+  repository = aws_ecr_repository.{{ name | tf_id }}.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep last {{ lifecycle_keep_last }} images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = {{ lifecycle_keep_last }}
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+{% endif %}
 {% if lambda_access %}
 resource "aws_ecr_repository_policy" "{{ name | tf_id }}" {
   repository = aws_ecr_repository.{{ name | tf_id }}.name
