@@ -1,0 +1,64 @@
+# Full serving stack for a Kaggle model deployed to AWS Lambda — the complete
+# target that kitchen's serving deployment provisions.
+#
+# What it provisions:
+#   - a data bucket and an MLflow artifact bucket (encrypted + public-access-blocked
+#     by default; artifacts expire after a year)
+#   - an ECR repo for the serving image (immutable tags, scan-on-push, keep last 5)
+#   - a least-privilege IAM role: AWS-managed basic Lambda execution PLUS a scoped
+#     inline policy granting read-only access to just the artifact bucket
+#   - a Lambda that pulls the image by reference, behind an IAM-authed HTTPS function
+#     URL, with 30-day CloudWatch log retention
+#
+# Deploy:
+#   recipes doctor                          # check Terraform + AWS credentials
+#   recipes generate kaggle-serving-stack.yaml --out ./tf --validate
+#   recipes apply kaggle-serving-stack.yaml --state-bucket <your-tf-state-bucket>
+#
+# The endpoint is the `titanic_serve_url` output. Auth is AWS_IAM, so sign requests
+# with SigV4; set function_url_auth: NONE for a public, curl-able endpoint.
+name: titanic
+region: us-east-1
+
+resources:
+  - type: s3
+    name: titanic-data
+    versioning: true
+
+  - type: s3
+    name: titanic-mlflow-artifacts
+    versioning: true
+    lifecycle_expiration_days: 365
+
+  - type: ecr
+    name: titanic-serve
+    scan_on_push: true
+    image_tag_mutability: IMMUTABLE
+    lambda_access: true
+    lifecycle_keep_last: 5
+
+  - type: iam_role
+    name: titanic-serve-exec
+    service: lambda.amazonaws.com
+    policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    inline_policies:
+      # Least privilege: read only the artifact bucket, not all of S3.
+      - name: artifact-bucket-read
+        actions: [s3:GetObject, s3:ListBucket]
+        resources:
+          - arn:aws:s3:::titanic-mlflow-artifacts
+          - arn:aws:s3:::titanic-mlflow-artifacts/*
+
+  - type: lambda
+    name: titanic-serve
+    role: titanic-serve-exec
+    ecr_repo: titanic-serve
+    memory: 1024
+    timeout: 30
+    function_url: true
+    log_retention_days: 30
+    environment:
+      KITCHEN_MODEL_NAME: titanic
+      KITCHEN_PREDICTOR_DIR: /var/task/src/serve
+      MLFLOW_TRACKING_URI: s3://titanic-mlflow-artifacts

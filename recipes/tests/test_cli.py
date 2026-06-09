@@ -501,3 +501,29 @@ def test_inference_api_example_is_canonical_hcl(tmp_path):
         app, ["generate", str(_INFERENCE_EXAMPLE), "--out", str(out), "--check"]
     )
     assert result.exit_code == 0, result.output
+
+
+# ── R-008: full Kaggle serving stack example ─────────────────────────────────────
+
+_SERVING_STACK_EXAMPLE = Path(__file__).parent.parent / "examples" / "kaggle-serving-stack.yaml"
+
+
+def test_generate_serving_stack_example(tmp_path):
+    out = tmp_path / "tf"
+    result = runner.invoke(app, ["generate", str(_SERVING_STACK_EXAMPLE), "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    # Exercises the full feature set across files.
+    assert (out / "s3-titanic-mlflow-artifacts.tf").exists()
+    assert "aws_iam_role_policy" in (out / "iam-role-titanic-serve-exec.tf").read_text()
+    lambda_tf = (out / "lambda-titanic-serve.tf").read_text()
+    assert "aws_cloudwatch_log_group" in lambda_tf
+    assert "aws_lambda_function_url" in lambda_tf
+
+
+@pytest.mark.skipif(shutil.which("terraform") is None, reason="terraform not installed")
+def test_serving_stack_example_is_canonical_hcl(tmp_path):
+    out = tmp_path / "tf"
+    result = runner.invoke(
+        app, ["generate", str(_SERVING_STACK_EXAMPLE), "--out", str(out), "--check"]
+    )
+    assert result.exit_code == 0, result.output

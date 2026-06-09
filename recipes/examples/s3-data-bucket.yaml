@@ -1,0 +1,16 @@
+# Example: a standalone S3 data bucket — the simplest recipes spec.
+#
+# Versioning guards against accidental overwrites; objects expire after two years.
+# Encryption (SSE-S3) and public-access-block are on by default, so the bucket is
+# private and encrypted at rest with no extra configuration.
+#
+# Deploy:
+#   recipes apply s3-data-bucket.yaml --state-bucket <your-tf-state-bucket>
+name: project-data
+region: us-east-1
+
+resources:
+  - type: s3
+    name: my-project-data
+    versioning: true
+    lifecycle_expiration_days: 730

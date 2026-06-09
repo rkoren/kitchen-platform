@@ -258,3 +258,27 @@ def test_example_inference_api_yaml_validates():
     lambda_spec = next(r for r in spec.resources if r.type == "lambda")
     assert lambda_spec.function_url is True
     assert lambda_spec.ecr_repo == "inference-api"
+
+
+def test_example_s3_data_bucket_yaml_validates():
+    example = Path(__file__).parent.parent / "examples" / "s3-data-bucket.yaml"
+    data = yaml.safe_load(example.read_text())
+    spec = RecipeSpec.model_validate(data)
+    assert [r.type for r in spec.resources] == ["s3"]
+    bucket = spec.resources[0]
+    assert bucket.versioning is True
+    assert bucket.lifecycle_expiration_days == 730
+
+
+def test_example_serving_stack_yaml_validates():
+    example = Path(__file__).parent.parent / "examples" / "kaggle-serving-stack.yaml"
+    data = yaml.safe_load(example.read_text())
+    spec = RecipeSpec.model_validate(data)
+    assert spec.name == "titanic"
+    # Two buckets, an ECR repo, a role, and the serving Lambda.
+    assert [r.type for r in spec.resources] == ["s3", "s3", "ecr", "iam_role", "lambda"]
+    role = next(r for r in spec.resources if r.type == "iam_role")
+    assert role.inline_policies[0].name == "artifact-bucket-read"  # R-013 scoped access
+    fn = next(r for r in spec.resources if r.type == "lambda")
+    assert fn.log_retention_days == 30  # R-012
+    assert fn.function_url is True  # R-011
