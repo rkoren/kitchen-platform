@@ -1051,10 +1051,14 @@ If either is absent the endpoint accepts and returns raw dicts.
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Uncomment once your champion model is promoted to the registry:
+# Uncomment once your champion model is promoted to the registry.
+# lazy_model defers the (slow) load to the first prediction instead of import
+# time, so Lambda cold starts are faster; it loads once and caches thereafter.
 # ---------------------------------------------------------------------------
 # import mlflow
-# model = mlflow.pyfunc.load_model(\"models:/$name-model@champion\")
+# from kitchen.serve import lazy_model
+# model = lazy_model(lambda: mlflow.pyfunc.load_model(\"models:/$name-model@champion\"))
+# # model.predict(...) works transparently and triggers the load on first use.
 
 # ---------------------------------------------------------------------------
 # Optional: typed OpenAPI schema (requires pydantic, already a FastAPI dep)

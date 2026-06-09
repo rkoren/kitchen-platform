@@ -127,9 +127,13 @@ A complete example loading the MLflow champion model:
 ```python
 import mlflow
 from pydantic import BaseModel
+from kitchen.serve import lazy_model
 
-# Load champion at module startup — happens once per Lambda cold start
-model = mlflow.sklearn.load_model("models:/my-project@champion")
+# lazy_model defers the load to the first prediction instead of module import,
+# so Lambda cold starts are faster; it loads once and caches thereafter.
+# (Use mlflow.pyfunc.load_model for flavor-agnostic loading if you don't need
+# predict_proba.)
+model = lazy_model(lambda: mlflow.sklearn.load_model("models:/my-project@champion"))
 
 # Optional: expose feature list on GET /metadata
 FEATURES = ["home_court", "elo_diff", "pace", "fg_pct_diff"]

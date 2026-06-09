@@ -46,6 +46,17 @@ jobs:
       - name: Test
         run: pytest tests/ -v --cov=kitchen
 
+  # S-008: build the framework serving image on every push/PR (no AWS). Catches
+  # dependency drift, a broken COPY context, and base-image deprecation before a
+  # deploy. (Container start + /health smoke check is a follow-up — see backlog.)
+  serving-image-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build serving image
+        run: docker build -f kitchen/kitchen/serve/Dockerfile kitchen/
+
   docker-build:
     runs-on: ubuntu-latest
     needs: infra-apply

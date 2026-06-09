@@ -35,9 +35,61 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 PredictFn = Callable[[dict], dict]
+
+
+class LazyModel:
+    """A model proxy that defers an expensive load until first use (S-005).
+
+    On Lambda, loading the champion at predictor-module import runs during cold
+    start before the handler is ready. Wrapping the load in ``lazy_model`` moves
+    it to the first prediction and caches it for the life of the (warm) process::
+
+        from kitchen.serve import lazy_model
+        import mlflow
+
+        model = lazy_model(lambda: mlflow.pyfunc.load_model("models:/proj@champion"))
+
+        def predict(payload: dict) -> dict:
+            features = [[payload["a"], payload["b"]]]
+            return {"label": int(model.predict(features)[0])}  # loads on first call
+
+    Attribute access proxies transparently to the underlying model, so
+    ``model.predict(...)`` works as if it were the model itself. The loader runs
+    at most once; access ``loaded`` to check status or ``unwrap()`` to force it.
+    """
+
+    def __init__(self, loader: Callable[[], Any]) -> None:
+        object.__setattr__(self, "_loader", loader)
+        object.__setattr__(self, "_model", None)
+
+    def _ensure(self) -> Any:
+        if self._model is None:
+            object.__setattr__(self, "_model", self._loader())
+        return self._model
+
+    def unwrap(self) -> Any:
+        """Force the load and return the underlying model."""
+        return self._ensure()
+
+    @property
+    def loaded(self) -> bool:
+        """True once the model has been loaded."""
+        return self._model is not None
+
+    def __getattr__(self, name: str) -> Any:
+        # Only reached for attributes not found normally (e.g. ``predict``).
+        return getattr(self._ensure(), name)
+
+
+def lazy_model(loader: Callable[[], Any]) -> LazyModel:
+    """Wrap a model-loading callable so the load is deferred until first use.
+
+    See :class:`LazyModel`.
+    """
+    return LazyModel(loader)
 
 _DEFAULT_FILENAME = "predictor.py"
 

@@ -459,3 +459,51 @@ def test_bundle_features_mixed_types_raises(tmp_path):
     )
     with pytest.raises(PredictorLoadError, match="FEATURES"):
         load_predictor_bundle(predictor_dir=tmp_path)
+
+
+# --- lazy_model (S-005) ---
+
+
+def test_lazy_model_defers_load_until_first_use():
+    from kitchen.serve import lazy_model
+
+    calls = {"n": 0}
+
+    def loader():
+        calls["n"] += 1
+        return object()
+
+    m = lazy_model(loader)
+    assert m.loaded is False
+    assert calls["n"] == 0  # not loaded at construction
+
+
+def test_lazy_model_proxies_attributes_and_loads_once():
+    from kitchen.serve import lazy_model
+
+    calls = {"n": 0}
+
+    class Model:
+        def predict(self, X):
+            return [sum(X[0])]
+
+    def loader():
+        calls["n"] += 1
+        return Model()
+
+    m = lazy_model(loader)
+    assert m.predict([[1, 2, 3]]) == [6]  # transparent proxy triggers load
+    assert m.loaded is True
+    assert calls["n"] == 1
+    m.predict([[4, 5]])  # cached
+    m.unwrap()
+    assert calls["n"] == 1  # never reloads
+
+
+def test_lazy_model_unwrap_returns_underlying():
+    from kitchen.serve import lazy_model
+
+    sentinel = object()
+    m = lazy_model(lambda: sentinel)
+    assert m.unwrap() is sentinel
+    assert m.loaded is True
