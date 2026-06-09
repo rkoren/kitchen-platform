@@ -580,6 +580,57 @@ def set_seed(seed: int = 42) -> None:
 # ---------------------------------------------------------------------------
 
 
+class _TemperatureScaledClassifier:
+    """Drop-in classifier wrapper that divides logits by a learned temperature.
+
+    Returned by :func:`calibrate_model` with ``method="temperature"``. Exposes
+    ``predict_proba``, ``predict``, and ``classes_`` so it substitutes for the
+    original model. Defined at module level (not nested) so it pickles for
+    MLflow logging.
+    """
+
+    def __init__(self, model: "Any", temperature: float, classes: "Any") -> None:
+        self.model = model
+        self.temperature = float(temperature)
+        self.classes_ = classes
+
+    def predict_proba(self, X: "ArrayLike") -> "np.ndarray":
+        proba = np.asarray(self.model.predict_proba(X), dtype=float)
+        logits = np.log(np.clip(proba, 1e-12, 1.0)) / self.temperature
+        logits -= logits.max(axis=1, keepdims=True)
+        exp = np.exp(logits)
+        return exp / exp.sum(axis=1, keepdims=True)
+
+    def predict(self, X: "ArrayLike") -> "np.ndarray":
+        return self.classes_[np.argmax(self.predict_proba(X), axis=1)]
+
+
+def _fit_temperature(model: "Any", X_cal: "ArrayLike", y_cal: "ArrayLike") -> "_TemperatureScaledClassifier":
+    """Learn a single temperature T minimising log-loss on the calibration set."""
+    if not hasattr(model, "predict_proba"):
+        raise ValueError(
+            "temperature scaling requires a model with predict_proba; "
+            "use method='sigmoid' for decision_function-only models"
+        )
+    from scipy.optimize import minimize_scalar
+    from sklearn.metrics import log_loss
+
+    y = np.asarray(y_cal)
+    classes = getattr(model, "classes_", None)
+    classes = np.asarray(classes) if classes is not None else np.unique(y)
+    logits = np.log(np.clip(np.asarray(model.predict_proba(X_cal), dtype=float), 1e-12, 1.0))
+
+    def nll(temp: float) -> float:
+        scaled = logits / temp
+        scaled -= scaled.max(axis=1, keepdims=True)
+        exp = np.exp(scaled)
+        proba = exp / exp.sum(axis=1, keepdims=True)
+        return log_loss(y, proba, labels=classes)
+
+    res = minimize_scalar(nll, bounds=(1e-2, 1e2), method="bounded")
+    return _TemperatureScaledClassifier(model, res.x, classes)
+
+
 def calibrate_model(
     model: "Any",
     X_cal: "ArrayLike",
@@ -607,6 +658,12 @@ def calibrate_model(
       calibration sets (hundreds of samples), works with any classifier.
     * ``"isotonic"`` — isotonic regression; more flexible but requires >1 000
       calibration samples to avoid overfitting.
+    * ``"temperature"`` — temperature scaling; learns a single scalar ``T`` and
+      returns ``softmax(log(p) / T)``. Operates on the model's existing
+      probability outputs rather than refitting, so it is fast and works for
+      XGBoost / non-sklearn models where ``CalibratedClassifierCV`` is slow or
+      inapplicable. Preserves the ranking (and therefore AUC) exactly. ``cv`` is
+      ignored for this method. Requires the model to expose ``predict_proba``.
 
     Args:
         model: A fitted sklearn-compatible classifier with a ``predict_proba``
@@ -614,8 +671,8 @@ def calibrate_model(
         X_cal: Calibration features, shape ``(n, p)``.  Should be a held-out
             split **not** used during training.
         y_cal: Calibration labels, shape ``(n,)``.
-        method: Calibration method — ``"sigmoid"`` (Platt, default) or
-            ``"isotonic"``.
+        method: Calibration method — ``"sigmoid"`` (Platt, default),
+            ``"isotonic"``, or ``"temperature"`` (temperature scaling).
         cv: Cross-validation strategy passed to ``CalibratedClassifierCV``.
             ``None`` (default) calibrates on the provided data without
             refitting the base estimator.  Pass an integer for CV-based
@@ -627,7 +684,9 @@ def calibrate_model(
         drop-in replacement for the original model.
 
     Raises:
-        ValueError: If *method* is not ``"sigmoid"`` or ``"isotonic"``.
+        ValueError: If *method* is not ``"sigmoid"``, ``"isotonic"``, or
+            ``"temperature"``, or if ``"temperature"`` is used with a model that
+            has no ``predict_proba``.
 
     Example::
 
@@ -651,8 +710,15 @@ def calibrate_model(
             y_proba=proba,
         )
     """
-    if method not in ("sigmoid", "isotonic"):
-        raise ValueError(f"method must be 'sigmoid' or 'isotonic', got {method!r}")
+    if method not in ("sigmoid", "isotonic", "temperature"):
+        raise ValueError(
+            f"method must be 'sigmoid', 'isotonic', or 'temperature', got {method!r}"
+        )
+
+    if method == "temperature":
+        # Post-hoc single-parameter scaling on the model's own probabilities;
+        # cv does not apply (nothing is refit), so it is ignored here.
+        return _fit_temperature(model, X_cal, y_cal)
 
     from sklearn.calibration import CalibratedClassifierCV
 

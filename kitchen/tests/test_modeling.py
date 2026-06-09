@@ -1019,6 +1019,73 @@ def test_calibrate_invalid_method_raises(fitted_lr, cal_data):
         calibrate_model(fitted_lr, X_cal, y_cal, method="platt")
 
 
+# --- temperature scaling (M-013) ---
+
+
+def test_calibrate_temperature_is_drop_in(fitted_lr, cal_data):
+    X_cal, y_cal = cal_data
+    cal_model = calibrate_model(fitted_lr, X_cal, y_cal, method="temperature")
+    assert hasattr(cal_model, "predict_proba")
+    assert hasattr(cal_model, "predict")
+    assert hasattr(cal_model, "classes_")
+    proba = cal_model.predict_proba(X_cal)
+    assert proba.shape == (len(y_cal), 2)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-6)
+    assert proba.min() >= 0.0 and proba.max() <= 1.0
+
+
+def test_calibrate_temperature_preserves_ranking(fitted_lr, cal_data):
+    """Temperature scaling is monotonic, so it must not change AUC (the ranking)."""
+    from sklearn.metrics import roc_auc_score
+
+    X_cal, y_cal = cal_data
+    base_proba = fitted_lr.predict_proba(X_cal)[:, 1]
+    cal_model = calibrate_model(fitted_lr, X_cal, y_cal, method="temperature")
+    cal_proba = cal_model.predict_proba(X_cal)[:, 1]
+    assert roc_auc_score(y_cal, base_proba) == pytest.approx(
+        roc_auc_score(y_cal, cal_proba), abs=1e-9
+    )
+
+
+def test_calibrate_temperature_improves_overconfident_logloss():
+    """On an overconfident model, temperature scaling should lower log-loss."""
+    from sklearn.datasets import make_classification
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import log_loss
+
+    X, y = make_classification(n_samples=1500, n_features=8, random_state=0)
+
+    base = LogisticRegression(max_iter=500).fit(X[:1000], y[:1000])
+
+    class _Sharp:
+        classes_ = base.classes_
+
+        def predict_proba(self, X):
+            p = base.predict_proba(X) ** 3
+            return p / p.sum(axis=1, keepdims=True)
+
+    sharp = _Sharp()
+    Xte, yte = X[1200:], y[1200:]
+    cal = calibrate_model(sharp, X[1000:1200], y[1000:1200], method="temperature")
+    before = log_loss(yte, sharp.predict_proba(Xte)[:, 1])
+    after = log_loss(yte, cal.predict_proba(Xte)[:, 1])
+    assert after < before
+    assert cal.temperature > 1.0  # softening an overconfident model
+
+
+def test_calibrate_temperature_requires_predict_proba(cal_data):
+    X_cal, y_cal = cal_data
+
+    class _NoProba:
+        classes_ = np.array([0, 1])
+
+        def decision_function(self, X):
+            return np.zeros(len(X))
+
+    with pytest.raises(ValueError, match="requires a model with predict_proba"):
+        calibrate_model(_NoProba(), X_cal, y_cal, method="temperature")
+
+
 
 
 # ---------------------------------------------------------------------------

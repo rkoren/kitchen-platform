@@ -234,7 +234,7 @@ aws lambda wait function-updated --function-name my-model-serve
 
 ## Part 7 — Enable a Function URL and test
 
-In the AWS console, go to **Lambda → my-model-serve → Configuration → Function URL** and create a URL (auth type: `NONE` for public, `AWS_IAM` for authenticated). Copy the URL.
+Declare the function URL in your `recipes` spec — add `function_url: true` (and `function_url_auth: NONE` for public, or the default `AWS_IAM` for authenticated) to the `lambda` resource, then `recipes apply`. The endpoint comes back as the `<name>_url` Terraform output. (You can also create it by hand in the console under **Lambda → Configuration → Function URL**.) See [Exposing the API over HTTP](model-serving.md#exposing-the-api-over-http) for the auth details and SigV4 curl recipe.
 
 ```bash
 URL="https://abc123.lambda-url.us-east-1.on.aws"
