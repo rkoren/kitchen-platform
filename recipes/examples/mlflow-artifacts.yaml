@@ -1,0 +1,17 @@
+# Example: an S3 bucket for MLflow artifacts (models, plots, run files).
+#
+# Point kitchen at it via the `mlflow.artifact_bucket` param (or an MLflow tracking
+# server's --default-artifact-root). Versioning is on so artifact history is kept;
+# there is intentionally NO lifecycle expiration here — registered model artifacts
+# are referenced by the registry and must not be auto-deleted. Encryption and
+# public-access-block are on by default.
+#
+# Deploy:
+#   recipes apply mlflow-artifacts.yaml --state-bucket <your-tf-state-bucket>
+name: mlflow-artifacts
+region: us-east-1
+
+resources:
+  - type: s3
+    name: my-project-mlflow-artifacts
+    versioning: true

@@ -42,5 +42,6 @@ recipes generate infra.yaml --out ./tf
 See [`recipes/examples/`](https://github.com/rkoren/kitchen-platform/tree/main/recipes/examples):
 
 - `s3-data-bucket.yaml` — a standalone S3 data bucket (versioning + lifecycle; encryption and public-access-block on by default). The simplest spec.
+- `mlflow-artifacts.yaml` — an S3 bucket for MLflow artifacts (versioned, no lifecycle expiration so registered model artifacts are never auto-deleted).
 - `ecr-lambda-inference-api.yaml` — a containerised model-inference API (ECR repo + Lambda behind an HTTPS function URL + an artifacts bucket).
 - `kaggle-serving-stack.yaml` — the full serving stack: data + MLflow artifact buckets, ECR with lifecycle, a least-privilege IAM role (managed + scoped inline policy), and a Lambda with function URL and log retention.
