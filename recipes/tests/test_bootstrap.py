@@ -52,19 +52,30 @@ def test_state_bucket_has_default_encryption():
 
 @pytest.mark.parametrize(
     "var",
-    ["AWS_REGION", "CI_ROLE_NAME", "POLICY_NAME", "TF_STATE_BUCKET", "OIDC_THUMBPRINT", "MAIN_BRANCH"],
+    ["AWS_REGION", "CI_ROLE_NAME", "POLICY_NAME", "TF_STATE_BUCKET", "OIDC_THUMBPRINT", "DEPLOY_ENVIRONMENT"],
 )
 def test_parameters_are_env_overridable(var):
     # Each tunable resolves via ${VAR:-default} so callers can override it.
     assert f"${{{var}:-" in SCRIPT.read_text()
 
 
+def test_ci_role_permissions_narrowed():
+    # SEC-004: ECR scoped to explicit actions (no ecr:*), and the IAM action set
+    # includes ListInstanceProfilesForRole (Terraform reads it on aws_iam_role refresh).
+    text = SCRIPT.read_text()
+    assert '"ecr:*"' not in text, "ECR should be scoped to explicit actions, not ecr:*"
+    assert "ecr:GetAuthorizationToken" in text and "ecr:PutImage" in text
+    assert "iam:ListInstanceProfilesForRole" in text
+
+
 def test_oidc_trust_restricts_subject():
-    # SEC-007: the CI role trust policy must not admit any ref from the repo —
-    # no `repo:...:*` wildcard; only the main branch and pull_request subjects.
+    # SEC-007/SEC-008: the CI role trust policy must not admit arbitrary refs —
+    # no `repo:...:*` wildcard and no bare branch ref; deploys are scoped to the
+    # protected environment, plus pull_request for the read-only plan job.
     text = SCRIPT.read_text()
     assert "repo:${GITHUB_REPO}:*" not in text, "blanket subject wildcard still present"
-    assert "repo:${GITHUB_REPO}:ref:refs/heads/${MAIN_BRANCH}" in text
+    assert "repo:${GITHUB_REPO}:ref:refs/heads/" not in text, "bare branch ref still grants access"
+    assert "repo:${GITHUB_REPO}:environment:${DEPLOY_ENVIRONMENT}" in text
     assert "repo:${GITHUB_REPO}:pull_request" in text
 
 

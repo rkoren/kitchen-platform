@@ -155,10 +155,27 @@ deploy:
 
 Use OIDC (`role-to-assume`) rather than long-lived access keys — it requires no stored secrets and automatically scopes permissions to the workflow run.
 
-The CI role's trust policy (created by `scripts/bootstrap-aws.sh`) is restricted to two
-subjects — pushes to the main branch and pull-request events — rather than a blanket
-`repo:<owner>/<repo>:*`, so arbitrary branches and tags can't assume it (SEC-007). If
-your default branch isn't `main`, set `MAIN_BRANCH` when running the bootstrap script.
+### Production environment protection (SEC-007 / SEC-008)
+
+The deploy jobs (`infra-apply`, `docker-build`, `lambda-deploy`) run under a GitHub
+Environment named `production`. The CI role's trust policy (created by
+`scripts/bootstrap-aws.sh`) admits only two OIDC subjects — rather than a blanket
+`repo:<owner>/<repo>:*`:
+
+- `repo:<owner>/<repo>:environment:production` — the gated deploy jobs
+- `repo:<owner>/<repo>:pull_request` — the read-only `infra-plan` job
+
+So arbitrary branches and tags can't assume the role, and a job can only deploy through
+the protected environment. One-time setup in **repo Settings → Environments**:
+
+1. Create an environment named `production` (override the name via `DEPLOY_ENVIRONMENT`
+   when bootstrapping if you use a different one).
+2. Add protection rules: **required reviewers** and a **deployment branch rule** limiting
+   it to `main`.
+
+**Order matters:** declaring `environment: production` changes the job's OIDC subject, so
+**re-run `scripts/bootstrap-aws.sh`** after adopting this so the trust policy admits the
+environment subject — otherwise the deploy jobs fail to assume the role.
 
 ---
 
