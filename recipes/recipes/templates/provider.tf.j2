@@ -1,4 +1,7 @@
 terraform {
+  # S3-native state locking (use_lockfile) requires Terraform >= 1.10.
+  required_version = ">= 1.10"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -6,9 +9,12 @@ terraform {
     }
   }
 
-  # Backend config is supplied at `terraform init` time via -backend-config flags.
+  # Bucket/key/region are supplied at `terraform init` time via -backend-config flags.
   # See: https://developer.hashicorp.com/terraform/language/settings/backends/configuration#partial-configuration
-  backend "s3" {}
+  backend "s3" {
+    encrypt      = true # SEC-005: encrypt state at rest (server-side encryption)
+    use_lockfile = true # SEC-006: S3-native state locking (no DynamoDB table needed)
+  }
 }
 
 provider "aws" {
