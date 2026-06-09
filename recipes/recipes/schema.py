@@ -18,13 +18,24 @@ class S3Spec(BaseModel):
     lifecycle_expiration_days: int | None = None
 
 
+class InlinePolicy(BaseModel):
+    """An inline allow policy for project-scoped access (e.g. a specific S3 bucket)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    actions: list[str]
+    resources: list[str]
+
+
 class IAMRoleSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["iam_role"]
     name: str
     service: str
-    policies: list[str] = []
+    policies: list[str] = []  # managed policy ARNs to attach
+    inline_policies: list[InlinePolicy] = []  # scoped allow policies (S3/model access)
 
 
 class ECRSpec(BaseModel):
@@ -56,6 +67,8 @@ class LambdaSpec(BaseModel):
     function_url: bool = False
     # Auth for the function URL; AWS_IAM (SigV4) by default, "NONE" for a public endpoint.
     function_url_auth: Literal["AWS_IAM", "NONE"] = "AWS_IAM"
+    # Retention for the function's CloudWatch log group; omit for default (never expire).
+    log_retention_days: int | None = None
 
     @model_validator(mode="after")
     def _validate_package_type(self) -> "LambdaSpec":

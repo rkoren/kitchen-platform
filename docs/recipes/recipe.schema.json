@@ -75,6 +75,14 @@
           },
           "title": "Policies",
           "type": "array"
+        },
+        "inline_policies": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/InlinePolicy"
+          },
+          "title": "Inline Policies",
+          "type": "array"
         }
       },
       "required": [
@@ -83,6 +91,37 @@
         "service"
       ],
       "title": "IAMRoleSpec",
+      "type": "object"
+    },
+    "InlinePolicy": {
+      "additionalProperties": false,
+      "description": "An inline allow policy for project-scoped access (e.g. a specific S3 bucket).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "resources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Resources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "actions",
+        "resources"
+      ],
+      "title": "InlinePolicy",
       "type": "object"
     },
     "LambdaSpec": {
@@ -180,6 +219,18 @@
           ],
           "title": "Function Url Auth",
           "type": "string"
+        },
+        "log_retention_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Log Retention Days"
         }
       },
       "required": [

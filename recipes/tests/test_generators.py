@@ -400,3 +400,51 @@ def test_lambda_environment_variables_aligned():
     var_lines = [ln for ln in out.splitlines() if ln.strip().endswith('"a"') or ln.strip().endswith('"b"')]
     assert len(var_lines) == 2
     assert len({ln.index("=") for ln in var_lines}) == 1, "env var `=` are not aligned"
+
+
+# --- Lambda: CloudWatch log retention (R-012) ---
+
+
+def test_lambda_no_log_group_by_default():
+    out = lambda_generate(LambdaSpec(type="lambda", name="fn", role="r", image_uri="x:latest"))
+    assert "aws_cloudwatch_log_group" not in out
+
+
+def test_lambda_log_retention_creates_log_group():
+    out = lambda_generate(
+        LambdaSpec(type="lambda", name="fn", role="r", image_uri="x:latest", log_retention_days=14)
+    )
+    assert 'resource "aws_cloudwatch_log_group" "fn"' in out
+    assert 'name              = "/aws/lambda/fn"' in out
+    assert "retention_in_days = 14" in out
+    # Function must depend on the managed group so Lambda doesn't race to create it.
+    assert "depends_on" in out
+    assert "aws_cloudwatch_log_group.fn," in out
+
+
+# --- IAM: inline policies (R-013) ---
+
+
+def test_iam_no_inline_policies_by_default():
+    out = iam_generate(IAMRoleSpec(type="iam_role", name="my-role", service="lambda.amazonaws.com"))
+    assert "aws_iam_role_policy" not in out  # also excludes the *_policy_attachment substring
+
+
+def test_iam_inline_policy_emits_role_policy():
+    spec = IAMRoleSpec(
+        type="iam_role",
+        name="my-role",
+        service="lambda.amazonaws.com",
+        inline_policies=[
+            {
+                "name": "artifacts",
+                "actions": ["s3:GetObject", "s3:ListBucket"],
+                "resources": ["arn:aws:s3:::b", "arn:aws:s3:::b/*"],
+            }
+        ],
+    )
+    out = iam_generate(spec)
+    assert 'resource "aws_iam_role_policy" "my_role_artifacts"' in out
+    assert 'name = "artifacts"' in out
+    assert '"s3:GetObject", "s3:ListBucket"' in out
+    assert '"arn:aws:s3:::b", "arn:aws:s3:::b/*"' in out
