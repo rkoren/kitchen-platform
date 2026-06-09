@@ -1,0 +1,100 @@
+name: release
+
+# Publish a single package to production PyPI when a per-package version tag is pushed.
+#
+# Versioning is independent per package (see docs/decisions/versioning.md), so tags are
+# namespaced by package:
+#   - kitchen-vX.Y.Z  -> publishes rkoren-kitchen  (built from kitchen/)
+#   - recipes-vX.Y.Z  -> publishes rkoren-recipes  (built from recipes/)
+#
+# The tag version must match the version in that package's pyproject.toml, or the run fails
+# before anything is built or published.
+#
+# Setup required (one-time, PER PACKAGE):
+#   1. Create the project on https://pypi.org (rkoren-kitchen AND rkoren-recipes).
+#   2. For EACH project, under Publishing → add a Trusted Publisher:
+#        Owner: rkoren   Repo: kitchen-platform   Workflow: release.yml   Environment: pypi
+#      Both projects must have their own entry — one missing entry means that package 403s
+#      while the other publishes fine.
+#   3. Create a GitHub environment named "pypi" (repo Settings → Environments).
+#      Add a deployment branch/tag rule restricting it to tags: kitchen-v* and recipes-v*.
+#      No secrets needed — OIDC + Trusted Publisher handles auth.
+#
+# To cut a release: bump the version in the package's pyproject.toml, merge, then
+#   git tag kitchen-v0.6.0 && git push origin kitchen-v0.6.0
+
+on:
+  push:
+    tags:
+      - "kitchen-v*"
+      - "recipes-v*"
+
+# A re-pushed tag should not race itself past the version guard.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      package: ${{ steps.resolve.outputs.package }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve package and verify tag matches pyproject version
+        id: resolve
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          case "$tag" in
+            kitchen-v*) package=kitchen; dir=kitchen; tag_version="${tag#kitchen-v}" ;;
+            recipes-v*) package=recipes; dir=recipes; tag_version="${tag#recipes-v}" ;;
+            *) echo "::error::Tag '$tag' does not match kitchen-v* or recipes-v*"; exit 1 ;;
+          esac
+
+          pyproject="${dir}/pyproject.toml"
+          pyproject_version="$(grep -E '^version = ' "$pyproject" | head -1 | sed -E 's/version = "(.*)"/\1/')"
+
+          if [ "$tag_version" != "$pyproject_version" ]; then
+            echo "::error::Version mismatch — tag '$tag' implies version $tag_version, but $pyproject says $pyproject_version. Bump $pyproject to match the tag (or retag)."
+            exit 1
+          fi
+
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "Releasing rkoren-$package version $tag_version"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build ${{ steps.resolve.outputs.package }}
+        run: python -m build "${{ steps.resolve.outputs.dir }}/" --outdir dist/
+
+      - name: Validate distributions
+        run: twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

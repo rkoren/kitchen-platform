@@ -62,7 +62,7 @@ feedback.md
 # Scripts
 scripts
 
-# Internal docs (files below are committed but excluded from the public nav)
+# Internal docs
 docs/decisions/
 docs/backlog.md
 docs/secondary-backlog.md
