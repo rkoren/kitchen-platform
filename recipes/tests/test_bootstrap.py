@@ -52,11 +52,20 @@ def test_state_bucket_has_default_encryption():
 
 @pytest.mark.parametrize(
     "var",
-    ["AWS_REGION", "CI_ROLE_NAME", "POLICY_NAME", "TF_STATE_BUCKET", "OIDC_THUMBPRINT"],
+    ["AWS_REGION", "CI_ROLE_NAME", "POLICY_NAME", "TF_STATE_BUCKET", "OIDC_THUMBPRINT", "MAIN_BRANCH"],
 )
 def test_parameters_are_env_overridable(var):
     # Each tunable resolves via ${VAR:-default} so callers can override it.
     assert f"${{{var}:-" in SCRIPT.read_text()
+
+
+def test_oidc_trust_restricts_subject():
+    # SEC-007: the CI role trust policy must not admit any ref from the repo —
+    # no `repo:...:*` wildcard; only the main branch and pull_request subjects.
+    text = SCRIPT.read_text()
+    assert "repo:${GITHUB_REPO}:*" not in text, "blanket subject wildcard still present"
+    assert "repo:${GITHUB_REPO}:ref:refs/heads/${MAIN_BRANCH}" in text
+    assert "repo:${GITHUB_REPO}:pull_request" in text
 
 
 def test_requires_github_repo_before_any_aws_call():
