@@ -40,8 +40,8 @@ def test_schema_stdout_is_valid_json_document():
     assert doc["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert doc["title"] == "RecipeSpec"
     assert set(doc["properties"]) == {"name", "region", "resources"}
-    # All four resource types are described.
-    assert set(doc["$defs"]) == {"S3Spec", "IAMRoleSpec", "ECRSpec", "LambdaSpec"}
+    # The four resource types (plus the InlinePolicy sub-model) are described.
+    assert {"S3Spec", "IAMRoleSpec", "ECRSpec", "LambdaSpec"} <= set(doc["$defs"])
 
 
 def test_exported_schema_is_itself_valid():

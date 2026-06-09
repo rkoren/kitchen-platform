@@ -91,6 +91,12 @@ Provisions an IAM role with an assume-role policy and optional managed policy at
   policies:
     - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
     - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+  inline_policies:
+    - name: artifacts-access      # scoped access to a specific bucket
+      actions: [s3:GetObject, s3:ListBucket]
+      resources:
+        - arn:aws:s3:::my-project-artifacts
+        - arn:aws:s3:::my-project-artifacts/*
 ```
 
 | Field | Type | Required | Default | Description |
@@ -98,6 +104,7 @@ Provisions an IAM role with an assume-role policy and optional managed policy at
 | `name` | string | yes | — | Role name |
 | `service` | string | yes | — | AWS service principal (e.g. `lambda.amazonaws.com`) |
 | `policies` | list[string] | no | `[]` | ARNs of managed policies to attach |
+| `inline_policies` | list[object] | no | `[]` | Scoped allow policies — each has `name`, `actions` (list), and `resources` (list of ARNs); use for project-specific S3/model access |
 
 ---
 
@@ -148,6 +155,7 @@ Provisions a Lambda function. Supports both image-based (ECR) and zip-based depl
 | `environment` | dict | no | `{}` | Environment variables injected at function invocation |
 | `function_url` | bool | no | `false` | Expose the function over HTTPS via a Lambda function URL |
 | `function_url_auth` | string | no | `"AWS_IAM"` | `"AWS_IAM"` (SigV4-signed) or `"NONE"` (public) — only used when `function_url: true` |
+| `log_retention_days` | int | no | — | Retention for the function's CloudWatch log group (omit to never expire) |
 
 !!! tip "Serving over HTTP"
     Set `function_url: true` to get a direct HTTPS endpoint for the function — the simplest way to serve an inference Lambda. The URL is exposed as a Terraform output (`<name>_url`). Auth defaults to `AWS_IAM` (callers sign requests with SigV4); set `function_url_auth: NONE` for a public endpoint, which also adds the `lambda:InvokeFunctionUrl` permission for public access.

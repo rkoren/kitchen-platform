@@ -22,14 +22,23 @@ resource "aws_lambda_function" "{{ name | tf_id }}" {
     }
   }
 {% endif %}
-{% if policy_count > 0 %}
+{% if policy_count > 0 or log_retention_days %}
   depends_on = [
 {%- for i in range(1, policy_count + 1) %}
     aws_iam_role_policy_attachment.{{ role | tf_id }}_{{ i }},
 {%- endfor %}
+{%- if log_retention_days %}
+    aws_cloudwatch_log_group.{{ name | tf_id }},
+{%- endif %}
   ]
 {% endif %}
 }
+{% if log_retention_days %}
+resource "aws_cloudwatch_log_group" "{{ name | tf_id }}" {
+  name              = "/aws/lambda/{{ name }}"
+  retention_in_days = {{ log_retention_days }}
+}
+{% endif %}
 {% if function_url %}
 resource "aws_lambda_function_url" "{{ name | tf_id }}" {
   function_name      = aws_lambda_function.{{ name | tf_id }}.function_name

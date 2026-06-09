@@ -19,3 +19,18 @@ resource "aws_iam_role_policy_attachment" "{{ name | tf_id }}_{{ loop.index }}" 
   policy_arn = "{{ arn }}"
 }
 {% endfor %}
+{% for p in inline_policies %}
+resource "aws_iam_role_policy" "{{ name | tf_id }}_{{ p.name | tf_id }}" {
+  name = "{{ p.name }}"
+  role = aws_iam_role.{{ name | tf_id }}.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = [{% for a in p.actions %}"{{ a }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+      Resource = [{% for r in p.resources %}"{{ r }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+    }]
+  })
+}
+{% endfor %}
