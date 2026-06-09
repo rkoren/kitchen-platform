@@ -16,6 +16,12 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=500]
 
+  # SEC-009: block secrets (AWS keys, tokens, private keys) before they're committed.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
   - repo: local
     hooks:
       - id: no-raw-data

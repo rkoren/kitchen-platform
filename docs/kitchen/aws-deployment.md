@@ -155,6 +155,11 @@ deploy:
 
 Use OIDC (`role-to-assume`) rather than long-lived access keys — it requires no stored secrets and automatically scopes permissions to the workflow run.
 
+The CI role's trust policy (created by `scripts/bootstrap-aws.sh`) is restricted to two
+subjects — pushes to the main branch and pull-request events — rather than a blanket
+`repo:<owner>/<repo>:*`, so arbitrary branches and tags can't assume it (SEC-007). If
+your default branch isn't `main`, set `MAIN_BRANCH` when running the bootstrap script.
+
 ---
 
 ## Next steps
