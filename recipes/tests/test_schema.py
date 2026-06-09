@@ -270,6 +270,17 @@ def test_example_s3_data_bucket_yaml_validates():
     assert bucket.lifecycle_expiration_days == 730
 
 
+def test_example_mlflow_artifacts_yaml_validates():
+    example = Path(__file__).parent.parent / "examples" / "mlflow-artifacts.yaml"
+    data = yaml.safe_load(example.read_text())
+    spec = RecipeSpec.model_validate(data)
+    assert [r.type for r in spec.resources] == ["s3"]
+    bucket = spec.resources[0]
+    assert bucket.versioning is True
+    # Model artifacts must not be auto-expired.
+    assert bucket.lifecycle_expiration_days is None
+
+
 def test_example_serving_stack_yaml_validates():
     example = Path(__file__).parent.parent / "examples" / "kaggle-serving-stack.yaml"
     data = yaml.safe_load(example.read_text())
