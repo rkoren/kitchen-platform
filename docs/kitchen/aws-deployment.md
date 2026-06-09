@@ -105,7 +105,7 @@ aws lambda wait function-updated --function-name my-project-serve
 
 ## Step 4 — Verify
 
-Test the health endpoint via the Lambda function URL (enable it in the console under **Configuration → Function URL**, or add it to your Terraform config):
+Test the health endpoint via the Lambda function URL. Declare the URL in your `recipes` spec (`function_url: true` on the `lambda` resource) rather than enabling it by hand — see [Exposing the API over HTTP](model-serving.md#exposing-the-api-over-http) for auth modes and the SigV4 curl recipe:
 
 ```bash
 FUNCTION_URL="https://abc123.lambda-url.us-east-1.on.aws"

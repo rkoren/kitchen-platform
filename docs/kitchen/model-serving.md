@@ -202,3 +202,66 @@ The scaffolded CI pipeline (`kitchen init --ci`) handles this automatically on e
 
 !!! tip
     Use `recipes` to provision the Lambda function and ECR repo — see the [recipes YAML spec reference](../recipes/yaml-spec.md) for the `ecr` + `lambda` resource configuration.
+
+---
+
+## Exposing the API over HTTP
+
+A Lambda function isn't reachable over HTTP until you put an endpoint in front of it.
+There are two options; for a single model-serving function, a **function URL** is the
+simplest and what the platform recommends.
+
+### Function URL (recommended)
+
+A [Lambda function URL](https://docs.aws.amazon.com/lambda/latest/dg/lambda-urls.html)
+is a dedicated HTTPS endpoint on the function itself — no extra infrastructure. Declare
+it on the `lambda` resource in your `recipes` spec rather than clicking through the
+console:
+
+```yaml
+- type: lambda
+  name: my-project-serve
+  role: my-project-exec
+  ecr_repo: my-project-serve
+  function_url: true              # provisions the HTTPS endpoint
+  function_url_auth: AWS_IAM      # default; use NONE for a public endpoint
+```
+
+`recipes` emits the function URL as the `<name>_url` Terraform output, so after `recipes
+apply` you get the endpoint directly:
+
+```bash
+terraform output my_project_serve_url
+# https://abc123.lambda-url.us-east-1.on.aws/
+```
+
+**Auth modes:**
+
+- `AWS_IAM` (default) — callers sign requests with SigV4. Secure by default; use for
+  internal/service-to-service calls. With curl: `--aws-sigv4 "aws:amz:<region>:lambda"`
+  plus `--user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY"` (add `-H "x-amz-security-token: $AWS_SESSION_TOKEN"` for temporary creds).
+- `NONE` — public endpoint, no auth. `recipes` also adds the required
+  `lambda:InvokeFunctionUrl` permission. Only use behind your own auth, or for demos.
+
+```bash
+FUNCTION_URL=$(terraform output -raw my_project_serve_url)
+curl ${FUNCTION_URL}health
+curl -X POST ${FUNCTION_URL}predict -H 'content-type: application/json' \
+  -d '{"instances": [{"feature_a": 1.0, "feature_b": 2.0}]}'
+```
+
+Runnable specs: [`ecr-lambda-inference-api.yaml`](https://github.com/rkoren/kitchen-platform/blob/main/recipes/examples/ecr-lambda-inference-api.yaml)
+(public) and [`kaggle-serving-stack.yaml`](https://github.com/rkoren/kitchen-platform/blob/main/recipes/examples/kaggle-serving-stack.yaml)
+(IAM-authed).
+
+### API Gateway (when you need more)
+
+Reach for [API Gateway](https://docs.aws.amazon.com/apigateway/) instead of a function
+URL when you need any of: a **custom domain**, **request throttling / usage plans / API
+keys**, **WAF** integration, request/response transformation, or fan-out to multiple
+backends. It's more moving parts (a REST or HTTP API, stages, routes, a Lambda
+integration, and `lambda:InvokeFunction` permission for the API).
+
+`recipes` doesn't generate API Gateway resources today — provision it with hand-written
+Terraform alongside the generated `tf/`, or open a request for an `api_gateway` resource
+type. For most single-model serving, the function URL above is sufficient.
