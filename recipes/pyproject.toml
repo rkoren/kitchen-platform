@@ -34,6 +34,7 @@ dev = [
     "pytest>=8.0",
     "pytest-cov",
     "ruff",
+    "jsonschema>=4.0",  # round-trip validation in test_schema_export.py
 ]
 
 [project.urls]

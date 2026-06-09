@@ -1,5 +1,6 @@
 """recipes CLI entry point."""
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -127,6 +128,35 @@ def validate(
     """Validate a YAML spec without generating any files."""
     _load_spec(spec_path)
     console.print("[green]✓[/green] spec is valid")
+
+
+def _recipe_json_schema() -> dict:
+    """RecipeSpec as a standalone JSON Schema document (draft 2020-12)."""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        **RecipeSpec.model_json_schema(),
+    }
+
+
+@app.command()
+def schema(
+    out: str = typer.Option(
+        None, "--out", "-o", metavar="PATH", help="Write schema to a file instead of stdout"
+    ),
+):
+    """Export the recipe YAML JSON Schema (draft 2020-12).
+
+    With no --out, prints the schema to stdout so it can be redirected or piped
+    (e.g. `recipes schema > recipe.schema.json`). Use the emitted file as a
+    `$schema` reference for editor validation and autocompletion of spec YAML.
+    """
+    text = json.dumps(_recipe_json_schema(), indent=2) + "\n"
+    if out:
+        Path(out).write_text(text, encoding="utf-8")
+        console.print(f"[green]✓[/green] wrote JSON Schema → {out}")
+    else:
+        # Plain stdout only — no decoration — so the output is a valid schema file.
+        typer.echo(text, nl=False)
 
 
 @app.command()
