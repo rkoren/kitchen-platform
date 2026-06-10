@@ -34,7 +34,7 @@ A two-module portfolio project bridging platform engineering with ML infrastruct
 | Data versioning | DVC + S3 |
 | Experiment tracking | MLflow |
 | Model serving | FastAPI + Docker → Lambda (ECR) |
-| Monitoring | Evidently AI |
+| Monitoring | Built-in drift stats (KS / χ² / PSI) |
 | Orchestration | Prefect |
 
 AWS-native where necessary; open-source tooling throughout.

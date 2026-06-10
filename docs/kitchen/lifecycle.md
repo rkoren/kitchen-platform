@@ -46,7 +46,7 @@ GET /health   GET /metadata   POST /predict   POST /predict/batch
      │  Live serving via Lambda + Function URL
      ▼
 kitchen run monitor
-     │  Generates Evidently drift report comparing reference vs current data
+     │  Generates a drift report comparing reference vs current data
      │  Uploads HTML report to S3 (or saves locally)
      ▼
 [repeat: new data → kitchen ingest → … → kitchen promote]
@@ -91,7 +91,7 @@ model = mlflow.sklearn.load_model("models:/my-project@champion")
 
 ### Monitoring loop
 
-After a model is live, `kitchen run monitor` compares a reference dataset (the training distribution) against current production inputs. The output is an Evidently HTML report that flags drift in any input feature or the label distribution. When drift is detected, the remediation path is: re-ingest → re-train → promote → redeploy.
+After a model is live, `kitchen run monitor` compares a reference dataset (the training distribution) against current production inputs. The output is an HTML drift report (KS / chi-square / PSI per column) that flags drift in any input feature or the label distribution. When drift is detected, the remediation path is: re-ingest → re-train → promote → redeploy.
 
 ---
 

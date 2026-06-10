@@ -20,7 +20,7 @@ The workflow runs on every push to `main` and on every pull request:
 | Submit *(optional)* | Runs `kitchen submit --wait` when triggered via `workflow_dispatch` |
 | Report | Runs `kitchen report` and appends to the GitHub Actions job summary |
 | PR comment | Posts (or updates) a comment with the metrics table and delta vs. `main` |
-| Artifacts | Uploads `metrics.json` and the Evidently HTML report as downloadable artifacts |
+| Artifacts | Uploads `metrics.json` and the HTML drift report as downloadable artifacts |
 
 ### Comparison baseline
 

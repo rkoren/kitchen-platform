@@ -90,3 +90,63 @@ def test_save_html_requires_run(frames, tmp_path):
     ref, cur = frames
     with pytest.raises(RuntimeError, match="run()"):
         DriftReport(ref, cur).save_html(str(tmp_path / "report.html"))
+
+
+# --- DIY drift statistics (KS / chi-square / PSI) ---
+
+
+def test_numerical_drift_detected():
+    ref = pd.DataFrame({"x": list(range(100))})
+    cur = pd.DataFrame({"x": list(range(300, 400))})  # disjoint -> clear drift
+    res = DriftReport(ref, cur).run().result
+    col = res.columns[0]
+    assert col.kind == "numerical" and col.test == "ks"
+    assert col.drifted is True
+    assert col.psi > 0.2
+
+
+def test_categorical_drift_detected():
+    ref = pd.DataFrame({"c": ["a"] * 90 + ["b"] * 10})
+    cur = pd.DataFrame({"c": ["a"] * 10 + ["b"] * 90})
+    res = DriftReport(ref, cur).run().result
+    col = res.columns[0]
+    assert col.kind == "categorical" and col.test == "chi2"
+    assert col.drifted is True
+
+
+def test_no_drift_on_identical_frames():
+    df = pd.DataFrame({"x": [1.0, 2, 3, 4, 5] * 20, "c": list("abcde") * 20})
+    res = DriftReport(df, df.copy()).run().result
+    assert res.n_drifted == 0
+    assert res.dataset_drift is False
+
+
+def test_auto_classifies_numeric_and_categorical():
+    df = pd.DataFrame({"num": [1.0, 2, 3], "cat": ["x", "y", "z"]})
+    res = DriftReport(df, df.copy()).run().result
+    assert {c.column: c.kind for c in res.columns} == {"num": "numerical", "cat": "categorical"}
+
+
+def test_dataset_drift_and_to_dict():
+    ref = pd.DataFrame({"a": list(range(100)), "b": list(range(100))})
+    cur = pd.DataFrame({"a": list(range(500, 600)), "b": list(range(500, 600))})
+    res = DriftReport(ref, cur).run().result
+    d = res.to_dict()
+    assert d["n_columns"] == 2 and d["n_drifted"] == 2
+    assert d["dataset_drift"] is True
+    assert d["share_drifted"] == 1.0
+    assert len(d["columns"]) == 2
+
+
+def test_as_html_shows_drift_status():
+    ref = pd.DataFrame({"x": list(range(100))})
+    cur = pd.DataFrame({"x": list(range(500, 600))})
+    out = DriftReport(ref, cur).run().as_html()
+    assert "DRIFT DETECTED" in out
+    assert "<table" in out
+
+
+def test_result_requires_run():
+    df = pd.DataFrame({"x": [1.0, 2, 3]})
+    with pytest.raises(RuntimeError, match="run()"):
+        DriftReport(df, df).result
