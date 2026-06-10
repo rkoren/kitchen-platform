@@ -696,12 +696,18 @@ def run_monitor(
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
 
-    from kitchen.flows.monitor_flow import monitor_pipeline
+    from kitchen.flows.monitor_flow import DriftThresholdExceeded, monitor_pipeline
 
     try:
         result = monitor_pipeline(params_file=params_file, local_path_override=local)
         if result:
             typer.echo(f"Report saved to: {result}")
+    except DriftThresholdExceeded as exc:
+        # The report was still written; surface where it is, then fail the run.
+        if exc.report_path:
+            typer.echo(f"Report saved to: {exc.report_path}")
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
     except ValueError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1)

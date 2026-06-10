@@ -11,8 +11,15 @@ Configure via params.yaml under the ``monitor`` key::
       local_path: monitoring/drift.html   # write locally (optional)
       report_bucket: my-bucket            # upload to S3 (optional)
       report_key: monitoring/drift.html   # S3 key (default: monitoring/drift_report.html)
+      drift_threshold: 0.05               # per-column p-value threshold (default 0.05)
+      fail_on_drift: true                 # exit non-zero when drift exceeds the share gate
+      max_drift_share: 0.5                # drifted-column share that trips the gate (default 0.5)
+      log_to_mlflow: true                 # log drift metrics + report artifacts to MLflow
+      mlflow_experiment: my-monitoring    # MLflow experiment (default: <experiment>-monitoring)
 
-At least one of ``local_path`` or ``report_bucket`` must be provided.
+At least one of ``local_path`` or ``report_bucket`` must be provided. With
+``fail_on_drift: true`` the report is still written, then the run fails if the
+share of drifted columns reaches ``max_drift_share``.
 """
 
 from __future__ import annotations
@@ -26,6 +33,14 @@ from kitchen.monitoring import DriftReport
 from kitchen.store import DataStore
 
 _log = logging.getLogger(__name__)
+
+
+class DriftThresholdExceeded(RuntimeError):
+    """Raised (after the report is written) when drift exceeds the configured gate."""
+
+    def __init__(self, message: str, report_path: str = "") -> None:
+        super().__init__(message)
+        self.report_path = report_path
 
 
 def _validate_output(monitor_cfg: dict) -> None:
@@ -49,8 +64,69 @@ def _load_current(store: DataStore, filename: str) -> object:
 
 
 @task(name="drift-report")
-def _run_drift_report(reference: object, current: object) -> DriftReport:
-    return DriftReport(reference, current).run()
+def _run_drift_report(
+    reference: object, current: object, drift_threshold: float = 0.05
+) -> DriftReport:
+    return DriftReport(reference, current, drift_threshold=drift_threshold).run()
+
+
+def _safe_metric_key(name: str) -> str:
+    """Sanitize a column name into a valid MLflow metric key."""
+    import re
+
+    return re.sub(r"[^a-zA-Z0-9_\-. :/]", "_", str(name))
+
+
+def _log_to_mlflow(report: DriftReport, monitor_cfg: dict, params: dict) -> None:
+    """MON-006: log drift summary metrics + the HTML/JSON report to MLflow."""
+    if not monitor_cfg.get("log_to_mlflow"):
+        return
+    import json
+    import tempfile
+    from pathlib import Path
+
+    import mlflow
+
+    from kitchen.tracking import Tracker, configure_from_env
+
+    configure_from_env()
+    experiment = monitor_cfg.get("mlflow_experiment") or f"{params.get('experiment', 'kitchen')}-monitoring"
+    result = report.result
+
+    metrics: dict[str, float] = {
+        "n_columns": float(result.n_columns),
+        "n_drifted": float(result.n_drifted),
+        "share_drifted": float(result.share_drifted),
+        "dataset_drift": 1.0 if result.dataset_drift else 0.0,
+    }
+    for col in result.columns:
+        metrics[f"psi.{_safe_metric_key(col.column)}"] = float(col.psi)
+
+    with Tracker(experiment).run(run_name="drift-monitor"):
+        mlflow.set_tag("run_type", "monitoring")
+        Tracker.log_metrics(metrics)
+        with tempfile.TemporaryDirectory() as td:
+            html_path = Path(td) / "drift_report.html"
+            html_path.write_text(report.as_html(), encoding="utf-8")
+            mlflow.log_artifact(str(html_path))
+            json_path = Path(td) / "drift.json"
+            json_path.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+            mlflow.log_artifact(str(json_path))
+    _log.info("Logged drift report to MLflow experiment %s", experiment)
+
+
+def _enforce_drift_gate(report: DriftReport, monitor_cfg: dict, report_path: str) -> None:
+    """MON-007: fail the run when drift exceeds the configured share gate."""
+    if not monitor_cfg.get("fail_on_drift"):
+        return
+    max_share = float(monitor_cfg.get("max_drift_share", 0.5))
+    result = report.result
+    if result.share_drifted >= max_share:
+        raise DriftThresholdExceeded(
+            f"data drift exceeded threshold: {result.n_drifted}/{result.n_columns} "
+            f"columns drifted (share {result.share_drifted:.0%} >= {max_share:.0%})",
+            report_path=report_path,
+        )
 
 
 @task(name="save-report")
@@ -92,8 +168,11 @@ def monitor_pipeline(params_file: str = "params.yaml", local_path_override: str 
 
     reference = _load_reference(store, monitor_cfg.get("reference_file", "reference.parquet"))
     current = _load_current(store, monitor_cfg.get("current_file", "current.parquet"))
-    report = _run_drift_report(reference, current)
-    return _save_report(report, monitor_cfg)
+    report = _run_drift_report(reference, current, float(monitor_cfg.get("drift_threshold", 0.05)))
+    out = _save_report(report, monitor_cfg)
+    _log_to_mlflow(report, monitor_cfg, params)  # no-op unless monitor.log_to_mlflow
+    _enforce_drift_gate(report, monitor_cfg, out)  # raises after the report is written
+    return out
 
 
 if __name__ == "__main__":

@@ -8,6 +8,9 @@ import pytest
 import yaml
 
 from kitchen.flows.monitor_flow import (
+    DriftThresholdExceeded,
+    _enforce_drift_gate,
+    _log_to_mlflow,
     _run_drift_report,
     _save_report,
     _validate_output,
@@ -190,3 +193,114 @@ def test_local_path_override_wins_over_params_local_path(frames, tmp_path):
     assert result == str(override_path)
     assert override_path.exists()
     assert not params_local.exists()
+
+
+# --- MON-007: threshold-based pass/fail ---
+
+
+def _drifted_report():
+    ref = pd.DataFrame({"x": list(range(100)), "y": list(range(100))})
+    cur = pd.DataFrame({"x": list(range(500, 600)), "y": list(range(100))})  # only x drifts
+    return _run_drift_report.fn(ref, cur), ref, cur  # share_drifted == 0.5
+
+
+def test_gate_noop_when_not_configured():
+    report, _, _ = _drifted_report()
+    _enforce_drift_gate(report, {}, "p")  # fail_on_drift absent -> never raises
+
+
+def test_gate_passes_when_below_max_share():
+    report, _, _ = _drifted_report()
+    _enforce_drift_gate(report, {"fail_on_drift": True, "max_drift_share": 0.6}, "p")
+
+
+def test_gate_raises_when_share_reaches_max():
+    report, _, _ = _drifted_report()
+    with pytest.raises(DriftThresholdExceeded, match="exceeded threshold") as ei:
+        _enforce_drift_gate(report, {"fail_on_drift": True, "max_drift_share": 0.5}, "report.html")
+    assert ei.value.report_path == "report.html"
+
+
+def test_gate_no_drift_passes():
+    df = pd.DataFrame({"x": [1.0, 2, 3, 4, 5] * 20})
+    report = _run_drift_report.fn(df, df.copy())
+    _enforce_drift_gate(report, {"fail_on_drift": True}, "p")  # share 0 -> pass
+
+
+def test_pipeline_writes_report_then_fails_on_drift(tmp_path):
+    report, ref, cur = _drifted_report()
+    report_path = tmp_path / "drift.html"
+    params_file = _write_params(
+        tmp_path,
+        {
+            "reference_file": "reference.parquet",
+            "current_file": "current.parquet",
+            "local_path": str(report_path),
+            "fail_on_drift": True,
+            "max_drift_share": 0.5,
+        },
+    )
+    with (
+        patch("kitchen.flows.monitor_flow.DataStore"),
+        patch("kitchen.flows.monitor_flow._load_reference", return_value=ref),
+        patch("kitchen.flows.monitor_flow._load_current", return_value=cur),
+        patch("kitchen.flows.monitor_flow._run_drift_report", return_value=report),
+        patch("kitchen.flows.monitor_flow._save_report", side_effect=_save_report.fn),
+    ):
+        with pytest.raises(DriftThresholdExceeded) as ei:
+            monitor_pipeline.fn(params_file=params_file)
+    # report is written before the gate fails
+    assert report_path.exists()
+    assert ei.value.report_path == str(report_path)
+
+
+# --- MON-006: log drift report to MLflow ---
+
+
+def test_log_to_mlflow_noop_when_disabled():
+    report, _, _ = _drifted_report()
+    with patch("kitchen.tracking.Tracker") as MockTracker:
+        _log_to_mlflow(report, {}, {"experiment": "demo"})  # log_to_mlflow absent
+    MockTracker.assert_not_called()
+
+
+def test_log_to_mlflow_records_metrics_and_artifacts(tmp_path, monkeypatch):
+    import mlflow
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/mlruns.db")
+    report, _, _ = _drifted_report()
+
+    _log_to_mlflow(
+        report,
+        {"log_to_mlflow": True, "mlflow_experiment": "mon-test"},
+        {"experiment": "demo"},
+    )
+
+    runs = mlflow.search_runs(experiment_names=["mon-test"])
+    assert len(runs) == 1
+    row = runs.iloc[0]
+    assert row["metrics.share_drifted"] == 0.5
+    assert row["metrics.dataset_drift"] == 1.0
+    assert row["tags.run_type"] == "monitoring"
+    arts = {a.path for a in mlflow.artifacts.list_artifacts(run_id=row["run_id"])}
+    assert {"drift.json", "drift_report.html"} <= arts
+
+
+def test_pipeline_calls_mlflow_logging_when_enabled(frames, tmp_path):
+    ref, cur = frames
+    report_path = tmp_path / "drift.html"
+    params_file = _write_params(
+        tmp_path, {"local_path": str(report_path), "log_to_mlflow": True}
+    )
+    fake_report = _run_drift_report.fn(ref, cur)
+    with (
+        patch("kitchen.flows.monitor_flow.DataStore"),
+        patch("kitchen.flows.monitor_flow._load_reference", return_value=ref),
+        patch("kitchen.flows.monitor_flow._load_current", return_value=cur),
+        patch("kitchen.flows.monitor_flow._run_drift_report", return_value=fake_report),
+        patch("kitchen.flows.monitor_flow._save_report", side_effect=_save_report.fn),
+        patch("kitchen.flows.monitor_flow._log_to_mlflow") as mock_log,
+    ):
+        monitor_pipeline.fn(params_file=params_file)
+    mock_log.assert_called_once()
