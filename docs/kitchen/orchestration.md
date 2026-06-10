@@ -55,6 +55,8 @@ load_reference_data → load_current_data → run_drift_report → upload_report
 python -m kitchen.flows.monitor_flow
 ```
 
+To run it on a cadence (GitHub Actions cron, a Prefect deployment, or EventBridge + Lambda), see [Scheduling drift checks](monitoring.md#scheduling-drift-checks).
+
 ## Relationship to DVC
 
 DVC and Prefect serve different purposes and complement each other:

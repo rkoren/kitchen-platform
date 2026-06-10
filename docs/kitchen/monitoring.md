@@ -93,6 +93,75 @@ monitoring/
 └── data_drift_2024-01-15.html
 ```
 
+## Scheduling drift checks
+
+Monitoring is most useful on a cadence. Pick the trigger that matches your infrastructure
+— all three run the same `kitchen run monitor` (which writes the report, optionally logs
+to MLflow, and exits non-zero on drift when `fail_on_drift` is set).
+
+### GitHub Actions cron (recommended)
+
+No extra infrastructure — a scheduled workflow that runs the monitor and uploads the
+report as an artifact. The job needs the reference and current data available, so fetch
+it first (commit a small reference snapshot, `dvc pull`, or download from S3).
+
+```yaml
+# .github/workflows/monitor.yml
+name: drift-monitor
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # 06:00 UTC every Monday
+  workflow_dispatch: # manual run from the Actions tab
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    env:
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # - run: dvc pull data/processed   # or download reference/current from S3
+      - name: Run drift monitor
+        run: kitchen run monitor # exits non-zero on drift if fail_on_drift is set
+      - uses: actions/upload-artifact@v4
+        if: always() # keep the report even when the run fails on drift
+        with:
+          name: drift-report
+          path: monitoring/
+```
+
+### Prefect deployment
+
+`kitchen.flows.monitor_flow` is already a Prefect `@flow`, so if you run a Prefect server
+and work pool you can schedule it directly — create a deployment with a cron schedule and
+serve it on the pool:
+
+```python
+from kitchen.flows.monitor_flow import monitor_pipeline
+
+monitor_pipeline.serve(name="weekly-drift", cron="0 6 * * 1")
+```
+
+### EventBridge + Lambda (AWS-native)
+
+For fully serverless scheduling, package the monitor as a Lambda (the same ECR image
+pattern `recipes` provisions for serving) and trigger it with an EventBridge schedule
+rule. Heaviest to set up; choose it when you already run on AWS and want no always-on
+runner.
+
+**Recommendation:** GitHub Actions cron for most projects — it needs no standing
+infrastructure and keeps the report artifact and (optionally) the MLflow history in the
+same place as the rest of the pipeline.
+
 ## Alerting
 
-<!-- TODO: document alerting strategy (SNS, Slack webhook, etc.) when drift exceeds threshold -->
+When `fail_on_drift` is set the scheduled run exits non-zero, so GitHub Actions surfaces
+a failed check (and emails the configured recipients) on drift — the simplest alert. For
+a push-style alert, add a step that fires on failure (e.g. a Slack incoming-webhook
+`curl` guarded by `if: failure()`), or wire SNS/EventBridge on the Lambda path.
