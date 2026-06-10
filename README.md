@@ -174,9 +174,18 @@ thresholds:
   val_accuracy: 0.80            # shorthand: fail if val_accuracy < 0.80
   log_loss:                     # explicit: fail if log_loss > 0.5
     max: 0.5
+
+ci:                             # optional: CI behavior knobs (read by the scaffolded workflow)
+  auto_submit: false            # submit to Kaggle after evaluate on a main-branch push
+  fail_on_threshold: true       # whether a threshold breach fails `kitchen report` (and the CI job)
+  notifications:
+    slack_webhook_secret: SLACK_WEBHOOK_URL  # name of the GitHub secret holding the webhook URL
+    when: failure               # failure | success | always  (not `on:` — YAML reads it as true)
 ```
 
-**Framework-owned fields** (`experiment`, `data`, `mlflow`, `monitor`, `submission`, `run_name`, `metrics_file`, `thresholds`) are validated by `KitchenConfig` when `kitchen validate` or `kitchen run *` commands load `params.yaml`. All other top-level keys (`train`, `features`, `model`, `evaluate`, etc.) are project-defined and passed through without validation.
+**Framework-owned fields** (`experiment`, `data`, `mlflow`, `monitor`, `submission`, `run_name`, `metrics_file`, `thresholds`, `ci`) are validated by `KitchenConfig` when `kitchen validate` or `kitchen run *` commands load `params.yaml`. All other top-level keys (`train`, `features`, `model`, `evaluate`, etc.) are project-defined and passed through without validation.
+
+The scaffolded `train-evaluate.yml` runs main-branch pushes under the `production` GitHub Environment and all other runs (PRs) under `staging`, so you can attach branch rules, required reviewers, and scoped secrets per environment (see [`docs/kitchen/ci-cd.md`](docs/kitchen/ci-cd.md)). `ci.auto_submit` lets a main-branch push submit to Kaggle without the manual `workflow_dispatch` toggle.
 
 The submission step (`kitchen.submit.log_submission`) validates the CSV against the sample submission, attaches it as an artifact to the active MLflow run, and (when `competition` is set) uploads to Kaggle — logging the public leaderboard score as `lb_score` on the same run. This closes the loop: every MLflow run records your local metric, the submission file, and the actual LB score together.
 

@@ -77,6 +77,36 @@ class MonitorConfig(BaseModel):
         return self
 
 
+class NotificationsConfig(BaseModel):
+    """``ci.notifications:`` — where to send CI run notifications.
+
+    Declarative only — the scaffolded workflow reads these to decide whether to
+    fire a notify step. ``slack_webhook_secret`` names the GitHub *secret* that
+    holds the incoming-webhook URL (the URL itself never lives in params.yaml).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    slack_webhook_secret: str | None = None
+    # NB: not ``on`` — YAML 1.1 parses a bare ``on:`` key as boolean True.
+    when: Literal["failure", "success", "always"] = "failure"
+
+
+class CIConfig(BaseModel):
+    """``ci:`` section — one home for CI behavior knobs.
+
+    Read by the scaffolded GitHub Actions workflow and by ``kitchen report``.
+    Metric thresholds themselves stay in the top-level ``thresholds:`` map;
+    ``fail_on_threshold`` controls whether a breach fails the CI job.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    auto_submit: bool = False  # submit to Kaggle after evaluate on a main-branch push
+    fail_on_threshold: bool = True  # whether a threshold breach exits `kitchen report` non-zero
+    notifications: NotificationsConfig | None = None
+
+
 class SubmissionConfig(BaseModel):
     """``submission:`` section — Kaggle submission configuration."""
 
@@ -124,6 +154,7 @@ class KitchenConfig(BaseModel):
     mlflow: MLflowConfig = MLflowConfig()
     monitor: MonitorConfig | None = None
     submission: SubmissionConfig | None = None
+    ci: CIConfig | None = None
     run_name: str | None = None
     metrics_file: str = "metrics.json"
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)

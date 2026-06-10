@@ -266,6 +266,18 @@ def test_report_threshold_fail_exits_one(tmp_path, monkeypatch):
     assert result.exit_code == 1
 
 
+def test_report_threshold_fail_soft_when_ci_fail_on_threshold_false(tmp_path, monkeypatch):
+    # CFG-002: ci.fail_on_threshold: false reports the breach but does not fail the job.
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.75})
+    (tmp_path / "params.yaml").write_text(
+        PARAMS_WITH_THRESHOLD + "ci:\n  fail_on_threshold: false\n"
+    )
+    result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+    assert "Threshold Violations" in result.output  # still surfaced
+    assert "fail_on_threshold is false" in result.output
+
+
 def test_report_threshold_fail_shows_violation_table(tmp_path, monkeypatch):
     _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.75})
     (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)

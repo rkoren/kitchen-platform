@@ -302,3 +302,81 @@ def test_fails_without_experiment_or_params(tmp_path, monkeypatch):
     with patch("kitchen.tracking.configure_from_env"):
         result = runner.invoke(app, ["status"])
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# Data staleness section (LML-009)
+# ---------------------------------------------------------------------------
+
+import os  # noqa: E402
+
+from kitchen.cli import _data_status  # noqa: E402
+
+
+def _touch(path, mtime: float) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x")
+    os.utime(path, (mtime, mtime))
+
+
+def test_data_status_none_without_data_dir(tmp_path):
+    assert _data_status(tmp_path) is None
+
+
+def test_data_status_missing_when_processed_empty(tmp_path):
+    _touch(tmp_path / "data" / "raw" / "train.csv", 1000)
+    (tmp_path / "data" / "processed").mkdir(parents=True)
+    state, hint = _data_status(tmp_path)
+    assert state == "missing"
+    assert "kitchen run features" in hint
+
+
+def test_data_status_fresh_when_processed_newer(tmp_path):
+    _touch(tmp_path / "data" / "raw" / "train.csv", 1000)
+    _touch(tmp_path / "data" / "processed" / "features.parquet", 2000)
+    state, _ = _data_status(tmp_path)
+    assert state == "fresh"
+
+
+def test_data_status_stale_when_raw_newer(tmp_path):
+    _touch(tmp_path / "data" / "processed" / "features.parquet", 1000)
+    _touch(tmp_path / "data" / "raw" / "train.csv", 2000)
+    state, hint = _data_status(tmp_path)
+    assert state == "stale"
+    assert "train.csv" in hint
+
+
+def test_data_status_stale_when_feature_script_newer(tmp_path):
+    _touch(tmp_path / "data" / "raw" / "train.csv", 1000)
+    _touch(tmp_path / "data" / "processed" / "features.parquet", 1500)
+    _touch(tmp_path / "src" / "features" / "run.py", 2000)
+    state, hint = _data_status(tmp_path)
+    assert state == "stale"
+    assert "run.py" in hint
+
+
+def test_data_status_dvc_hint_when_dvc_yaml_present(tmp_path):
+    _touch(tmp_path / "data" / "processed" / "features.parquet", 1000)
+    _touch(tmp_path / "data" / "raw" / "train.csv", 2000)
+    (tmp_path / "dvc.yaml").write_text("stages: {}\n")
+    _, hint = _data_status(tmp_path)
+    assert "dvc repro" in hint
+
+
+def test_status_renders_data_section(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: my-exp\n")
+    _touch(tmp_path / "data" / "raw" / "train.csv", 2000)
+    _touch(tmp_path / "data" / "processed" / "features.parquet", 1000)  # stale
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_client_cls,
+    ):
+        client = mock_client_cls.return_value
+        client.get_experiment_by_name.return_value = MagicMock(experiment_id="1")
+        client.search_runs.return_value = []
+        client.get_model_version_by_alias.side_effect = mlflow.exceptions.MlflowException("nf")
+        result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    assert "Data" in result.output
+    assert "STALE" in result.output

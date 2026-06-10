@@ -92,7 +92,7 @@ kitchen run evaluate
 ## Inspect runs and manage the champion
 
 ```bash
-# One-screen project summary: champion metrics, last 5 runs, threshold pass/fail
+# One-screen project summary: data freshness, champion metrics, last 5 runs, threshold pass/fail
 kitchen status
 
 # Rank all runs by metric; [C] = registered champion, ★ = metric leader
@@ -104,6 +104,8 @@ kitchen promote val_accuracy
 # Open the MLflow UI in your browser (starts a local server for SQLite tracking)
 kitchen ui
 ```
+
+The `Data` block at the top of `kitchen status` flags whether `data/processed/` is current: `✓ FRESH`, `! STALE` when a raw input or `src/features/run.py` is newer than the processed features (re-run `kitchen run features`, or `dvc repro` in a DVC project), or `○ MISSING` when features haven't been built yet.
 
 ## Generate a Kaggle submission
 

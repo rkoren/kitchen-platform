@@ -143,6 +143,12 @@ metrics_file: metrics.json
 #   val_accuracy: 0.80      # plain float = lower bound (>= 0.80)
 #   val_logloss:
 #     max: 0.45             # upper bound for lower-is-better metrics (<= 0.45)
+
+# ci:                       # optional: CI behavior knobs (read by the scaffolded workflow)
+#   fail_on_threshold: true # whether a threshold breach fails the CI job
+#   notifications:
+#     slack_webhook_secret: SLACK_WEBHOOK_URL  # GH secret holding the incoming-webhook URL
+#     when: failure         # failure | success | always
 """
 
 _PYPROJECT_TOML = """\
@@ -267,6 +273,13 @@ metrics_file: metrics.json
 #   val_accuracy: 0.80      # plain float = lower bound (>= 0.80)
 #   val_logloss:
 #     max: 0.45             # upper bound for lower-is-better metrics (<= 0.45)
+
+# ci:                       # optional: CI behavior knobs (read by the scaffolded workflow)
+#   auto_submit: false      # submit to Kaggle after evaluate on a main-branch push
+#   fail_on_threshold: true # whether a threshold breach fails the CI job
+#   notifications:
+#     slack_webhook_secret: SLACK_WEBHOOK_URL  # GH secret holding the incoming-webhook URL
+#     when: failure         # failure | success | always
 """
 
 _INFRA_YAML = """\
@@ -1436,9 +1449,17 @@ on:
   pull_request:
   workflow_dispatch:
 
+# GitHub Environments: main-branch runs use `production`, all other runs (PRs) use
+# `staging`. Configure required reviewers / env secrets in Settings → Environments.
+# Two caveats:
+#   - Adding required reviewers to `staging` makes PR jobs HANG awaiting approval.
+#   - Fork PRs do not receive environment secrets — keep any secret you need on PRs
+#     as a repo secret (secrets.*), not an environment secret.
 jobs:
   train-evaluate:
     runs-on: ubuntu-latest
+    environment:
+      name: $${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     permissions:
       contents: write
       pull-requests: write
@@ -1536,6 +1557,19 @@ jobs:
           body: $${{ env.KITCHEN_REPORT }}
           edit-mode: replace
 
+      # Notifications (ci.notifications): uncomment to alert on job failure (e.g. a
+      # threshold breach). Add the webhook URL as a repo secret and keep the name below
+      # in sync with ci.notifications.slack_webhook_secret in params.yaml.
+      # - name: Notify on failure
+      #   if: failure()
+      #   env:
+      #     SLACK_WEBHOOK_URL: $${{ secrets.SLACK_WEBHOOK_URL }}
+      #   run: |
+      #     [ -z "$$SLACK_WEBHOOK_URL" ] && exit 0
+      #     curl -sf -X POST -H 'Content-type: application/json' \\
+      #       --data "{\\"text\\":\\"$name CI failed on $${{ github.ref_name }} ($${{ github.sha }})\\"}" \\
+      #       "$$SLACK_WEBHOOK_URL"
+
   deploy-pages:
     needs: train-evaluate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -1593,9 +1627,17 @@ on:
         type: boolean
         default: false
 
+# GitHub Environments: main-branch runs use `production`, all other runs (PRs) use
+# `staging`. Configure required reviewers / env secrets in Settings → Environments.
+# Two caveats:
+#   - Adding required reviewers to `staging` makes PR jobs HANG awaiting approval.
+#   - Fork PRs do not receive environment secrets — keep KAGGLE_USERNAME / KAGGLE_KEY
+#     as repo secrets (secrets.*), not environment secrets, if fork PRs must ingest.
 jobs:
   train-evaluate:
     runs-on: ubuntu-latest
+    environment:
+      name: $${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     permissions:
       contents: write
       pull-requests: write
@@ -1638,8 +1680,16 @@ jobs:
       - name: Evaluate
         run: kitchen run evaluate
 
+      # Reads ci.auto_submit from params.yaml so a main-branch push can submit
+      # automatically, in addition to the manual workflow_dispatch toggle.
+      - name: Read CI config
+        id: ci
+        run: |
+          AUTO=$$(python -c "import yaml; print(str(yaml.safe_load(open('params.yaml')).get('ci', {}).get('auto_submit', False)).lower())")
+          echo "auto_submit=$$AUTO" >> $$GITHUB_OUTPUT
+
       - name: Submit to Kaggle
-        if: inputs.submit
+        if: $${{ inputs.submit || (steps.ci.outputs.auto_submit == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         env:
           KAGGLE_USERNAME: $${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: $${{ secrets.KAGGLE_KEY }}
@@ -1705,6 +1755,19 @@ jobs:
           issue-number: $${{ github.event.pull_request.number }}
           body: $${{ env.KITCHEN_REPORT }}
           edit-mode: replace
+
+      # Notifications (ci.notifications): uncomment to alert on job failure (e.g. a
+      # threshold breach). Add the webhook URL as a repo secret and keep the name below
+      # in sync with ci.notifications.slack_webhook_secret in params.yaml.
+      # - name: Notify on failure
+      #   if: failure()
+      #   env:
+      #     SLACK_WEBHOOK_URL: $${{ secrets.SLACK_WEBHOOK_URL }}
+      #   run: |
+      #     [ -z "$$SLACK_WEBHOOK_URL" ] && exit 0
+      #     curl -sf -X POST -H 'Content-type: application/json' \\
+      #       --data "{\\"text\\":\\"$name CI failed on $${{ github.ref_name }} ($${{ github.sha }})\\"}" \\
+      #       "$$SLACK_WEBHOOK_URL"
 
   deploy-pages:
     needs: train-evaluate
