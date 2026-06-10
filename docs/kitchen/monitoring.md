@@ -42,6 +42,41 @@ if result.dataset_drift:
 DriftReport(ref, cur, target="label", numerical=["age", "score"], drift_threshold=0.01)
 ```
 
+## Failing on drift (CI gate)
+
+Set `fail_on_drift` under the `monitor` key to turn monitoring into a pass/fail gate.
+The report is always written first, then the run exits non-zero when the share of
+drifted columns reaches `max_drift_share` — so a CI step can block on drift:
+
+```yaml
+monitor:
+  reference_file: reference.parquet
+  current_file: current.parquet
+  local_path: monitoring/drift.html
+  drift_threshold: 0.05      # per-column p-value below which a column counts as drifted
+  fail_on_drift: true        # exit non-zero when the gate trips
+  max_drift_share: 0.5       # share of drifted columns that trips the gate (default 0.5)
+```
+
+```bash
+kitchen run monitor   # writes the report, then exits 1 if drift exceeds the gate
+```
+
+## Logging to MLflow
+
+Set `log_to_mlflow` to record each monitor run in MLflow — the drift summary metrics
+(`n_drifted`, `share_drifted`, `dataset_drift`, per-column `psi.*`) plus the HTML report
+and a `drift.json` as artifacts, tagged `run_type=monitoring`. Runs go to a separate
+experiment (`<experiment>-monitoring` by default) so they don't clutter the training
+leaderboard:
+
+```yaml
+monitor:
+  local_path: monitoring/drift.html
+  log_to_mlflow: true
+  mlflow_experiment: my-project-monitoring   # optional override
+```
+
 ## Running manually
 
 ```bash

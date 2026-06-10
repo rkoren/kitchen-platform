@@ -58,6 +58,14 @@ class MonitorConfig(BaseModel):
     report_bucket: str = ""
     report_key: str = "monitoring/drift_report.html"
     local_path: str = ""
+    # MON-007: per-column p-value threshold; fail the run when the drifted share
+    # reaches max_drift_share (only enforced when fail_on_drift is true).
+    drift_threshold: float = 0.05
+    fail_on_drift: bool = False
+    max_drift_share: float = 0.5
+    # MON-006: log drift summary metrics + the HTML/JSON report to MLflow.
+    log_to_mlflow: bool = False
+    mlflow_experiment: str | None = None  # default: "<experiment>-monitoring"
 
     @model_validator(mode="after")
     def _require_output(self) -> "MonitorConfig":
