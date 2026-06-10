@@ -135,6 +135,58 @@ def _coerce_override_value(s: str) -> int | float | bool | str:
     return s
 
 
+def _set_nested(d: dict, dotted_key: str, value: object) -> None:
+    """Set ``d[a][b][c] = value`` from a dotted key, creating missing dicts."""
+    parts = dotted_key.split(".")
+    cur = d
+    for part in parts[:-1]:
+        nxt = cur.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cur[part] = nxt
+        cur = nxt
+    cur[parts[-1]] = value
+
+
+def _reproduced_params_file(params_file: str, run_id: str) -> str:
+    """Write a temp params.yaml that reproduces *run_id*'s logged params (K-020).
+
+    The run's MLflow params (flattened, dotted keys) are layered onto the current
+    params.yaml so non-logged structure (lists, etc.) is preserved while every
+    logged value is restored. Returns the temp file path; the caller deletes it.
+    """
+    import tempfile
+
+    import yaml
+
+    from kitchen.tracking import configure_from_env
+
+    configure_from_env()
+    import mlflow
+
+    try:
+        run = mlflow.get_run(run_id)
+    except Exception as exc:  # noqa: BLE001 — surface any MLflow error as a clean CLI message
+        typer.echo(f"error: could not load run {run_id!r} from MLflow: {exc}", err=True)
+        raise typer.Exit(1)
+
+    logged = dict(run.data.params)
+    if not logged:
+        typer.echo(f"error: run {run_id!r} has no logged params to reproduce from", err=True)
+        raise typer.Exit(1)
+
+    with open(params_file, encoding="utf-8") as f:
+        base = yaml.safe_load(f) or {}
+    for dotted, raw in logged.items():
+        _set_nested(base, dotted, _coerce_override_value(raw))
+
+    tmp = tempfile.NamedTemporaryFile(
+        "w", prefix="kitchen-from-run-", suffix=".yaml", delete=False, encoding="utf-8"
+    )
+    yaml.safe_dump(base, tmp, sort_keys=False)
+    tmp.close()
+    return tmp.name
+
 
 run_app = typer.Typer(help="Run pipeline stages.", no_args_is_help=True)
 
@@ -231,6 +283,14 @@ def run_train(
             "Example: --override model.max_depth=6 --override model.eta=0.05",
         ),
     ] = None,
+    from_run: Annotated[
+        str | None,
+        typer.Option(
+            "--from-run",
+            help="Reproduce a past run: load its logged params from MLflow as the base "
+            "(any --override still applies on top), then re-train.",
+        ),
+    ] = None,
 ) -> None:
     """Run the full train pipeline: features → train → log to MLflow.
 
@@ -242,6 +302,11 @@ def run_train(
     With --override, one or more params.yaml values are shadowed for this run
     only without modifying the file. Overrides are logged as MLflow run tags
     (override.<key>) so they appear in kitchen leaderboard and kitchen diff.
+
+    With --from-run <run_id>, the target run's logged params are loaded from
+    MLflow and used as the base params (layered onto the current params.yaml so
+    non-logged structure is preserved); any --override still applies on top. The
+    new run is tagged kitchen.from_run=<run_id> for provenance.
     """
     import sys
 
@@ -273,6 +338,15 @@ def run_train(
             key, _, raw_val = item.partition("=")
             parsed_overrides[key.strip()] = _coerce_override_value(raw_val)
 
+    # Reproduce a past run by training from its logged params (original
+    # params_file is kept for auto-promote threshold lookup).
+    train_params_file = params_file
+    reproduced_file: str | None = None
+    if from_run:
+        reproduced_file = _reproduced_params_file(params_file, from_run)
+        train_params_file = reproduced_file
+        typer.echo(f"reproducing run {from_run} — params loaded from MLflow")
+
     cwd = str(Path.cwd())
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
@@ -284,13 +358,21 @@ def run_train(
         raise typer.Exit(1)
 
     try:
-        train_pipeline(params_file=params_file, overrides=parsed_overrides)
+        run_id = train_pipeline(params_file=train_params_file, overrides=parsed_overrides)
     except ModuleNotFoundError as exc:
         typer.echo(
             f"error: {exc}\nRun from the project root and make sure src/ is implemented.",
             err=True,
         )
         raise typer.Exit(1)
+    finally:
+        if reproduced_file:
+            Path(reproduced_file).unlink(missing_ok=True)
+
+    if from_run and run_id:
+        from mlflow.tracking import MlflowClient
+
+        MlflowClient().set_tag(run_id, "kitchen.from_run", from_run)
 
     if auto_promote:
         _try_auto_promote(params_file, promote_metric, lower_is_better, promote_model_name)  # type: ignore[arg-type]
