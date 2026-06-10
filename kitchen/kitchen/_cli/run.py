@@ -684,7 +684,7 @@ def run_monitor(
         typer.Option("--local", help="Write report to this local path (overrides params.yaml monitor config)"),
     ] = None,
 ) -> None:
-    """Run drift monitoring and generate an Evidently report."""
+    """Run drift monitoring and generate an HTML drift report."""
     import sys
 
     path = Path(params_file)

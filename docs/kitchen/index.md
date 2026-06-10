@@ -18,7 +18,7 @@ Kaggle data
                                   │
                              Lambda (ECR)
                                   │
-                             [Evidently] drift monitoring
+                             [built-in] drift monitoring
 ```
 
 ## Stack
@@ -28,7 +28,7 @@ Kaggle data
 | Data versioning | DVC + S3 | Git-native, file-level, ML-standard |
 | Experiment tracking | MLflow | Open-source, self-hostable, AWS-native |
 | Serving | FastAPI + Docker → Lambda | Portable containers, serverless deploy |
-| Monitoring | Evidently AI | ML-specific drift detection for tabular data |
+| Monitoring | Built-in (KS / χ² / PSI) | Dependency-free drift detection for tabular data |
 | Orchestration | Prefect | Python-native, lightweight, modern DX |
 
 ## Dataset

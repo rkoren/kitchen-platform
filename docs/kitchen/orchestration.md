@@ -45,7 +45,7 @@ python flows/promote.py             # promote best model
 
 ### `kitchen/flows/monitor_flow.py`
 
-Drift detection flow — generates Evidently reports and uploads to S3:
+Drift detection flow — generates drift reports and uploads to S3:
 
 ```
 load_reference_data → load_current_data → run_drift_report → upload_report
