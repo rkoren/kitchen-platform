@@ -547,6 +547,72 @@ def test_coerce_override_value(raw, expected, expected_type):
 
 
 # ---------------------------------------------------------------------------
+# _reproduced_params_file — kitchen run train --from-run (K-020)
+# ---------------------------------------------------------------------------
+
+
+def _fake_run(params: dict):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(data=SimpleNamespace(params=params))
+
+
+def test_reproduced_params_layers_logged_onto_base(tmp_path, monkeypatch):
+    from kitchen._cli import run as run_mod
+
+    base = tmp_path / "params.yaml"
+    base.write_text(
+        "model:\n  max_depth: 6\n  eta: 0.1\nfeatures:\n  raw_file: train.csv\n"
+        "thresholds:\n  val_accuracy: 0.7\n"
+    )
+    logged = {"model.max_depth": "8", "model.eta": "0.05", "features.raw_file": "train.csv"}
+
+    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+    monkeypatch.setattr("mlflow.get_run", lambda rid: _fake_run(logged))
+
+    out = run_mod._reproduced_params_file(str(base), "abc123")
+    merged = yaml.safe_load(Path(out).read_text())
+
+    # Logged scalars restored and coerced to the right types.
+    assert merged["model"] == {"max_depth": 8, "eta": 0.05}
+    assert isinstance(merged["model"]["max_depth"], int)
+    # Fields not in the logged params (thresholds) are preserved from base.
+    assert merged["thresholds"] == {"val_accuracy": 0.7}
+
+
+def test_reproduced_params_errors_when_run_has_no_params(tmp_path, monkeypatch):
+    from kitchen._cli import run as run_mod
+
+    base = tmp_path / "params.yaml"
+    base.write_text("model:\n  max_depth: 6\n")
+    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+    monkeypatch.setattr("mlflow.get_run", lambda rid: _fake_run({}))
+
+    import typer
+
+    with pytest.raises(typer.Exit):
+        run_mod._reproduced_params_file(str(base), "abc123")
+
+
+def test_reproduced_params_errors_on_unknown_run(tmp_path, monkeypatch):
+    from kitchen._cli import run as run_mod
+
+    base = tmp_path / "params.yaml"
+    base.write_text("model:\n  max_depth: 6\n")
+
+    def _raise(rid):
+        raise Exception("Run 'nope' not found")
+
+    monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+    monkeypatch.setattr("mlflow.get_run", _raise)
+
+    import typer
+
+    with pytest.raises(typer.Exit):
+        run_mod._reproduced_params_file(str(base), "nope")
+
+
+# ---------------------------------------------------------------------------
 # kitchen run train --auto-promote (LML-004)
 # ---------------------------------------------------------------------------
 
