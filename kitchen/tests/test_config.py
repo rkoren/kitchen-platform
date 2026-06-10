@@ -216,3 +216,41 @@ def test_config_thresholds_from_yaml(tmp_path):
 def test_config_empty_thresholds_default():
     cfg = KitchenConfig(experiment="x")
     assert cfg.thresholds == {}
+
+
+# --- ci section (CFG-002) ---
+
+
+def test_config_ci_defaults_absent():
+    cfg = KitchenConfig(experiment="x")
+    assert cfg.ci is None
+
+
+def test_config_ci_field_defaults():
+    cfg = KitchenConfig(experiment="x", ci={})
+    assert cfg.ci.auto_submit is False
+    assert cfg.ci.fail_on_threshold is True
+    assert cfg.ci.notifications is None
+
+
+def test_config_ci_from_yaml(tmp_path):
+    params = tmp_path / "params.yaml"
+    params.write_text(
+        "experiment: titanic\n"
+        "ci:\n"
+        "  auto_submit: true\n"
+        "  fail_on_threshold: false\n"
+        "  notifications:\n"
+        "    slack_webhook_secret: SLACK_WEBHOOK_URL\n"
+        "    when: always\n"
+    )
+    cfg = KitchenConfig.from_yaml(str(params))
+    assert cfg.ci.auto_submit is True
+    assert cfg.ci.fail_on_threshold is False
+    assert cfg.ci.notifications.slack_webhook_secret == "SLACK_WEBHOOK_URL"
+    assert cfg.ci.notifications.when == "always"
+
+
+def test_config_ci_rejects_bad_notify_when():
+    with pytest.raises(ValidationError):
+        KitchenConfig(experiment="x", ci={"notifications": {"when": "sometimes"}})

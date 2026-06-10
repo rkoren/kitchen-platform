@@ -253,6 +253,15 @@ def status(
     resolved_model = model_name or os.environ.get("MLFLOW_MODEL_NAME", f"{exp_name}-model")
     typer.echo(f"\nProject: {exp_name}  ({params_file})\n")
 
+    # Data section (LML-009): flag when processed features lag the raw inputs.
+    data_state = _data_status(params_path.parent if params_path.exists() else Path.cwd())
+    if data_state is not None:
+        state, hint = data_state
+        marker = {"missing": "○", "stale": "!", "fresh": "✓"}[state]
+        typer.echo("Data")
+        typer.echo(f"  processed : {marker} {state.upper()}  ({hint})")
+        typer.echo()
+
     client = mlflow.tracking.MlflowClient()
 
     # Champion section
@@ -410,6 +419,11 @@ def validate(
     if cfg.monitor:
         output = cfg.monitor.report_bucket or cfg.monitor.local_path
         typer.echo(f"  monitor    : output={output}")
+    if cfg.ci:
+        bits = [f"auto_submit={cfg.ci.auto_submit}", f"fail_on_threshold={cfg.ci.fail_on_threshold}"]
+        if cfg.ci.notifications:
+            bits.append(f"notify_when={cfg.ci.notifications.when}")
+        typer.echo(f"  ci         : {', '.join(bits)}")
 
 
 # ---------------------------------------------------------------------------
@@ -509,6 +523,46 @@ def _time_ago(ms: int) -> str:
 
 def _fmt_metric(value: float | None) -> str:
     return "-" if value is None else f"{value:.4f}"
+
+
+def _data_status(root: Path) -> tuple[str, str] | None:
+    """LML-009: is ``data/processed/`` current with ``data/raw/`` + the feature script?
+
+    Returns ``(state, hint)`` where state is ``"missing"`` / ``"stale"`` / ``"fresh"``,
+    or ``None`` when there is no ``data/`` directory (nothing meaningful to report).
+    Compares the newest mtime under ``data/processed/`` against every raw input and
+    ``src/features/run.py`` — the inputs the features stage reads — rather than a single
+    hardcoded output filename, so multi-output feature steps are handled correctly.
+    The hint is DVC-aware: it points at ``dvc repro`` when ``dvc.yaml`` is present and
+    ``kitchen run features`` otherwise.
+    """
+    raw_dir = root / "data" / "raw"
+    processed_dir = root / "data" / "processed"
+    if not (root / "data").is_dir():
+        return None
+
+    uses_dvc = (root / "dvc.yaml").exists()
+    refresh = "dvc repro" if uses_dvc else "kitchen run features"
+
+    def _files(d: Path) -> list[Path]:
+        return [p for p in d.iterdir() if p.is_file()] if d.is_dir() else []
+
+    processed = _files(processed_dir)
+    if not processed:
+        return ("missing", f"not built — run `{refresh}`")
+
+    deps = _files(raw_dir)
+    feature_script = root / "src" / "features" / "run.py"
+    if feature_script.exists():
+        deps.append(feature_script)
+
+    newest_processed = max(p.stat().st_mtime for p in processed)
+    stale = [d for d in deps if d.stat().st_mtime > newest_processed]
+    if stale:
+        changed = ", ".join(sorted(p.name for p in stale)[:3])
+        more = "" if len(stale) <= 3 else f" (+{len(stale) - 3} more)"
+        return ("stale", f"inputs changed ({changed}{more}) — re-run `{refresh}`")
+    return ("fresh", "up to date with data/raw/")
 
 
 def _fmt_delta_row(
@@ -1547,7 +1601,14 @@ def report(
                 for name, actual, constraint in failures:
                     actual_str = f"{actual:.6f}" if isinstance(actual, float) else str(actual)
                     typer.echo(f"  FAIL  {name}: {actual_str} {constraint}")
-            raise typer.Exit(1)
+            # ci.fail_on_threshold (default true) gates whether a breach fails the job.
+            if cfg is not None and cfg.ci is not None and not cfg.ci.fail_on_threshold:
+                typer.echo(
+                    "\nnote: ci.fail_on_threshold is false — reporting violations without failing.",
+                    err=True,
+                )
+            else:
+                raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------

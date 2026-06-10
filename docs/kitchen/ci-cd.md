@@ -70,21 +70,23 @@ For both `staging` and `production`:
 3. Add `KAGGLE_USERNAME` (your Kaggle username).
 4. Add `KAGGLE_KEY` (your Kaggle API token — download from kaggle.com → Account → API).
 
-**Step 3 — Wire the CI workflow to an environment**
+**Step 3 — The CI workflow is already wired to an environment**
 
-The scaffolded `.github/workflows/train-evaluate.yml` uses repository secrets by default. To switch to Environment secrets, add an `environment:` key to the job:
+The scaffolded `.github/workflows/train-evaluate.yml` already selects the environment per branch:
 
 ```yaml
 jobs:
   train-evaluate:
     runs-on: ubuntu-latest
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
-    permissions:
-      contents: read
-      pull-requests: write
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
 ```
 
-This expression picks `production` for pushes to `main` and `staging` for everything else (PRs, other branches). No other changes are needed — `secrets.KAGGLE_USERNAME` and `secrets.KAGGLE_KEY` resolve from the environment automatically.
+This picks `production` for pushes to `main` and `staging` for everything else (PRs, other branches). If you put `KAGGLE_USERNAME` / `KAGGLE_KEY` in the environments (Step 2), they resolve automatically. If you'd rather keep them as repository secrets, that works too — repo secrets are visible to the job regardless of environment.
+
+!!! warning "Two footguns with `staging` on PRs"
+    - **Required reviewers on `staging` will hang every PR.** Because PRs run under `staging`, adding required reviewers there makes each PR job pause awaiting approval. Keep approval rules on `production` only.
+    - **Fork PRs don't get environment secrets.** A pull request from a fork cannot read environment secrets. If fork contributions must run `kitchen ingest`, keep `KAGGLE_*` as repository secrets rather than environment secrets.
 
 !!! tip "Optional: require approval for production"
     In **Settings → Environments → production**, enable **Required reviewers** and add yourself. Every push to `main` will then pause and wait for your approval before the ingest and submit steps run — useful if you want to gate Kaggle submissions manually.
@@ -114,15 +116,35 @@ thresholds:
     max: 0.50                 # fail if above 0.50
 ```
 
-The `Report` step exits non-zero when any threshold is violated, which fails the `train-evaluate` check and blocks the PR merge.
+The `Report` step exits non-zero when any threshold is violated, which fails the `train-evaluate` check and blocks the PR merge. To surface violations without failing the job (e.g. while a metric is still being tuned), set `ci.fail_on_threshold: false` — the violation table still renders, but `kitchen report` exits 0.
 
-## Manual Kaggle submission
+## CI behavior knobs (`ci:`)
 
-The submit step is gated behind a `workflow_dispatch` input so it only runs when you deliberately trigger it:
+A single `ci:` block in `params.yaml` holds CI-specific behavior, read by `kitchen report` and the scaffolded workflow:
 
-1. Go to **Actions → Train and Evaluate — \<project\>**.
-2. Click **Run workflow**.
-3. Check **Submit to Kaggle leaderboard after evaluate**.
-4. Run.
+```yaml
+ci:
+  auto_submit: false            # submit to Kaggle after evaluate on a main-branch push
+  fail_on_threshold: true       # whether a threshold breach fails the CI job
+  notifications:
+    slack_webhook_secret: SLACK_WEBHOOK_URL  # name of the GitHub secret holding the webhook URL
+    when: failure               # failure | success | always
+```
+
+!!! note "Why `when:` and not `on:`"
+    YAML 1.1 parses a bare `on:` key as the boolean `true`, so the notification trigger uses `when:` instead.
+
+The scaffolded workflow ships a commented `Notify on failure` step — uncomment it and add the `SLACK_WEBHOOK_URL` repository secret to enable Slack alerts. The step no-ops when the secret is empty.
+
+## Kaggle submission
+
+The submit step runs when **either** trigger fires:
+
+- **Manual** — gated behind a `workflow_dispatch` input so it only runs when you deliberately trigger it:
+    1. Go to **Actions → Train and Evaluate — \<project\>**.
+    2. Click **Run workflow**.
+    3. Check **Submit to Kaggle leaderboard after evaluate**.
+    4. Run.
+- **Automatic** — set `ci.auto_submit: true` and every push to `main` submits after evaluate (no manual toggle). A `Read CI config` step reads the flag from `params.yaml` and feeds the submit step's condition.
 
 The leaderboard score is written to `metrics.json` and appears in the PR comment when `kitchen report` next runs.
