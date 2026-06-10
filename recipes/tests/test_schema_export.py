@@ -2,11 +2,24 @@
 
 import json
 
-import jsonschema
+import pytest
 import yaml
 from typer.testing import CliRunner
 
 from recipes.cli import app
+
+# jsonschema lives only in the recipes `dev` extra, so a bare `uv run python -m
+# pytest` (the documented convention) would otherwise error at collection. Guard
+# the import and skip just the round-trip tests that need it — the two tests that
+# exercise the `recipes schema` command output keep running without the extra.
+try:
+    import jsonschema
+except ImportError:  # pragma: no cover - exercised only when the dev extra is absent
+    jsonschema = None
+
+requires_jsonschema = pytest.mark.skipif(
+    jsonschema is None, reason="jsonschema not installed (recipes 'dev' extra)"
+)
 
 runner = CliRunner()
 
@@ -44,16 +57,19 @@ def test_schema_stdout_is_valid_json_document():
     assert {"S3Spec", "IAMRoleSpec", "ECRSpec", "LambdaSpec"} <= set(doc["$defs"])
 
 
+@requires_jsonschema
 def test_exported_schema_is_itself_valid():
     """The emitted document is a well-formed draft 2020-12 schema."""
     jsonschema.Draft202012Validator.check_schema(_export())
 
 
+@requires_jsonschema
 def test_exported_schema_accepts_a_valid_spec():
     """Round-trip: a spec that RecipeSpec accepts also validates against the export."""
     jsonschema.validate(instance=yaml.safe_load(VALID_SPEC), schema=_export())
 
 
+@requires_jsonschema
 def test_exported_schema_rejects_unknown_field():
     """extra='forbid' on the model surfaces as additionalProperties: false."""
     bad = yaml.safe_load(VALID_SPEC)
