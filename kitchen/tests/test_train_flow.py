@@ -17,6 +17,7 @@ from kitchen.flows.train_flow import (
     EXPERIMENT,
     _apply_overrides,
     _build,
+    _metric_lines,
     _train,
     train_pipeline,
 )
@@ -420,3 +421,81 @@ def test_train_opens_tracker_run(monkeypatch, train_env):
     _train(PARAMS)
     tracker = train_env["Tracker"].return_value
     tracker.run.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _metric_lines — train success-path summary (CBB-011)
+# ---------------------------------------------------------------------------
+
+
+def _fake_run(metrics):
+    run = MagicMock()
+    run.data.metrics = metrics
+    return run
+
+
+def test_metric_lines_threshold_pass():
+    """A lower-is-better metric under its max prints a PASS line with the bound."""
+    params = {"thresholds": {"loto_brier": {"max": 0.175}}}
+    with patch(
+        "kitchen.flows.train_flow.mlflow.get_run", return_value=_fake_run({"loto_brier": 0.1653})
+    ):
+        lines = _metric_lines("rid", params)
+    assert lines == ["  loto_brier = 0.1653 — PASS (<= 0.175)"]
+
+
+def test_metric_lines_threshold_fail():
+    """A value above the max prints FAIL."""
+    params = {"thresholds": {"loto_brier": {"max": 0.175}}}
+    with patch(
+        "kitchen.flows.train_flow.mlflow.get_run", return_value=_fake_run({"loto_brier": 0.20})
+    ):
+        lines = _metric_lines("rid", params)
+    assert "FAIL" in lines[0] and "<= 0.175" in lines[0]
+
+
+def test_metric_lines_bare_float_is_lower_bound():
+    """A bare-number threshold is a >= lower bound (higher-is-better convention)."""
+    params = {"thresholds": {"acc": 0.8}}
+    with patch("kitchen.flows.train_flow.mlflow.get_run", return_value=_fake_run({"acc": 0.9})):
+        lines = _metric_lines("rid", params)
+    assert lines == ["  acc = 0.9 — PASS (>= 0.8)"]
+
+
+def test_metric_lines_headline_fallback_caps_and_counts():
+    """With no thresholds, show up to 8 metrics + a (+N more) pointer."""
+    metrics = {f"m{i}": float(i) for i in range(10)}
+    with patch("kitchen.flows.train_flow.mlflow.get_run", return_value=_fake_run(metrics)):
+        lines = _metric_lines("rid", {})
+    assert len(lines) == 9
+    assert "more — see kitchen leaderboard" in lines[-1]
+
+
+def test_metric_lines_excludes_feature_importance():
+    """fi.* keys never appear in the summary."""
+    with patch(
+        "kitchen.flows.train_flow.mlflow.get_run",
+        return_value=_fake_run({"loto_brier": 0.16, "fi.team_a": 1.0}),
+    ):
+        lines = _metric_lines("rid", {})
+    assert all("fi." not in line for line in lines)
+
+
+def test_metric_lines_empty_when_run_unreadable():
+    """A store/read failure degrades to [] (caller prints the legacy message)."""
+    with patch("kitchen.flows.train_flow.mlflow.get_run", side_effect=RuntimeError("no store")):
+        assert _metric_lines("rid", {}) == []
+
+
+def test_train_prints_metric_summary(monkeypatch, train_env, capsys):
+    """_train prints the threshold summary on success instead of the bare message."""
+    _inject_train_mod(monkeypatch)
+    active = train_env["Tracker"].return_value.run.return_value.__enter__.return_value
+    active.info.run_id = "rid"
+    with patch(
+        "kitchen.flows.train_flow.mlflow.get_run", return_value=_fake_run({"loto_brier": 0.1653})
+    ):
+        _train({"experiment": "e", "thresholds": {"loto_brier": {"max": 0.175}}})
+    out = capsys.readouterr().out
+    assert "Training complete:" in out
+    assert "loto_brier = 0.1653 — PASS" in out

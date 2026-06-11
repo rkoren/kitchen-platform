@@ -113,6 +113,20 @@ class CIConfig(BaseModel):
     notifications: NotificationsConfig | None = None
 
 
+class CheckConfig(BaseModel):
+    """``check:`` section — extra pre-flight validations for ``kitchen check``.
+
+    ``required_env`` lists environment variables the project needs to run (e.g. an
+    API key like ``KENPOM_API_KEY``). ``kitchen check`` hard-fails when one is
+    absent from both the process environment and a local ``.env`` — so a project
+    fed by an external API gates on its own secrets without editing platform code.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    required_env: list[str] = Field(default_factory=list)
+
+
 class SubmissionConfig(BaseModel):
     """``submission:`` section — Kaggle submission configuration."""
 
@@ -160,6 +174,7 @@ class KitchenConfig(BaseModel):
     mlflow: MLflowConfig = MLflowConfig()
     monitor: MonitorConfig | None = None
     submission: SubmissionConfig | None = None
+    check: CheckConfig | None = None
     ci: CIConfig | None = None
     run_name: str | None = None
     metrics_file: str = "metrics.json"

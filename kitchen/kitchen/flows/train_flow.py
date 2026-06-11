@@ -45,6 +45,52 @@ def _build(params: dict) -> None:
     build(params, DataStore())
 
 
+def _metric_lines(run_id: str, params: dict) -> list[str]:
+    """One line per threshold-gated metric with PASS/FAIL; else the headline metrics.
+
+    Gives the train success path something to show without opening MLflow (CBB-011).
+    Threshold direction follows the params convention: a bare number / ``min`` is a
+    lower bound (``>=``), ``max`` an upper bound (``<=``). Per-feature-importance
+    (``fi.*``) keys are excluded. Best-effort: returns ``[]`` if the run can't be read.
+    """
+    try:
+        metrics = {
+            k: v for k, v in mlflow.get_run(run_id).data.metrics.items() if not k.startswith("fi.")
+        }
+    except Exception:
+        return []
+    if not metrics:
+        return []
+
+    thresholds = params.get("thresholds") or {}
+    lines: list[str] = []
+    for name, spec in thresholds.items():
+        actual = metrics.get(name)
+        if actual is None:
+            continue
+        lo = spec.get("min") if isinstance(spec, dict) else (spec if isinstance(spec, (int, float)) else None)
+        hi = spec.get("max") if isinstance(spec, dict) else None
+        bounds, fails = [], False
+        if lo is not None:
+            bounds.append(f">= {lo:g}")
+            fails = fails or actual < lo
+        if hi is not None:
+            bounds.append(f"<= {hi:g}")
+            fails = fails or actual > hi
+        bound_str = f" ({' and '.join(bounds)})" if bounds else ""
+        lines.append(f"  {name} = {actual:.6g} — {'FAIL' if fails else 'PASS'}{bound_str}")
+    if lines:
+        return lines
+
+    # No thresholds configured — show a bounded set of headline metrics so the
+    # user still sees numbers (per-period families like brier_2003.. are capped).
+    shown = sorted(metrics.items())[:8]
+    lines = [f"  {k} = {v:.6g}" for k, v in shown]
+    if len(metrics) > len(shown):
+        lines.append(f"  (+{len(metrics) - len(shown)} more — see kitchen leaderboard)")
+    return lines
+
+
 def _train(params: dict, overrides: dict | None = None) -> str | None:
     from src.train.run import train  # project-provided
 
@@ -57,7 +103,14 @@ def _train(params: dict, overrides: dict | None = None) -> str | None:
             mlflow.set_tags({f"override.{k}": str(v) for k, v in overrides.items()})
         train(params, DataStore(), tracker)
         run_id = active_run.info.run_id
-    print("Training complete — see MLflow for metrics.")
+
+    summary = _metric_lines(run_id, params) if run_id else []
+    if summary:
+        print("Training complete:")
+        for line in summary:
+            print(line)
+    else:
+        print("Training complete — see MLflow for metrics.")
     return run_id
 
 

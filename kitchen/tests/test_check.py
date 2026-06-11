@@ -576,3 +576,68 @@ def test_check_no_monitor_section_shows_no_monitor_line(tmp_path, monkeypatch):
             env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
         )
     assert "monitor config" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# check.required_env — project-declared secrets (CBB-012)
+# ---------------------------------------------------------------------------
+
+_REQ_ENV_PARAMS = "experiment: test-project\ncheck:\n  required_env:\n    - KENPOM_API_KEY\n"
+
+
+def test_check_required_env_present(tmp_path, monkeypatch):
+    """A declared secret present in the environment shows a ✓ env: line, not a failure."""
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=_REQ_ENV_PARAMS,
+            env={
+                "MLFLOW_TRACKING_URI": "x",
+                "KAGGLE_USERNAME": "u",
+                "KENPOM_API_KEY": "secret",
+            },
+        )
+    assert "env: KENPOM_API_KEY" in result.output
+    assert "✗ env: KENPOM_API_KEY" not in result.output
+
+
+def test_check_required_env_missing_fails(tmp_path, monkeypatch):
+    """A declared secret absent from env and .env hard-fails check (exit 1)."""
+    # which truthy + creds present so the ONLY failure is the missing secret.
+    with (
+        patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=_REQ_ENV_PARAMS,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "✗ env: KENPOM_API_KEY" in result.output
+    assert "required by check.required_env" in result.output
+    assert result.exit_code == 1
+
+
+def test_check_no_required_env_section_no_env_lines(tmp_path, monkeypatch):
+    """Projects without a check section never emit env: lines."""
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "env:" not in result.output

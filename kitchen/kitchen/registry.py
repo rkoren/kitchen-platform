@@ -99,8 +99,9 @@ def promote_model(name: str, version: str, alias: str = "champion") -> None:
     """Set a named alias on a registered model version.
 
     Aliases replace the deprecated stage system. The default alias "champion"
-    identifies the current production model; load it with
-    mlflow.sklearn.load_model('models:/<name>@champion').
+    identifies the current production model; load it with the loader matching the
+    model's logged flavor, e.g. mlflow.sklearn.load_model('models:/<name>@champion')
+    (or mlflow.pyfunc/xgboost/lightgbm) — `kitchen promote` prints the right one.
 
     Args:
         name: Registered model name.
@@ -114,7 +115,8 @@ def promote_model(name: str, version: str, alias: str = "champion") -> None:
 def get_production_uri(name: str, alias: str = "champion") -> str | None:
     """Return the model URI for the current champion version, or None if none exists.
 
-    The URI is suitable for mlflow.sklearn.load_model() or similar loaders.
+    The URI is suitable for the loader matching the model's logged flavor
+    (mlflow.sklearn / pyfunc / xgboost / lightgbm).load_model().
     """
     client = mlflow.tracking.MlflowClient()
     try:
