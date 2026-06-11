@@ -97,9 +97,11 @@ def _resolve_git_sha() -> str | None:
 def _collect_metadata(bundle: PredictorBundle | None) -> dict:
     """Build the ``/metadata`` response payload.
 
-    Reads ``KITCHEN_MODEL_NAME`` and ``KITCHEN_MODEL_VERSION`` from the
-    environment at *call time* (not at import time) so tests can monkeypatch
-    them.  The ``git_sha`` field is resolved via :func:`_resolve_git_sha`.
+    Model identity is resolved (at *call time*, so tests can monkeypatch) in order:
+    the predictor's ``MODEL_NAME`` / ``MODEL_VERSION`` exports, then the env vars —
+    ``KITCHEN_MODEL_NAME`` or ``MLFLOW_MODEL_NAME`` (the convention used by the
+    registry/evaluate/predictor) for the name, and ``KITCHEN_MODEL_VERSION`` for the
+    version.  The ``git_sha`` field is resolved via :func:`_resolve_git_sha`.
 
     Args:
         bundle: The loaded :class:`PredictorBundle`, or ``None`` if no
@@ -108,9 +110,18 @@ def _collect_metadata(bundle: PredictorBundle | None) -> dict:
     Returns:
         A plain ``dict`` suitable for JSON serialisation.
     """
+    model_name = (
+        (bundle.model_name if bundle is not None else None)
+        or os.environ.get("KITCHEN_MODEL_NAME")
+        or os.environ.get("MLFLOW_MODEL_NAME")
+    )
+    model_version = (
+        (bundle.model_version if bundle is not None else None)
+        or os.environ.get("KITCHEN_MODEL_VERSION")
+    )
     return {
-        "model_name": os.environ.get("KITCHEN_MODEL_NAME"),
-        "model_version": os.environ.get("KITCHEN_MODEL_VERSION"),
+        "model_name": model_name,
+        "model_version": model_version,
         "git_sha": _resolve_git_sha(),
         "features": bundle.features if bundle is not None else None,
     }

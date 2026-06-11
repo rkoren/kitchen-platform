@@ -1060,6 +1060,14 @@ This module is loaded by ``kitchen serve local`` (and the Lambda handler) via
 Optionally export ``RequestModel`` and ``ResponseModel`` (Pydantic
 ``BaseModel`` subclasses) to enable typed OpenAPI docs on ``/predict``.
 If either is absent the endpoint accepts and returns raw dicts.
+
+Reserved environment variables — set by ``kitchen serve local`` / the loader; do
+not reuse them for your own settings (use a project-specific name instead):
+``KITCHEN_PREDICTOR_DIR`` (directory of this file), ``KITCHEN_MODEL_NAME``,
+``KITCHEN_MODEL_VERSION``.
+
+Optionally export ``MODEL_NAME`` / ``MODEL_VERSION`` (strings) to surface the
+model identity on ``GET /metadata``.
 \"\"\"
 from __future__ import annotations
 
@@ -1087,10 +1095,12 @@ from __future__ import annotations
 #     score: float
 
 # ---------------------------------------------------------------------------
-# Optional: feature list — surfaced on GET /metadata so callers know which
-# input keys the model expects.
+# Optional: feature list + model identity — surfaced on GET /metadata so callers
+# know which input keys the model expects and which model is serving.
 # ---------------------------------------------------------------------------
 # FEATURES: list[str] = [\"feature_a\", \"feature_b\"]
+# MODEL_NAME = \"$name-model\"
+# MODEL_VERSION = \"champion\"
 
 
 def predict(payload: dict) -> dict:

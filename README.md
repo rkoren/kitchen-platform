@@ -149,6 +149,7 @@ data:
 mlflow:
   tracking_uri: http://localhost:5000
   artifact_bucket: my-mlflow-artifacts
+  model_artifact_path: model     # name your model is logged under; what `kitchen promote` registers
 
 train:
   # passed directly to Trainer.fit() — project-defined shape
@@ -246,7 +247,4 @@ The script is parameterised (`AWS_REGION`, `CI_ROLE_NAME`, `TF_STATE_BUCKET`, �
 
 Runnable demos live in [`examples/`](examples/) — see
 [`examples/README.md`](examples/README.md) for the index.
-[`examples/offline-quickstart/`](examples/offline-quickstart/) is a complete project
-that runs the full features → train → evaluate → promote loop with no credentials and
-no network — the fastest way to see the platform work. The rest are single-feature
-demos and CBB validation harnesses.
+[`examples/offline-quickstart/`](examples/offline-quickstart/)

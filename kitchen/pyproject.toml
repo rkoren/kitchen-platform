@@ -74,7 +74,7 @@ Repository = "https://github.com/rkoren/kitchen-platform"
 Issues = "https://github.com/rkoren/kitchen-platform/issues"
 
 [project.scripts]
-kitchen = "kitchen.cli:app"
+kitchen = "kitchen.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["kitchen"]

@@ -44,14 +44,25 @@ Returns model metadata. All fields may be `null` if not configured.
 }
 ```
 
-| Field | Source |
+| Field | Source (first non-null wins) |
 |---|---|
-| `model_name` | `KITCHEN_MODEL_NAME` environment variable |
-| `model_version` | `KITCHEN_MODEL_VERSION` environment variable |
+| `model_name` | `predictor.MODEL_NAME` → `KITCHEN_MODEL_NAME` env → `MLFLOW_MODEL_NAME` env |
+| `model_version` | `predictor.MODEL_VERSION` → `KITCHEN_MODEL_VERSION` env |
 | `git_sha` | `GITHUB_SHA` env var → `GIT_SHA` env var → `git rev-parse --short HEAD` |
 | `features` | `FEATURES` list exported from `predictor.py` |
 
-Set `KITCHEN_MODEL_NAME` and `KITCHEN_MODEL_VERSION` in the Lambda environment (via the `environment:` block in your `recipes` spec, or manually in the console).
+The most reliable way to populate the model identity is to export `MODEL_NAME` and `MODEL_VERSION` (strings) from `predictor.py` — then `/metadata` reflects exactly what the predictor loads, with no env wiring. Otherwise set `KITCHEN_MODEL_NAME` / `KITCHEN_MODEL_VERSION` (or rely on the `MLFLOW_MODEL_NAME` you already use for loading) in the Lambda environment via the `environment:` block in your `recipes` spec.
+
+### Reserved environment variables
+
+`kitchen serve local` and the Lambda loader **set** these — do not reuse them for your own predictor settings (pick a project-specific name instead):
+
+| Variable | Set to |
+|---|---|
+| `KITCHEN_PREDICTOR_DIR` | the directory containing `predictor.py` (used to locate and import it) |
+| `KITCHEN_MODEL_NAME` / `KITCHEN_MODEL_VERSION` | read by `/metadata` |
+
+`kitchen serve local` prints the resolved predictor directory at startup so you can see what `KITCHEN_PREDICTOR_DIR` will be.
 
 ---
 
@@ -135,7 +146,9 @@ from kitchen.serve import lazy_model
 # predict_proba.)
 model = lazy_model(lambda: mlflow.sklearn.load_model("models:/my-project@champion"))
 
-# Optional: expose feature list on GET /metadata
+# Optional: surface model identity + feature list on GET /metadata
+MODEL_NAME = "my-project-model"
+MODEL_VERSION = "champion"
 FEATURES = ["home_court", "elo_diff", "pace", "fg_pct_diff"]
 
 class RequestModel(BaseModel):

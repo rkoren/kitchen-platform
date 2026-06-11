@@ -310,7 +310,7 @@ def test_fails_without_experiment_or_params(tmp_path, monkeypatch):
 
 import os  # noqa: E402
 
-from kitchen.cli import _data_status  # noqa: E402
+from kitchen.cli import _data_status, _summarize_champion_metrics  # noqa: E402
 
 
 def _touch(path, mtime: float) -> None:
@@ -380,3 +380,45 @@ def test_status_renders_data_section(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "Data" in result.output
     assert "STALE" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Champion metric summary (CBB-005)
+# ---------------------------------------------------------------------------
+
+
+def test_summarize_collapses_per_period_family():
+    metrics = {f"brier_{y}": 0.1 + i * 0.001 for i, y in enumerate(range(2003, 2026))}
+    metrics["loto_brier"] = 0.165
+    metrics["vegas_alpha"] = 1.0
+    lines = _summarize_champion_metrics(metrics)
+    joined = "\n".join(lines)
+    assert "brier_*" in joined and "23 values" in joined
+    assert "brier_2003" not in joined  # individual per-season lines collapsed
+    assert "loto_brier" in joined and "vegas_alpha" in joined
+    # 2 scalars + 1 family line
+    assert len(lines) == 3
+
+
+def test_summarize_drops_feature_importances():
+    lines = _summarize_champion_metrics({"val_accuracy": 0.9, "fi.feat1": 0.5, "fi.feat2": 0.2})
+    joined = "\n".join(lines)
+    assert "val_accuracy" in joined
+    assert "fi." not in joined
+
+
+def test_summarize_small_family_stays_individual():
+    # Only two members — below the 3-sibling threshold, so not collapsed.
+    lines = _summarize_champion_metrics({"brier_2003": 0.1, "brier_2004": 0.2})
+    joined = "\n".join(lines)
+    assert "brier_2003" in joined and "brier_2004" in joined
+    assert "brier_*" not in joined
+
+
+def test_summarize_caps_scalars_with_more_pointer():
+    metrics = {f"metric_x{i}": float(i) for i in range(20)}  # 20 non-numeric-suffix scalars
+    lines = _summarize_champion_metrics(metrics, max_scalars=12)
+    joined = "\n".join(lines)
+    assert "+8 more metrics" in joined
+    # 12 scalar lines + 1 "+N more" line
+    assert len(lines) == 13

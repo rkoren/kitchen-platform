@@ -109,6 +109,7 @@ def test_model_version_from_env(monkeypatch):
 
 def test_model_name_null_when_env_absent(monkeypatch):
     monkeypatch.delenv("KITCHEN_MODEL_NAME", raising=False)
+    monkeypatch.delenv("MLFLOW_MODEL_NAME", raising=False)
     client = TestClient(build_app(_make_bundle()))
     body = client.get("/metadata").json()
     assert body["model_name"] is None
@@ -128,6 +129,52 @@ def test_model_name_and_version_both_set(monkeypatch):
     body = client.get("/metadata").json()
     assert body["model_name"] == "iris-clf"
     assert body["model_version"] == "7"
+
+
+# ---------------------------------------------------------------------------
+# CBB-007: MLFLOW_MODEL_NAME fallback + predictor MODEL_NAME/MODEL_VERSION exports
+# ---------------------------------------------------------------------------
+
+
+def test_model_name_falls_back_to_mlflow_model_name(monkeypatch):
+    monkeypatch.delenv("KITCHEN_MODEL_NAME", raising=False)
+    monkeypatch.setenv("MLFLOW_MODEL_NAME", "cbb-tournament-model")
+    body = client_body(_make_bundle())
+    assert body["model_name"] == "cbb-tournament-model"
+
+
+def test_kitchen_model_name_takes_priority_over_mlflow(monkeypatch):
+    monkeypatch.setenv("KITCHEN_MODEL_NAME", "explicit")
+    monkeypatch.setenv("MLFLOW_MODEL_NAME", "fallback")
+    body = client_body(_make_bundle())
+    assert body["model_name"] == "explicit"
+
+
+def test_bundle_model_identity_wins_over_env(monkeypatch):
+    monkeypatch.setenv("KITCHEN_MODEL_NAME", "from-env")
+    monkeypatch.setenv("KITCHEN_MODEL_VERSION", "9")
+    bundle = PredictorBundle(
+        predict_fn=lambda p: {}, model_name="from-predictor", model_version="champion"
+    )
+    body = client_body(bundle)
+    assert body["model_name"] == "from-predictor"
+    assert body["model_version"] == "champion"
+
+
+def test_predictor_module_model_name_version_loaded(tmp_path):
+    (tmp_path / "predictor.py").write_text(
+        "MODEL_NAME = 'cbb-tournament-model'\n"
+        "MODEL_VERSION = 'champion'\n"
+        "def predict(payload: dict) -> dict:\n"
+        "    return {'ok': True}\n"
+    )
+    bundle = load_predictor_bundle(tmp_path)
+    assert bundle.model_name == "cbb-tournament-model"
+    assert bundle.model_version == "champion"
+
+
+def client_body(bundle):
+    return TestClient(build_app(bundle)).get("/metadata").json()
 
 
 # ---------------------------------------------------------------------------

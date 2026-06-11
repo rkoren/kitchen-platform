@@ -120,6 +120,10 @@ class PredictorBundle:
                          ``FEATURES`` from the predictor module.  Surfaced on
                          ``GET /metadata`` so callers know which input keys the
                          model expects.
+        model_name:      Optional model name exported as ``MODEL_NAME`` from the
+                         predictor module; surfaced on ``GET /metadata``.
+        model_version:   Optional model version/alias exported as ``MODEL_VERSION``
+                         from the predictor module; surfaced on ``GET /metadata``.
 
     When both *request_model* and *response_model* are present the
     ``/predict`` endpoint in ``kitchen.serve.app`` registers a typed FastAPI
@@ -131,6 +135,8 @@ class PredictorBundle:
     request_model: type | None = None
     response_model: type | None = None
     features: list[str] | None = None
+    model_name: str | None = None
+    model_version: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +357,18 @@ def _extract_features(module, path: Path) -> list[str] | None:
     return obj
 
 
+def _extract_str(module, name: str, path: Path) -> str | None:
+    """Extract an optional string constant (e.g. ``MODEL_NAME``) from *module*."""
+    obj = getattr(module, name, None)
+    if obj is None:
+        return None
+    if not isinstance(obj, str):
+        raise PredictorLoadError(
+            f"predictor.{name} at {path} must be a string (got {type(obj).__name__!r})"
+        )
+    return obj
+
+
 def _load_bundle_from_path(path: Path) -> PredictorBundle:
     """Load all artefacts from *path* into a :class:`PredictorBundle`."""
     module = _load_module(path)
@@ -363,6 +381,8 @@ def _load_bundle_from_path(path: Path) -> PredictorBundle:
         request_model=request_model,
         response_model=response_model,
         features=features,
+        model_name=_extract_str(module, "MODEL_NAME", path),
+        model_version=_extract_str(module, "MODEL_VERSION", path),
     )
 
 

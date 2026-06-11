@@ -5,12 +5,16 @@ import mlflow
 import pytest
 
 from kitchen.tracking import (
+    MlflowSchemaError,
     Tracker,
     _dict_hash,
     _file_hash,
     _flatten,
     _git_sha,
+    _is_schema_outdated,
     _package_versions,
+    _schema_remediation,
+    _verify_store_schema,
     configure,
     configure_from_env,
     init_experiment,
@@ -109,6 +113,61 @@ def test_configure_from_env_passes_artifact_bucket(monkeypatch):
     with patch("kitchen.tracking.mlflow"):
         configure_from_env()
         assert os.environ["MLFLOW_ARTIFACT_BUCKET"] == "my-bucket"
+
+
+# ── CBB-001: out-of-date schema translation ────────────────────────────────────
+
+
+def test_is_schema_outdated_matches_known_messages():
+    assert _is_schema_outdated(Exception("Detected out-of-date database schema (found ...)"))
+    assert _is_schema_outdated(Exception("please run 'mlflow db upgrade <uri>'"))
+    assert not _is_schema_outdated(Exception("connection refused"))
+
+
+def test_schema_remediation_sqlite_includes_archive_hint():
+    msg = _schema_remediation("sqlite:///mlruns.db")
+    assert "mlflow db upgrade sqlite:///mlruns.db" in msg
+    assert "mv mlruns.db mlruns.db.bak" in msg
+
+
+def test_schema_remediation_remote_omits_archive_hint():
+    msg = _schema_remediation("postgresql://host/db")
+    assert "mlflow db upgrade" in msg
+    assert "\n         mv " not in msg  # no sqlite archive command
+
+
+def test_verify_store_schema_translates_outdated(tmp_path):
+    db = tmp_path / "mlruns.db"
+    db.write_text("x")  # exists → probe runs
+    exc = mlflow.exceptions.MlflowException(
+        "Detected out-of-date database schema (found version a, but expected b). "
+        "run 'mlflow db upgrade'"
+    )
+    with patch("kitchen.tracking.mlflow.search_experiments", side_effect=exc):
+        with pytest.raises(MlflowSchemaError) as ei:
+            _verify_store_schema(f"sqlite:///{db}")
+    assert "mlflow db upgrade" in str(ei.value)
+
+
+def test_verify_store_schema_ignores_non_schema_errors(tmp_path):
+    db = tmp_path / "mlruns.db"
+    db.write_text("x")
+    with patch(
+        "kitchen.tracking.mlflow.search_experiments", side_effect=RuntimeError("network down")
+    ):
+        _verify_store_schema(f"sqlite:///{db}")  # must NOT raise — left for the command
+
+
+def test_verify_store_schema_skips_remote_uri():
+    with patch("kitchen.tracking.mlflow.search_experiments") as mock_search:
+        _verify_store_schema("http://remote:5000")
+    mock_search.assert_not_called()
+
+
+def test_verify_store_schema_skips_missing_sqlite_file(tmp_path):
+    with patch("kitchen.tracking.mlflow.search_experiments") as mock_search:
+        _verify_store_schema(f"sqlite:///{tmp_path / 'does_not_exist.db'}")
+    mock_search.assert_not_called()
 
 
 # ── init_experiment ───────────────────────────────────────────────────────────

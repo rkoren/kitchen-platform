@@ -1030,6 +1030,77 @@ def test_run_evaluate_non_alias_mlflow_error_shows_generic_message(tmp_path, mon
     assert "auto-promote" not in result.output
 
 
+# --- CBB-003: surface project tracebacks behind --debug / KITCHEN_DEBUG ---
+
+
+def _evaluate_raising(monkeypatch, tmp_path, exc):
+    """Wire a run-evaluate where the project evaluator raises `exc`."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+    _make_evaluate_mocks(monkeypatch)  # model load succeeds
+    fake_mod = type(sys)("src.evaluate.run")
+
+    def boom(_m, _p, _s):
+        raise exc
+
+    fake_mod.evaluate = boom
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+
+def test_run_evaluate_swallows_project_error_by_default(tmp_path, monkeypatch):
+    _evaluate_raising(monkeypatch, tmp_path, KeyError("is_tourn"))
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code != 0
+    assert "error during evaluation" in result.output
+    assert "--debug" in result.output  # points the user at the traceback switch
+    assert not isinstance(result.exception, KeyError)  # swallowed, not re-raised
+
+
+def test_run_evaluate_debug_flag_reraises_traceback(tmp_path, monkeypatch):
+    _evaluate_raising(monkeypatch, tmp_path, KeyError("is_tourn"))
+    result = runner.invoke(app, ["run", "evaluate", "--debug"])
+    assert isinstance(result.exception, KeyError)  # full traceback propagates
+
+
+def test_run_evaluate_debug_via_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("KITCHEN_DEBUG", "1")
+    _evaluate_raising(monkeypatch, tmp_path, KeyError("is_tourn"))
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert isinstance(result.exception, KeyError)
+
+
+def test_run_features_debug_flag_reraises_traceback(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+    fake_mod = type(sys)("src.features.run")
+
+    def boom(_p, _s):
+        raise ValueError("bad feature config")
+
+    fake_mod.build = boom
+    monkeypatch.setitem(sys.modules, "src.features.run", fake_mod)
+
+    default = runner.invoke(app, ["run", "features"])
+    assert default.exit_code != 0
+    assert "--debug" in default.output
+    assert not isinstance(default.exception, ValueError)
+
+    debugged = runner.invoke(app, ["run", "features", "--debug"])
+    assert isinstance(debugged.exception, ValueError)
+
+
+def test_main_renders_schema_error_cleanly(capsys):
+    """CBB-001: main() turns MlflowSchemaError into a clean stderr message + exit 1."""
+    from kitchen.cli import main
+    from kitchen.tracking import MlflowSchemaError
+
+    with patch("kitchen.cli.app", side_effect=MlflowSchemaError("schema is stale; run upgrade")):
+        with pytest.raises(SystemExit) as ei:
+            main()
+    assert ei.value.code == 1
+    assert "schema is stale; run upgrade" in capsys.readouterr().err
+
+
 def test_run_evaluate_invalid_flavor(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
@@ -3287,6 +3358,50 @@ def test_promote_run_id_with_metric_shows_metric():
     result = _promote_invoke(["accuracy", "--run-id", "abc123" + "0" * 26])
     assert result.exit_code == 0
     assert "accuracy" in result.output
+
+
+def test_promote_model_artifact_path_passed_to_register(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=lambda: _make_promote_run_client()),
+        patch("kitchen.registry.register_model", return_value="3") as mock_reg,
+        patch("kitchen.registry.promote_model"),
+        patch("kitchen.registry.get_production_uri", return_value=None),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "promote", "--experiment", "test-exp",
+                "--run-id", "abc123" + "0" * 26,
+                "--model-artifact-path", "cbb_model",
+            ],
+            catch_exceptions=False,
+        )
+    assert result.exit_code == 0
+    assert mock_reg.call_args[0][1] == "cbb_model"
+
+
+def test_promote_model_artifact_path_resolved_from_params(monkeypatch, tmp_path):
+    """Without the flag, the logged-model name is read from mlflow.model_artifact_path."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(
+        "experiment: test-exp\nmlflow:\n  model_artifact_path: cbb_model\n"
+    )
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=lambda: _make_promote_run_client()),
+        patch("kitchen.registry.register_model", return_value="3") as mock_reg,
+        patch("kitchen.registry.promote_model"),
+        patch("kitchen.registry.get_production_uri", return_value=None),
+    ):
+        result = runner.invoke(
+            app,
+            ["promote", "--run-id", "abc123" + "0" * 26],
+            catch_exceptions=False,
+        )
+    assert result.exit_code == 0
+    assert mock_reg.call_args[0][1] == "cbb_model"
 
 
 def test_promote_run_id_dry_run_skips_registration():

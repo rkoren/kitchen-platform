@@ -106,7 +106,12 @@ try:
 except ImportError:
     pass  # python-dotenv not installed — env vars must be set externally
 
-app = typer.Typer(help="kitchen ML platform CLI", add_completion=False, no_args_is_help=True)
+app = typer.Typer(
+    help="kitchen ML platform CLI",
+    add_completion=False,
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+)
 
 
 @app.command()
@@ -278,9 +283,8 @@ def status(
         variant = champ_run.data.tags.get("model_variant", "")
         if variant:
             typer.echo(f"  variant : {variant}")
-        for k, v in sorted(champ_run.data.metrics.items()):
-            if not k.startswith("fi."):
-                typer.echo(f"  {k:<14}: {v:.6f}")
+        for line in _summarize_champion_metrics(champ_run.data.metrics):
+            typer.echo(line)
     except Exception:
         typer.echo(f"  (no champion registered for {resolved_model!r})")
         typer.echo("  Run `kitchen promote METRIC` to register the best run.")
@@ -508,6 +512,19 @@ def _resolve_experiment(experiment: str | None, params_file: str) -> str:
     )
 
 
+def _resolve_model_artifact_path(params_file: str) -> str:
+    """The name the project logs its model under (mlflow.model_artifact_path), default 'model'."""
+    from kitchen.config import KitchenConfig
+
+    p = Path(params_file)
+    if p.exists():
+        try:
+            return KitchenConfig.from_yaml(str(p)).mlflow.model_artifact_path
+        except Exception:
+            pass
+    return "model"
+
+
 def _time_ago(ms: int) -> str:
     import time
 
@@ -563,6 +580,47 @@ def _data_status(root: Path) -> tuple[str, str] | None:
         more = "" if len(stale) <= 3 else f" (+{len(stale) - 3} more)"
         return ("stale", f"inputs changed ({changed}{more}) — re-run `{refresh}`")
     return ("fresh", "up to date with data/raw/")
+
+
+def _summarize_champion_metrics(metrics: dict[str, float], max_scalars: int = 12) -> list[str]:
+    """LML-009/CBB-005: compact metric lines for the `kitchen status` champion block.
+
+    Collapses per-fold/period families ({base}_{numeric} keys logged by time_series_cv /
+    loto_cv, e.g. brier_2003..brier_2025) into one summary line so a model with many
+    per-season metrics doesn't flood the one-screen summary; drops fi.* importances; and
+    caps the remaining scalar lines with a "+N more" pointer to the leaderboard.
+    """
+    scored = {k: v for k, v in metrics.items() if not k.startswith("fi.")}
+
+    # Group {base}_{numeric-suffix} keys; a base with ≥3 numeric siblings is a family.
+    families: dict[str, list[float]] = {}
+    scalars: dict[str, float] = {}
+    for k, v in scored.items():
+        base, _, suffix = k.rpartition("_")
+        if base and suffix.isdigit():
+            families.setdefault(base, []).append(v)
+        else:
+            scalars[k] = v
+    families = {b: vals for b, vals in families.items() if len(vals) >= 3}
+    # Any base that didn't reach the family threshold stays an individual scalar.
+    for k, v in scored.items():
+        base, _, suffix = k.rpartition("_")
+        if base and suffix.isdigit() and base not in families:
+            scalars[k] = v
+
+    lines: list[str] = []
+    for name in sorted(scalars)[:max_scalars]:
+        lines.append(f"  {name:<14}: {scalars[name]:.6f}")
+    hidden = len(scalars) - min(len(scalars), max_scalars)
+    for base in sorted(families):
+        vals = families[base]
+        lines.append(
+            f"  {base + '_*':<14}: {len(vals)} values  "
+            f"(min {min(vals):.4f}, mean {sum(vals) / len(vals):.4f}, max {max(vals):.4f})"
+        )
+    if hidden:
+        lines.append(f"  (+{hidden} more metrics — see `kitchen leaderboard` / `kitchen ui`)")
+    return lines
 
 
 def _fmt_delta_row(
@@ -1639,6 +1697,13 @@ def promote(
         str | None,
         typer.Option("--run-id", help="Promote a specific run by ID instead of ranking by metric"),
     ] = None,
+    model_artifact_path: Annotated[
+        str | None,
+        typer.Option(
+            "--model-artifact-path",
+            help="Logged-model name to register (default: mlflow.model_artifact_path, or 'model')",
+        ),
+    ] = None,
 ) -> None:
     """Promote a run to the model registry.
 
@@ -1704,7 +1769,8 @@ def promote(
         typer.echo("\nDry run — skipping registration and promotion.")
         return
 
-    reg_version = register_model(actual_run_id, "model", model_name)
+    resolved_artifact_path = model_artifact_path or _resolve_model_artifact_path(params_file)
+    reg_version = register_model(actual_run_id, resolved_artifact_path, model_name)
     typer.echo(f"\nRegistered : {model_name} v{reg_version}")
     promote_model(model_name, reg_version, alias=alias)
     typer.echo(f"Promoted   : {model_name} v{reg_version} → {alias}")
@@ -2153,5 +2219,18 @@ Done. Next steps:
 
 app.add_typer(serve_app, name="serve")
 app.add_typer(dashboard_app, name="dashboard")
+
+
+def main() -> None:
+    """Console-script entry point: render known fatal errors cleanly (no traceback)."""
+    from kitchen.tracking import MlflowSchemaError
+
+    try:
+        app()
+    except MlflowSchemaError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise SystemExit(1)
+
+
 if __name__ == "__main__":
-    app()
+    main()
