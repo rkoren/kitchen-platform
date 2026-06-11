@@ -3,22 +3,55 @@
 from __future__ import annotations
 
 import mlflow
+import mlflow.exceptions
 import mlflow.tracking
 
 
+def _run_logged_model_names(run_id: str) -> list[str] | None:
+    """Best-effort: names of the models a run logged (MLflow 3.x logged models).
+
+    Returns ``None`` if the lookup fails for any reason — this only feeds an error
+    message, so it must never raise.
+    """
+    try:
+        client = mlflow.tracking.MlflowClient()
+        run = client.get_run(run_id)
+        models = client.search_logged_models(experiment_ids=[run.info.experiment_id])
+        # Keep models sourced from this run; if the attribute is absent, include it.
+        return [m.name for m in models if getattr(m, "source_run_id", run_id) == run_id]
+    except Exception:
+        return None
+
+
 def register_model(run_id: str, artifact_path: str, name: str) -> str:
-    """Register a logged artifact as a versioned entry in the MLflow Model Registry.
+    """Register a logged model as a versioned entry in the MLflow Model Registry.
 
     Args:
-        run_id: MLflow run ID that contains the artifact.
-        artifact_path: Path within the run's artifact store (e.g. "calibrator").
+        run_id: MLflow run ID that logged the model.
+        artifact_path: The name the project logged its model under
+            (``mlflow.<flavor>.log_model(model, <artifact_path>)``); ``"model"`` by default.
         name: Registered model name to create or append a version to.
 
     Returns:
         The new model version string.
     """
     model_uri = f"runs:/{run_id}/{artifact_path}"
-    mv = mlflow.register_model(model_uri, name)
+    try:
+        mv = mlflow.register_model(model_uri, name)
+    except mlflow.exceptions.MlflowException as exc:
+        # MLflow 3.x: log_model creates a *logged model* keyed by name. When the
+        # configured name doesn't match, replace the opaque "Unable to find a
+        # logged_model" trace with the actual names + how to fix it.
+        available = _run_logged_model_names(run_id)
+        if available is not None and artifact_path not in available:
+            listed = ", ".join(repr(n) for n in available) if available else "(none logged)"
+            raise mlflow.exceptions.MlflowException(
+                f"No model named {artifact_path!r} was logged by run {run_id[:8]}. "
+                f"Models logged by this run: {listed}. Set `mlflow.model_artifact_path` "
+                f"in params.yaml to one of those names (or pass `kitchen promote "
+                f"--model-artifact-path <name>`)."
+            ) from exc
+        raise
     return mv.version
 
 

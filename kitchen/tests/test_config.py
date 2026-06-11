@@ -87,6 +87,12 @@ def test_mlflow_defaults():
     cfg = MLflowConfig()
     assert cfg.tracking_uri == "sqlite:///mlruns.db"
     assert cfg.artifact_bucket is None
+    assert cfg.model_artifact_path == "model"  # CBB-002 default
+
+
+def test_mlflow_custom_model_artifact_path():
+    cfg = MLflowConfig(model_artifact_path="cbb_model")
+    assert cfg.model_artifact_path == "cbb_model"
 
 
 def test_mlflow_custom_uri():

@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated
 
 import typer
+
+_DEBUG_OPTION = typer.Option(
+    "--debug", help="Show the full traceback on failure (or set KITCHEN_DEBUG=1)"
+)
+
+
+def _debug_enabled(flag: bool) -> bool:
+    """Whether to surface full tracebacks — via the --debug flag or KITCHEN_DEBUG env."""
+    return flag or os.environ.get("KITCHEN_DEBUG", "").strip().lower() in ("1", "true", "yes")
 
 
 def _promote_metric_from_thresholds(params_file: str) -> tuple[str, bool] | None:
@@ -91,7 +101,9 @@ def _try_auto_promote(
     typer.echo()
     typer.echo(f"auto-promote: metric={metric} ({direction_label})")
     if wins:
-        reg_version = register_model(new_run.info.run_id, "model", resolved_model)
+        reg_version = register_model(
+            new_run.info.run_id, cfg.mlflow.model_artifact_path, resolved_model
+        )
         promote_model(resolved_model, reg_version, alias="champion")
         typer.echo(f"auto-promote: {new_run.info.run_id[:8]} → champion  ({reason})")
         typer.echo(f"             {resolved_model} v{reg_version} @ champion")
@@ -198,6 +210,7 @@ def run_features(
     params_file: Annotated[
         str, typer.Option("--params", help="Path to params.yaml")
     ] = "params.yaml",
+    debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
     """Run the feature engineering step: raw → processed features.
 
@@ -244,7 +257,9 @@ def run_features(
         )
         raise typer.Exit(1)
     except Exception as exc:
-        typer.echo(f"error: {exc}", err=True)
+        if _debug_enabled(debug):
+            raise
+        typer.echo(f"error: {exc}\n  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)", err=True)
         raise typer.Exit(1)
 
     processed = params.get("features", {}).get("processed_file", "features.parquet")
@@ -291,6 +306,7 @@ def run_train(
             "(any --override still applies on top), then re-train.",
         ),
     ] = None,
+    debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
     """Run the full train pipeline: features → train → log to MLflow.
 
@@ -362,6 +378,14 @@ def run_train(
     except ModuleNotFoundError as exc:
         typer.echo(
             f"error: {exc}\nRun from the project root and make sure src/ is implemented.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    except Exception as exc:
+        if _debug_enabled(debug):
+            raise
+        typer.echo(
+            f"error: training failed: {exc}\n  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)",
             err=True,
         )
         raise typer.Exit(1)
@@ -564,6 +588,7 @@ def run_evaluate(
     flavor: Annotated[
         str, typer.Option("--flavor", help="MLflow loader flavor: sklearn, xgboost, pyfunc")
     ] = "sklearn",
+    debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
     """Load a model from MLflow and run the project's evaluator."""
     import os
@@ -624,6 +649,8 @@ def run_evaluate(
         is_missing_alias = isinstance(exc, mlflow.exceptions.MlflowException) and (
             "alias" in exc_lower or alias.lower() in exc_lower
         )
+        if not is_missing_alias and _debug_enabled(debug):
+            raise
         if is_missing_alias:
             typer.echo(
                 f"error: No {alias!r} model registered yet for {model_uri!r}.\n"
@@ -649,7 +676,12 @@ def run_evaluate(
     try:
         metrics = evaluate(model, params, DataStore())
     except Exception as exc:
-        typer.echo(f"error during evaluation: {exc}", err=True)
+        if _debug_enabled(debug):
+            raise
+        typer.echo(
+            f"error during evaluation: {exc}\n  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)",
+            err=True,
+        )
         raise typer.Exit(1)
 
     # Patch run_id into metrics.json so `kitchen push` can identify the champion run.

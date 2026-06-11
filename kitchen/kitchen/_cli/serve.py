@@ -147,7 +147,7 @@ def serve_local(
 
     url = f"http://localhost:{port}"
     typer.echo(f"Serving   → {url}")
-    typer.echo(f"Predictor → {pred_dir}")
+    typer.echo(f"Predictor → {pred_dir}  (exported as $KITCHEN_PREDICTOR_DIR — reserved)")
     if reload:
         typer.echo("Reload    → enabled (watchfiles)")
     typer.echo("Press Ctrl+C to stop.\n")

@@ -37,6 +37,33 @@ def test_register_model_returns_version_string():
         assert register_model("run1", "artifacts/model", "name") == "7"
 
 
+def test_register_model_wrong_name_lists_available(monkeypatch):
+    monkeypatch.setattr(
+        "kitchen.registry._run_logged_model_names",
+        lambda _run_id: ["cbb_model", "calibrator"],
+    )
+    with patch(
+        "mlflow.register_model",
+        side_effect=mlflow.exceptions.MlflowException("Unable to find a logged_model"),
+    ):
+        with pytest.raises(mlflow.exceptions.MlflowException) as exc:
+            register_model("abc12345", "model", "cbb-tournament-model")
+    msg = str(exc.value)
+    assert "cbb_model" in msg and "calibrator" in msg
+    assert "mlflow.model_artifact_path" in msg
+
+
+def test_register_model_reraises_when_lookup_fails(monkeypatch):
+    # If we can't enumerate logged models, surface the original MLflow error unchanged.
+    monkeypatch.setattr("kitchen.registry._run_logged_model_names", lambda _run_id: None)
+    with patch(
+        "mlflow.register_model",
+        side_effect=mlflow.exceptions.MlflowException("original boom"),
+    ):
+        with pytest.raises(mlflow.exceptions.MlflowException, match="original boom"):
+            register_model("abc12345", "model", "name")
+
+
 # ---------------------------------------------------------------------------
 # get_best_run
 # ---------------------------------------------------------------------------

@@ -46,6 +46,12 @@ class MLflowConfig(BaseModel):
 
     tracking_uri: str = "sqlite:///mlruns.db"
     artifact_bucket: str | None = None
+    # Name the project logs its model under — i.e. the ``name`` passed to
+    # ``mlflow.<flavor>.log_model(model, name)``. ``kitchen promote`` /
+    # ``--auto-promote`` register this logged model. Default ``"model"`` matches
+    # the scaffolded templates; set it (e.g. ``cbb_model``) when a project logs
+    # under a different name.
+    model_artifact_path: str = "model"
 
 
 class MonitorConfig(BaseModel):

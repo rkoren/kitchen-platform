@@ -4,6 +4,29 @@ Common issues and how to fix them.
 
 ---
 
+## Pipeline steps
+
+### A `kitchen run` step fails with a one-line error
+
+`kitchen run features`, `kitchen run train`, and `kitchen run evaluate` execute your
+project's own `build` / `train` / `evaluate` code. When that code raises, the command
+prints a clean one-line summary so the failure isn't buried in a stack trace:
+
+```
+error during evaluation: 'is_tourn'
+  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)
+```
+
+To debug your own step, re-run with the full traceback (file and line):
+
+```bash
+kitchen run evaluate --debug      # or: KITCHEN_DEBUG=1 kitchen run evaluate
+```
+
+`KITCHEN_DEBUG=1` applies to every `kitchen run` step, which is handy in CI logs.
+
+---
+
 ## Kaggle credentials
 
 ### `401 Unauthorized` from `kitchen ingest`
@@ -49,6 +72,30 @@ kaggle.rest.ApiException: (401) Unauthorized
 ---
 
 ## MLflow — local SQLite
+
+### `error: MLflow tracking store schema is out of date`
+
+After upgrading kitchen (which may bump MLflow), an `mlruns.db` created by an older MLflow
+can no longer be read. Kitchen detects this and prints remediation instead of a raw MLflow
+traceback:
+
+**Fix:** Upgrade the schema in place (preserves run history):
+
+```bash
+mlflow db upgrade sqlite:///mlruns.db
+```
+
+If that fails with `Can't locate revision …`, the database predates the current MLflow's
+migration history — archive it and start fresh (local run history is lost):
+
+```bash
+mv mlruns.db mlruns.db.bak
+```
+
+To keep run history across MLflow upgrades, use a remote/S3-backed tracking server instead
+of local SQLite.
+
+---
 
 ### `MlflowException: Could not find experiment with ID`
 

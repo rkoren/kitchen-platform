@@ -56,6 +56,20 @@ python flows/promote.py --dry-run   # compare baseline vs challenger
 python flows/promote.py             # register winner, set champion alias
 ```
 
+`kitchen promote` and `kitchen run train --auto-promote` register whatever model the
+run logged. By default they look for a model logged under the name `model` (matching the
+`tracker.log_model(model, "model", ...)` example above). If your project logs under a
+different name — e.g. a composite model logged as `mlflow.sklearn.log_model(m, "cbb_model")`
+— set it once in `params.yaml` so promotion finds it:
+
+```yaml
+mlflow:
+  model_artifact_path: cbb_model   # default: model
+```
+
+`kitchen promote --model-artifact-path <name>` overrides it for a single run. If the name
+doesn't match, the error lists the names the run actually logged so you know what to set.
+
 The champion model is loaded with:
 
 ```python
