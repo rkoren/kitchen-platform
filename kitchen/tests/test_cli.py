@@ -3897,3 +3897,53 @@ def test_serve_local_dashboard_starts_server_and_opens_browser(tmp_path, capsys)
     captured = capsys.readouterr()
     assert "19999" in captured.out
     assert "localhost" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# _load_hint — flavor-aware promote load instruction (CBB-010)
+# ---------------------------------------------------------------------------
+
+
+def test_load_hint_sklearn_only():
+    """A model with only the sklearn flavor gets the sklearn loader, not pyfunc."""
+    from unittest.mock import MagicMock, patch
+
+    from kitchen.cli import _load_hint
+
+    info = MagicMock()
+    info.flavors = {"sklearn": {}}
+    with patch("mlflow.models.get_model_info", return_value=info):
+        assert _load_hint("models:/m@champion") == "mlflow.sklearn.load_model('models:/m@champion')"
+
+
+def test_load_hint_prefers_pyfunc_when_present():
+    """pyfunc wins when a python_function flavor exists (it is flavor-agnostic)."""
+    from unittest.mock import MagicMock, patch
+
+    from kitchen.cli import _load_hint
+
+    info = MagicMock()
+    info.flavors = {"sklearn": {}, "python_function": {}}
+    with patch("mlflow.models.get_model_info", return_value=info):
+        assert _load_hint("models:/m@c") == "mlflow.pyfunc.load_model('models:/m@c')"
+
+
+def test_load_hint_xgboost():
+    from unittest.mock import MagicMock, patch
+
+    from kitchen.cli import _load_hint
+
+    info = MagicMock()
+    info.flavors = {"xgboost": {}}
+    with patch("mlflow.models.get_model_info", return_value=info):
+        assert _load_hint("models:/m@c") == "mlflow.xgboost.load_model('models:/m@c')"
+
+
+def test_load_hint_falls_back_to_pyfunc_on_error():
+    """If the flavors can't be read, keep the pyfunc hint rather than crashing promote."""
+    from unittest.mock import patch
+
+    from kitchen.cli import _load_hint
+
+    with patch("mlflow.models.get_model_info", side_effect=RuntimeError("no registry")):
+        assert _load_hint("models:/m@c") == "mlflow.pyfunc.load_model('models:/m@c')"

@@ -27,7 +27,6 @@ from __future__ import annotations
 import logging
 
 import yaml
-from prefect import flow, task
 
 from kitchen.monitoring import DriftReport
 from kitchen.store import DataStore
@@ -53,17 +52,14 @@ def _validate_output(monitor_cfg: dict) -> None:
         )
 
 
-@task(name="load-reference")
 def _load_reference(store: DataStore, filename: str) -> object:
     return store.load_parquet(filename, stage="processed")
 
 
-@task(name="load-current")
 def _load_current(store: DataStore, filename: str) -> object:
     return store.load_parquet(filename, stage="processed")
 
 
-@task(name="drift-report")
 def _run_drift_report(
     reference: object, current: object, drift_threshold: float = 0.05
 ) -> DriftReport:
@@ -129,7 +125,17 @@ def _enforce_drift_gate(report: DriftReport, monitor_cfg: dict, report_path: str
         )
 
 
-@task(name="save-report")
+def _drift_summary(result: object) -> str:
+    """One-line drift summary for stdout (CBB-008), e.g.::
+
+    ``Drift: 7/48 columns drifted (14.6%) — dataset_drift=False``
+    """
+    return (
+        f"Drift: {result.n_drifted}/{result.n_columns} columns drifted "
+        f"({result.share_drifted:.1%}) — dataset_drift={result.dataset_drift}"
+    )
+
+
 def _save_report(report: DriftReport, monitor_cfg: dict) -> str:
     bucket = monitor_cfg.get("report_bucket", "")
     key = monitor_cfg.get("report_key", "monitoring/drift_report.html")
@@ -154,9 +160,13 @@ def _save_report(report: DriftReport, monitor_cfg: dict) -> str:
     return result
 
 
-@flow(name="kitchen-monitor")
 def monitor_pipeline(params_file: str = "params.yaml", local_path_override: str | None = None) -> str:
-    """Run drift detection: load reference + current data, generate the drift report, save/upload."""
+    """Run drift detection: load reference + current data, generate the drift report, save/upload.
+
+    Plain Python (no Prefect) so monitoring doesn't depend on a running Prefect
+    server or risk the stale ``~/.prefect/prefect.db`` Alembic-migration crash —
+    the same SCF-014 treatment applied to ``train_flow`` (CBB-009).
+    """
     with open(params_file, encoding="utf-8") as f:
         params = yaml.safe_load(f)
 
@@ -172,6 +182,9 @@ def monitor_pipeline(params_file: str = "params.yaml", local_path_override: str 
     out = _save_report(report, monitor_cfg)
     _log_to_mlflow(report, monitor_cfg, params)  # no-op unless monitor.log_to_mlflow
     _enforce_drift_gate(report, monitor_cfg, out)  # raises after the report is written
+    # Success path: surface the drift summary on stdout (CBB-008). The fail-on-drift
+    # path already carries the counts in the DriftThresholdExceeded message.
+    print(_drift_summary(report.result))
     return out
 
 

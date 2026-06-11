@@ -260,3 +260,23 @@ def test_config_ci_from_yaml(tmp_path):
 def test_config_ci_rejects_bad_notify_when():
     with pytest.raises(ValidationError):
         KitchenConfig(experiment="x", ci={"notifications": {"when": "sometimes"}})
+
+
+# --- CheckConfig (CBB-012) ---
+
+
+def test_check_config_defaults_empty():
+    from kitchen.config import CheckConfig
+
+    assert CheckConfig().required_env == []
+
+
+def test_check_section_parsed_on_kitchen_config():
+    cfg = KitchenConfig(experiment="e", check={"required_env": ["KENPOM_API_KEY"]})
+    assert cfg.check is not None
+    assert cfg.check.required_env == ["KENPOM_API_KEY"]
+
+
+def test_check_section_absent_is_none():
+    cfg = KitchenConfig(experiment="e")
+    assert cfg.check is None

@@ -525,6 +525,35 @@ def _resolve_model_artifact_path(params_file: str) -> str:
     return "model"
 
 
+def _load_hint(model_uri: str) -> str:
+    """Return the ``load_model`` expression matching the model's logged flavor.
+
+    ``pyfunc`` is preferred when a ``python_function`` flavor exists (it is
+    flavor-agnostic), but composite / sklearn-only models that log no pyfunc
+    flavor must be loaded with their framework loader. Inspect the registered
+    version's flavors (same mechanism as ``kitchen run evaluate``) so the printed
+    hint is copy-paste-correct instead of a hardcoded ``mlflow.pyfunc`` that fails
+    with ``Model does not have the "python_function" flavor``. Falls back to the
+    pyfunc hint if the flavors can't be read.
+    """
+    loaders = {
+        "python_function": "mlflow.pyfunc",
+        "xgboost": "mlflow.xgboost",
+        "lightgbm": "mlflow.lightgbm",
+        "sklearn": "mlflow.sklearn",
+    }
+    try:
+        import mlflow
+
+        flavors = mlflow.models.get_model_info(model_uri).flavors
+        for key, module in loaders.items():
+            if key in flavors:
+                return f"{module}.load_model('{model_uri}')"
+    except Exception:
+        pass
+    return f"mlflow.pyfunc.load_model('{model_uri}')"
+
+
 def _time_ago(ms: int) -> str:
     import time
 
@@ -1320,6 +1349,23 @@ def check(
             if cfg.monitor:
                 output = cfg.monitor.report_bucket or cfg.monitor.local_path
                 _ok("monitor config", f"output={output}")
+            # CBB-012: validate project-declared required secrets (e.g. KENPOM_API_KEY).
+            # Satisfied by the process env or a local .env so it matches how the
+            # project actually runs (dotenv-loaded), not just the current shell.
+            if cfg.check and cfg.check.required_env:
+                _env_file: dict[str, str | None] = {}
+                try:
+                    from dotenv import dotenv_values
+
+                    if Path(".env").exists():
+                        _env_file = dotenv_values(".env")
+                except Exception:
+                    pass  # python-dotenv absent or .env unreadable → env-only check
+                for _var in cfg.check.required_env:
+                    if os.environ.get(_var) or _env_file.get(_var):
+                        _ok(f"env: {_var}", "present")
+                    else:
+                        _fail(f"env: {_var}", "required by check.required_env — set it or add to .env")
         except ValidationError:
             _fail(params_file, f"invalid — run `kitchen validate {params_file}`")
         except Exception as exc:
@@ -1774,7 +1820,7 @@ def promote(
     typer.echo(f"\nRegistered : {model_name} v{reg_version}")
     promote_model(model_name, reg_version, alias=alias)
     typer.echo(f"Promoted   : {model_name} v{reg_version} → {alias}")
-    typer.echo(f"Load with  : mlflow.pyfunc.load_model('models:/{model_name}@{alias}')")
+    typer.echo(f"Load with  : {_load_hint(f'models:/{model_name}@{alias}')}")
     typer.echo()
 
 

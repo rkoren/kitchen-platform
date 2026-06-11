@@ -110,6 +110,19 @@ thresholds:
     max: 0.25                 # valid range constraint
 ```
 
+### `check:` section
+
+Optional pre-flight validations for `kitchen check`. `required_env` lists environment
+variables the project needs to run (e.g. an external-API key). `kitchen check` hard-fails
+(non-zero exit) when one is absent from **both** the process environment and a local `.env`,
+so an API-fed project gates on its own secrets without editing platform code.
+
+```yaml
+check:
+  required_env:
+    - KENPOM_API_KEY          # ✗ in `kitchen check` until set in the env or .env
+```
+
 ### `monitor:` section
 
 Required by `kitchen run monitor`. At least one of `report_bucket` or `local_path` must be set.
