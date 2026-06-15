@@ -375,6 +375,27 @@ def test_validate_shows_data_source(tmp_path):
     assert "kaggle" in result.output
 
 
+def test_validate_shows_secrets_summary(tmp_path):
+    p = tmp_path / "params.yaml"
+    p.write_text(
+        "experiment: x\nsecrets:\n"
+        "  A:\n    aws_secret: proj/prod\n    key: A\n"
+        "  B:\n    required: false\n"
+    )
+    result = runner.invoke(app, ["validate", str(p)])
+    assert result.exit_code == 0
+    assert "secrets" in result.output
+    assert "2 declared (1 required, 1 from cloud)" in result.output
+
+
+def test_validate_secrets_flags_legacy_required_env(tmp_path):
+    p = tmp_path / "params.yaml"
+    p.write_text("experiment: x\ncheck:\n  required_env: [LEGACY]\n")
+    result = runner.invoke(app, ["validate", str(p)])
+    assert result.exit_code == 0
+    assert "deprecated" in result.output
+
+
 def test_validate_fails_on_bad_data(tmp_path):
     p = tmp_path / "params.yaml"
     p.write_text("experiment: x\ndata:\n  source: kaggle\n")  # missing competition
@@ -3947,3 +3968,56 @@ def test_load_hint_falls_back_to_pyfunc_on_error():
 
     with patch("mlflow.models.get_model_info", side_effect=RuntimeError("no registry")):
         assert _load_hint("models:/m@c") == "mlflow.pyfunc.load_model('models:/m@c')"
+
+
+# ---------------------------------------------------------------------------
+# kitchen secrets template (SECR-005)
+# ---------------------------------------------------------------------------
+
+_SECRETS_PARAMS = (
+    "experiment: demo\nsecrets:\n"
+    "  KAGGLE_KEY:\n    aws_secret: p/prod\n    key: KAGGLE_KEY\n    required: true\n"
+    "  LOCAL_TOKEN: {}\n"
+)
+
+
+def test_secrets_template_stdout(tmp_path):
+    (tmp_path / "params.yaml").write_text(_SECRETS_PARAMS)
+    result = runner.invoke(
+        app, ["secrets", "template", "--params", str(tmp_path / "params.yaml"), "--stdout"]
+    )
+    assert result.exit_code == 0
+    assert "# KAGGLE_KEY (required)" in result.output
+    assert "KAGGLE_KEY=" in result.output
+    assert "LOCAL_TOKEN=" in result.output
+
+
+def test_secrets_template_writes_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(_SECRETS_PARAMS)
+    result = runner.invoke(app, ["secrets", "template"])
+    assert result.exit_code == 0
+    assert "Wrote .env.example (2 secrets)" in result.output
+    body = (tmp_path / ".env.example").read_text()
+    assert "KAGGLE_KEY=" in body
+
+
+def test_secrets_template_overwrite_guard(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(_SECRETS_PARAMS)
+    (tmp_path / ".env.example").write_text("KEEP ME\n")
+    result = runner.invoke(app, ["secrets", "template"])
+    assert result.exit_code == 1
+    assert "already exists" in result.output
+    assert (tmp_path / ".env.example").read_text() == "KEEP ME\n"  # untouched
+    # --force overwrites
+    forced = runner.invoke(app, ["secrets", "template", "--force"])
+    assert forced.exit_code == 0
+    assert "KAGGLE_KEY=" in (tmp_path / ".env.example").read_text()
+
+
+def test_secrets_template_missing_params(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["secrets", "template"])
+    assert result.exit_code == 1
+    assert "not found" in result.output

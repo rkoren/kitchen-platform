@@ -280,3 +280,72 @@ def test_check_section_parsed_on_kitchen_config():
 def test_check_section_absent_is_none():
     cfg = KitchenConfig(experiment="e")
     assert cfg.check is None
+
+
+# --- SecretSpec + secrets manifest (SECR-001) ---
+
+
+def test_secret_spec_env_only_default_required():
+    from kitchen.config import SecretSpec
+
+    s = SecretSpec()
+    assert s.required is True
+    assert s.source == "env"
+
+
+def test_secret_spec_sm_bundle_source():
+    from kitchen.config import SecretSpec
+
+    s = SecretSpec(aws_secret="cbb-model/prod", key="KENPOM_API_KEY", required=False)
+    assert s.required is False
+    assert s.source == "SM cbb-model/prod#KENPOM_API_KEY"
+
+
+def test_secret_spec_ssm_source():
+    from kitchen.config import SecretSpec
+
+    assert SecretSpec(ssm="/cbb/kenpom").source == "SSM /cbb/kenpom"
+
+
+def test_secret_spec_key_requires_aws_secret():
+    from kitchen.config import SecretSpec
+
+    with pytest.raises(ValidationError, match="requires `aws_secret`"):
+        SecretSpec(key="X")
+
+
+def test_secret_spec_aws_and_ssm_mutually_exclusive():
+    from kitchen.config import SecretSpec
+
+    with pytest.raises(ValidationError, match="not both"):
+        SecretSpec(aws_secret="a", ssm="b")
+
+
+def test_secrets_parsed_on_kitchen_config():
+    cfg = KitchenConfig(
+        experiment="e",
+        secrets={"KENPOM_API_KEY": {"aws_secret": "cbb-model/prod", "key": "KENPOM_API_KEY"}},
+    )
+    assert cfg.secrets["KENPOM_API_KEY"].source == "SM cbb-model/prod#KENPOM_API_KEY"
+
+
+def test_effective_secrets_folds_legacy_required_env():
+    cfg = KitchenConfig(experiment="e", check={"required_env": ["LEGACY_VAR"]})
+    eff = cfg.effective_secrets()
+    assert eff["LEGACY_VAR"].source == "env"
+    assert eff["LEGACY_VAR"].required is True
+    assert cfg.uses_legacy_required_env is True
+
+
+def test_effective_secrets_manifest_wins_over_legacy():
+    cfg = KitchenConfig(
+        experiment="e",
+        secrets={"DUP": {"ssm": "/x"}},
+        check={"required_env": ["DUP"]},
+    )
+    # secrets: entry wins on a name conflict (migrating one secret at a time).
+    assert cfg.effective_secrets()["DUP"].source == "SSM /x"
+
+
+def test_uses_legacy_required_env_false_without_check():
+    assert KitchenConfig(experiment="e").uses_legacy_required_env is False

@@ -110,17 +110,69 @@ thresholds:
     max: 0.25                 # valid range constraint
 ```
 
-### `check:` section
+### `secrets:` section
 
-Optional pre-flight validations for `kitchen check`. `required_env` lists environment
-variables the project needs to run (e.g. an external-API key). `kitchen check` hard-fails
-(non-zero exit) when one is absent from **both** the process environment and a local `.env`,
-so an API-fed project gates on its own secrets without editing platform code.
+Declares the secrets a project needs and where each one resolves from. It is the single
+source of truth for credentials — `kitchen check` validates it, and the resolver reads it.
+Each entry names one secret:
 
 ```yaml
-check:
-  required_env:
-    - KENPOM_API_KEY          # ✗ in `kitchen check` until set in the env or .env
+secrets:
+  KAGGLE_KEY:                     # SM JSON bundle: field `key` within bundle `aws_secret`
+    aws_secret: my-project/prod
+    key: KAGGLE_KEY
+    required: true                # default true; gates `kitchen check`
+  SLACK_WEBHOOK_URL:              # optional — absence won't fail check
+    aws_secret: my-project/prod
+    key: SLACK_WEBHOOK_URL
+    required: false
+  DB_PASSWORD:
+    ssm: /my-project/db-password  # SSM Parameter Store path (SecureString)
+  LOCAL_TOKEN: {}                 # no source → env-only (must come from env / .env)
+```
+
+A secret declares **either** `aws_secret` (+ optional `key` to select a field in the JSON
+bundle) **or** `ssm`, or neither (env-only). `kitchen check` **resolves** every required secret
+through the chain below and hard-fails (with the exact remediation) when one can't be resolved —
+so a missing credential is caught at pre-flight, not mid-run. Optional (`required: false`)
+secrets only warn. An env var of the same name always overrides the declared cloud source.
+
+> **Deprecated:** the earlier `check.required_env: [NAME, ...]` list still works — it folds
+> into the manifest as env-only required secrets and `kitchen check`/`validate` warn — but
+> migrate each entry to `secrets:` (it is removed in a future release).
+
+**Resolving at runtime.** Read a secret in code through one call:
+
+```python
+from kitchen import secrets
+kaggle_key = secrets.get("KAGGLE_KEY")   # raises SecretNotFound if unresolved
+```
+
+`get()` resolves through an ordered chain — (1) process env / `.env` → (2) the declared cloud
+source (Secrets Manager or SSM, attempted only when an AWS identity resolves) → (3) raise
+`SecretNotFound` naming the secret and how to provide it. An env var always overrides the cloud
+source. Resolved values are cached in-process for `KITCHEN_SECRETS_TTL` seconds (default 300) so
+a rotated secret is picked up without a restart. The resolver never logs secret values. Use
+`secrets.try_get(name)` for a `None`-instead-of-raise variant.
+
+To pass secrets into a subprocess that needs them in its environment (e.g. DVC needs `AWS_*` to
+reach S3), use `secrets.resolve_into_env([...])` — it resolves each secret, **masks** it under
+GitHub Actions (emits `::add-mask::` so the value is scrubbed from CI logs), and returns an
+environment mapping to hand to `subprocess.run(..., env=...)`:
+
+```python
+from kitchen import secrets
+env = secrets.resolve_into_env(["AWS_SECRET_ACCESS_KEY"])
+subprocess.run(["dvc", "pull"], env=env, check=True)
+```
+
+**Generating `.env.example`.** `kitchen secrets template` renders an annotated `.env.example`
+from the manifest — one blank `NAME=` line per secret, tagged required/optional with its source
+— so a fresh clone self-documents what to set (use `--stdout` to preview, `--force` to overwrite):
+
+```bash
+kitchen secrets template            # writes .env.example
+kitchen secrets template --stdout   # print instead
 ```
 
 ### `monitor:` section
