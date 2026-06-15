@@ -428,6 +428,72 @@ def validate(
         if cfg.ci.notifications:
             bits.append(f"notify_when={cfg.ci.notifications.when}")
         typer.echo(f"  ci         : {', '.join(bits)}")
+    _secrets = cfg.effective_secrets()
+    if _secrets:
+        n_required = sum(1 for s in _secrets.values() if s.required)
+        n_cloud = sum(1 for s in _secrets.values() if s.source != "env")
+        summary = f"{len(_secrets)} declared ({n_required} required, {n_cloud} from cloud)"
+        if cfg.uses_legacy_required_env:
+            summary += "  [check.required_env deprecated → migrate to secrets:]"
+        typer.echo(f"  secrets    : {summary}")
+
+
+# ---------------------------------------------------------------------------
+# Secrets command group
+# ---------------------------------------------------------------------------
+
+secrets_app = typer.Typer(help="Secrets manifest helpers.", no_args_is_help=True)
+
+
+@secrets_app.command("template")
+def secrets_template(
+    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    output: Annotated[
+        str, typer.Option("--output", "-o", help="File to write (use --stdout to print instead)")
+    ] = ".env.example",
+    to_stdout: Annotated[
+        bool, typer.Option("--stdout", help="Print to stdout instead of writing a file")
+    ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Overwrite the output file if it already exists")
+    ] = False,
+) -> None:
+    """Generate a `.env.example` from the params.yaml `secrets:` manifest.
+
+    One annotated `NAME=` line per declared secret (required/optional + source) so a fresh
+    clone self-documents what to set. Values are never written.
+    """
+    from pydantic import ValidationError
+
+    from kitchen import secrets as secrets_mod
+    from kitchen.config import KitchenConfig
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+    try:
+        cfg = KitchenConfig.from_yaml(str(path))
+    except ValidationError:
+        typer.echo(f"error: invalid params — run `kitchen validate {params_file}`", err=True)
+        raise typer.Exit(1)
+    except Exception as exc:
+        typer.echo(f"error reading {params_file}: {exc}", err=True)
+        raise typer.Exit(1)
+
+    content = secrets_mod.env_example(cfg)
+
+    if to_stdout:
+        typer.echo(content, nl=False)
+        return
+
+    out_path = Path(output)
+    if out_path.exists() and not force:
+        typer.echo(f"error: {output} already exists — pass --force to overwrite", err=True)
+        raise typer.Exit(1)
+    out_path.write_text(content, encoding="utf-8")
+    n = len(cfg.effective_secrets())
+    typer.echo(f"Wrote {output} ({n} secret{'s' if n != 1 else ''})")
 
 
 # ---------------------------------------------------------------------------
@@ -1349,23 +1415,43 @@ def check(
             if cfg.monitor:
                 output = cfg.monitor.report_bucket or cfg.monitor.local_path
                 _ok("monitor config", f"output={output}")
-            # CBB-012: validate project-declared required secrets (e.g. KENPOM_API_KEY).
-            # Satisfied by the process env or a local .env so it matches how the
-            # project actually runs (dotenv-loaded), not just the current shell.
-            if cfg.check and cfg.check.required_env:
-                _env_file: dict[str, str | None] = {}
-                try:
-                    from dotenv import dotenv_values
+            # SECR-003: validate the declared secrets manifest by actually RESOLVING each
+            # secret through the resolver chain (env/.env → declared cloud source), not just
+            # presence-checking env. A required secret that can't be resolved hard-fails here
+            # with the resolver's actionable remediation — failing at pre-flight beats failing
+            # mid-run (e.g. a cryptic boto error during `dvc pull`). The legacy
+            # `check.required_env` list (CBB-012) folds in as env-only required secrets and is
+            # warned as deprecated. Resolution never logs secret values.
+            if cfg.uses_legacy_required_env:
+                _warn(
+                    "secrets",
+                    "`check.required_env` is deprecated — migrate to the `secrets:` manifest",
+                )
+            _secrets = cfg.effective_secrets()
+            if _secrets:
+                from kitchen import secrets as _secrets_mod
 
-                    if Path(".env").exists():
-                        _env_file = dotenv_values(".env")
-                except Exception:
-                    pass  # python-dotenv absent or .env unreadable → env-only check
-                for _var in cfg.check.required_env:
-                    if os.environ.get(_var) or _env_file.get(_var):
-                        _ok(f"env: {_var}", "present")
+                for _name, _spec in _secrets.items():
+                    try:
+                        _secrets_mod.get(_name, cfg=cfg, use_cache=False)
+                    except _secrets_mod.SecretNotFound as _exc:
+                        if _spec.required:
+                            _hint = str(_exc)
+                            _prefix = f"secret {_name!r}"
+                            if _hint.startswith(_prefix):
+                                _hint = _hint[len(_prefix):].lstrip(": ").strip()
+                            _fail(f"secret: {_name}", _hint)
+                        else:
+                            _warn(f"secret: {_name}", f"optional — not resolved ({_spec.source})")
                     else:
-                        _fail(f"env: {_var}", "required by check.required_env — set it or add to .env")
+                        # Resolved. Report how (env override vs the declared cloud source).
+                        _from_env = _secrets_mod.EnvProvider().get(_name, _spec) is not None
+                        if _spec.source == "env":
+                            _ok(f"secret: {_name}", "present (env)")
+                        elif _from_env:
+                            _ok(f"secret: {_name}", f"env override (else {_spec.source})")
+                        else:
+                            _ok(f"secret: {_name}", f"resolved from {_spec.source}")
         except ValidationError:
             _fail(params_file, f"invalid — run `kitchen validate {params_file}`")
         except Exception as exc:
@@ -2265,6 +2351,7 @@ Done. Next steps:
 
 app.add_typer(serve_app, name="serve")
 app.add_typer(dashboard_app, name="dashboard")
+app.add_typer(secrets_app, name="secrets")
 
 
 def main() -> None:

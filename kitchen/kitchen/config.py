@@ -117,7 +117,7 @@ class CheckConfig(BaseModel):
     """``check:`` section — extra pre-flight validations for ``kitchen check``.
 
     ``required_env`` lists environment variables the project needs to run (e.g. an
-    API key like ``KENPOM_API_KEY``). ``kitchen check`` hard-fails when one is
+    API key`). ``kitchen check`` hard-fails when one is
     absent from both the process environment and a local ``.env`` — so a project
     fed by an external API gates on its own secrets without editing platform code.
     """
@@ -159,6 +159,44 @@ class ThresholdSpec(BaseModel):
         return self
 
 
+class SecretSpec(BaseModel):
+    """One entry in the ``secrets:`` manifest — declares where a secret resolves from.
+
+    Pick one source (or none, for env-only):
+      - **SM JSON bundle:** ``aws_secret`` (bundle name/ARN) + ``key`` (field within the JSON)
+      - **SSM Parameter Store:** ``ssm`` (parameter path)
+      - **omit both:** the secret must come from the environment / ``.env``
+
+    ``required`` (default True) gates ``kitchen check``. This manifest is the single
+    declarative source of truth the resolver (SECR-002) reads; it supersedes the deprecated
+    ``check.required_env`` list.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    aws_secret: str | None = None
+    key: str | None = None
+    ssm: str | None = None
+    required: bool = True
+
+    @model_validator(mode="after")
+    def _coherent_source(self) -> "SecretSpec":
+        if self.aws_secret and self.ssm:
+            raise ValueError("a secret declares `aws_secret` or `ssm`, not both")
+        if self.key and not self.aws_secret:
+            raise ValueError("`key` selects a field within an SM bundle — it requires `aws_secret`")
+        return self
+
+    @property
+    def source(self) -> str:
+        """Human-readable source label for check/validate output (``env`` when undeclared)."""
+        if self.aws_secret:
+            return f"SM {self.aws_secret}" + (f"#{self.key}" if self.key else "")
+        if self.ssm:
+            return f"SSM {self.ssm}"
+        return "env"
+
+
 class KitchenConfig(BaseModel):
     """Top-level model for params.yaml.
 
@@ -175,10 +213,29 @@ class KitchenConfig(BaseModel):
     monitor: MonitorConfig | None = None
     submission: SubmissionConfig | None = None
     check: CheckConfig | None = None
+    secrets: dict[str, SecretSpec] = Field(default_factory=dict)
     ci: CIConfig | None = None
     run_name: str | None = None
     metrics_file: str = "metrics.json"
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
+
+    @property
+    def uses_legacy_required_env(self) -> bool:
+        """True when the deprecated ``check.required_env`` list is populated."""
+        return bool(self.check and self.check.required_env)
+
+    def effective_secrets(self) -> dict[str, SecretSpec]:
+        """The unified secrets manifest.
+
+        Returns the ``secrets:`` map with any legacy ``check.required_env`` names folded in
+        as env-only required secrets (deprecated). ``secrets:`` wins on a name conflict, so a
+        project can migrate one secret at a time without losing the legacy guard.
+        """
+        merged = dict(self.secrets)
+        legacy = (self.check.required_env if self.check else None) or []
+        for name in legacy:
+            merged.setdefault(name, SecretSpec(required=True))
+        return merged
 
     @classmethod
     def from_yaml(cls, path: str = "params.yaml") -> "KitchenConfig":

@@ -579,14 +579,21 @@ def test_check_no_monitor_section_shows_no_monitor_line(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# check.required_env — project-declared secrets (CBB-012)
+# secrets manifest + legacy check.required_env alias (SECR-001 / CBB-012)
 # ---------------------------------------------------------------------------
 
 _REQ_ENV_PARAMS = "experiment: test-project\ncheck:\n  required_env:\n    - KENPOM_API_KEY\n"
+_SECRETS_ENV_PARAMS = (
+    "experiment: test-project\nsecrets:\n  KENPOM_API_KEY:\n    required: true\n"
+)
+_SECRETS_CLOUD_PARAMS = (
+    "experiment: test-project\nsecrets:\n"
+    "  KENPOM_API_KEY:\n    aws_secret: cbb-model/prod\n    key: KENPOM_API_KEY\n    required: true\n"
+)
 
 
 def test_check_required_env_present(tmp_path, monkeypatch):
-    """A declared secret present in the environment shows a ✓ env: line, not a failure."""
+    """A legacy required_env secret present in env shows a ✓ secret: line, not a failure."""
     with (
         patch("shutil.which", return_value=None),
         patch("boto3.Session") as mock_session,
@@ -603,12 +610,12 @@ def test_check_required_env_present(tmp_path, monkeypatch):
                 "KENPOM_API_KEY": "secret",
             },
         )
-    assert "env: KENPOM_API_KEY" in result.output
-    assert "✗ env: KENPOM_API_KEY" not in result.output
+    assert "secret: KENPOM_API_KEY" in result.output
+    assert "✗ secret: KENPOM_API_KEY" not in result.output
 
 
 def test_check_required_env_missing_fails(tmp_path, monkeypatch):
-    """A declared secret absent from env and .env hard-fails check (exit 1)."""
+    """A required env-only secret absent from env and .env hard-fails check (exit 1)."""
     # which truthy + creds present so the ONLY failure is the missing secret.
     with (
         patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
@@ -622,13 +629,114 @@ def test_check_required_env_missing_fails(tmp_path, monkeypatch):
             params_content=_REQ_ENV_PARAMS,
             env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
         )
-    assert "✗ env: KENPOM_API_KEY" in result.output
-    assert "required by check.required_env" in result.output
+    assert "✗ secret: KENPOM_API_KEY" in result.output
+    assert "environment variable" in result.output  # resolver remediation
     assert result.exit_code == 1
 
 
-def test_check_no_required_env_section_no_env_lines(tmp_path, monkeypatch):
-    """Projects without a check section never emit env: lines."""
+def test_check_required_env_warns_deprecated(tmp_path, monkeypatch):
+    """Using the legacy check.required_env emits a deprecation warning toward secrets:."""
+    with (
+        patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=_REQ_ENV_PARAMS,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u", "KENPOM_API_KEY": "s"},
+        )
+    assert "deprecated" in result.output
+    assert "secrets:" in result.output
+
+
+def test_check_secrets_manifest_env_only(tmp_path, monkeypatch):
+    """An env-only secret in the secrets: manifest is presence-checked (no deprecation warning)."""
+    with (
+        patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=_SECRETS_ENV_PARAMS,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "✗ secret: KENPOM_API_KEY" in result.output
+    assert "deprecated" not in result.output
+    assert result.exit_code == 1
+
+
+def test_check_secret_cloud_resolves(tmp_path, monkeypatch):
+    """SECR-003: a cloud secret that resolves shows ✓ resolved from its source (real boto call)."""
+    sm_client = MagicMock()
+    sm_client.get_secret_value.return_value = {"SecretString": '{"KENPOM_API_KEY": "v"}'}
+    with (
+        patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+        patch("boto3.Session") as mock_session,
+        patch("boto3.client", return_value=sm_client),
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()  # identity present
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=_SECRETS_CLOUD_PARAMS,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "✓ secret: KENPOM_API_KEY" in result.output
+    assert "resolved from SM cbb-model/prod" in result.output
+    assert result.exit_code == 0
+
+
+def test_check_secret_cloud_unresolvable_hard_fails(tmp_path, monkeypatch):
+    """SECR-003: a required cloud secret that can't be resolved hard-fails pre-flight."""
+    with (
+        patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = None  # no AWS identity
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=_SECRETS_CLOUD_PARAMS,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "✗ secret: KENPOM_API_KEY" in result.output
+    assert "no AWS identity" in result.output
+    assert result.exit_code == 1
+
+
+def test_check_secret_cloud_optional_not_hard_failed(tmp_path, monkeypatch):
+    """An optional cloud secret that can't be resolved warns, but does not fail check."""
+    params = (
+        "experiment: test-project\nsecrets:\n"
+        "  OPT:\n    aws_secret: proj/prod\n    key: OPT\n    required: false\n"
+    )
+    with (
+        patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = None
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=params,
+            env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
+        )
+    assert "~ secret: OPT" in result.output
+    assert "✗ secret: OPT" not in result.output
+    assert result.exit_code == 0
+
+
+def test_check_no_secrets_section_no_secret_lines(tmp_path, monkeypatch):
+    """Projects with no secrets/required_env never emit secret: lines."""
     with (
         patch("shutil.which", return_value=None),
         patch("boto3.Session") as mock_session,
@@ -640,4 +748,4 @@ def test_check_no_required_env_section_no_env_lines(tmp_path, monkeypatch):
             monkeypatch,
             env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
         )
-    assert "env:" not in result.output
+    assert "secret:" not in result.output
