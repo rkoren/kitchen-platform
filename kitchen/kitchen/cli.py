@@ -34,6 +34,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import re
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
@@ -102,6 +103,7 @@ from kitchen._cli.serve import _serve_local_dashboard, dashboard_app, serve_app
 # precedence (override=False is the default).
 try:
     from dotenv import load_dotenv as _load_dotenv
+
     _load_dotenv()
 except ImportError:
     pass  # python-dotenv not installed — env vars must be set externally
@@ -129,7 +131,6 @@ def ui(
     For a remote tracking URI (http/https), opens the URL directly.
     For a local SQLite URI, starts `mlflow ui` and opens localhost.
     """
-    import os
     import subprocess
     import threading
     import webbrowser
@@ -177,7 +178,6 @@ def open_dashboard(
     Reads dashboard_url from params.yaml, then falls back to the DASHBOARD_URL
     environment variable. If neither is set, opens the MLflow UI instead.
     """
-    import os
     import webbrowser
 
     import yaml
@@ -217,15 +217,12 @@ def status(
     model_name: Annotated[
         str | None, typer.Option("--model-name", help="Registered model name")
     ] = None,
-    n_runs: Annotated[
-        int, typer.Option("--runs", "-n", help="Number of recent runs to show")
-    ] = 5,
+    n_runs: Annotated[int, typer.Option("--runs", "-n", help="Number of recent runs to show")] = 5,
 ) -> None:
     """One-screen project summary: champion, recent runs with thresholds, and submission file.
 
     Always exits 0 — informational only, even when thresholds are violated.
     """
-    import os
 
     import mlflow.tracking
 
@@ -277,9 +274,7 @@ def status(
         champion_run_id = mv.run_id
         champ_run = client.get_run(champion_run_id)
         typer.echo(f"  model   : {resolved_model} @ champion  (v{mv.version})")
-        typer.echo(
-            f"  run     : {champion_run_id[:8]}  ({_time_ago(champ_run.info.start_time)})"
-        )
+        typer.echo(f"  run     : {champion_run_id[:8]}  ({_time_ago(champ_run.info.start_time)})")
         variant = champ_run.data.tags.get("model_variant", "")
         if variant:
             typer.echo(f"  variant : {variant}")
@@ -339,9 +334,7 @@ def status(
             is_champ = run.info.run_id == champion_run_id
             rank = "[C]" if is_champ else str(i + 1)
             variant = (run.data.tags.get("model_variant") or run.info.run_name or "")[:12]
-            val = _fmt_metric(
-                run.data.metrics.get(display_metric) if display_metric else None
-            )
+            val = _fmt_metric(run.data.metrics.get(display_metric) if display_metric else None)
             row = f"  {rank:<4}  {run_id_short:<10}  {variant:<12}  {val:>{metric_w}}"
             if has_thresholds:
                 fails: list[str] = []
@@ -383,9 +376,7 @@ def status(
     if sub_path.exists():
         age_str = _time_ago(int(sub_path.stat().st_mtime * 1000))
         size_kb = sub_path.stat().st_size / 1024
-        typer.echo(
-            f"Local Submission File: {sub_path}  ({size_kb:.0f} KB, modified {age_str})"
-        )
+        typer.echo(f"Local Submission File: {sub_path}  ({size_kb:.0f} KB, modified {age_str})")
         typer.echo()
 
 
@@ -424,7 +415,10 @@ def validate(
         output = cfg.monitor.report_bucket or cfg.monitor.local_path
         typer.echo(f"  monitor    : output={output}")
     if cfg.ci:
-        bits = [f"auto_submit={cfg.ci.auto_submit}", f"fail_on_threshold={cfg.ci.fail_on_threshold}"]
+        bits = [
+            f"auto_submit={cfg.ci.auto_submit}",
+            f"fail_on_threshold={cfg.ci.fail_on_threshold}",
+        ]
         if cfg.ci.notifications:
             bits.append(f"notify_when={cfg.ci.notifications.when}")
         typer.echo(f"  ci         : {', '.join(bits)}")
@@ -447,7 +441,9 @@ secrets_app = typer.Typer(help="Secrets manifest helpers.", no_args_is_help=True
 
 @secrets_app.command("template")
 def secrets_template(
-    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
     output: Annotated[
         str, typer.Option("--output", "-o", help="File to write (use --stdout to print instead)")
     ] = ".env.example",
@@ -498,12 +494,16 @@ def secrets_template(
 
 @secrets_app.command("iam-policy")
 def secrets_iam_policy(
-    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
     account: Annotated[
-        str | None, typer.Option("--account", help="AWS account ID to scope ARNs to (default: * wildcard)")
+        str | None,
+        typer.Option("--account", help="AWS account ID to scope ARNs to (default: * wildcard)"),
     ] = None,
     region: Annotated[
-        str | None, typer.Option("--region", help="AWS region to scope ARNs to (default: * wildcard)")
+        str | None,
+        typer.Option("--region", help="AWS region to scope ARNs to (default: * wildcard)"),
     ] = None,
     output: Annotated[
         str | None, typer.Option("--output", "-o", help="Write to this file (default: stdout)")
@@ -555,9 +555,73 @@ def secrets_iam_policy(
         typer.echo(content, nl=False)
 
 
+@secrets_app.command("export")
+def secrets_export(
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to params.yaml")
+    ] = "params.yaml",
+    names: Annotated[
+        list[str] | None,
+        typer.Option("--name", help="Export only this secret (repeatable); default: all declared"),
+    ] = None,
+    output: Annotated[
+        str | None,
+        typer.Option("--output", "-o", help="Env file to append to (default: $GITHUB_ENV)"),
+    ] = None,
+) -> None:
+    """Resolve declared secrets and append them to $GITHUB_ENV for later CI steps (masked).
+
+    Run this in CI after assuming an AWS identity (e.g. an OIDC role). Each required secret is
+    resolved (env/.env → declared cloud source) and written to the GitHub Actions env file so the
+    *next* step sees it in its process environment — no per-step `env:` blocks needed (and they
+    wouldn't see these values anyway, since $GITHUB_ENV writes apply to subsequent steps). Values
+    are masked in logs and never printed. Optional secrets that don't resolve are skipped; a
+    missing required secret hard-fails with an actionable message.
+
+    Outside GitHub Actions, pass --output FILE; this never prints secret values to stdout.
+    """
+
+    from pydantic import ValidationError
+
+    from kitchen import secrets as secrets_mod
+    from kitchen.config import KitchenConfig
+
+    target = output or os.environ.get("GITHUB_ENV")
+    if not target:
+        typer.echo(
+            "error: $GITHUB_ENV is unset (not in GitHub Actions) and no --output given; "
+            "refusing to print secret values to stdout",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    cfg: KitchenConfig | None = None
+    path = Path(params_file)
+    if path.exists():
+        try:
+            cfg = KitchenConfig.from_yaml(str(path))
+        except ValidationError:
+            typer.echo(f"error: invalid params — run `kitchen validate {params_file}`", err=True)
+            raise typer.Exit(1)
+        except Exception as exc:
+            typer.echo(f"error reading {params_file}: {exc}", err=True)
+            raise typer.Exit(1)
+
+    try:
+        exported = secrets_mod.export_env_file(
+            target, names or None, params_file=params_file, cfg=cfg
+        )
+    except secrets_mod.SecretNotFound as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Exported {len(exported)} secret(s) to {target}: {', '.join(exported) or '(none)'}")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_to_git_branch(content: str, file_path: str, branch: str, commit_msg: str) -> str:
     """Write content to file_path on branch using git plumbing. Returns commit SHA.
@@ -566,15 +630,16 @@ def _write_to_git_branch(content: str, file_path: str, branch: str, commit_msg: 
     Uses a temporary index file isolated via GIT_INDEX_FILE so it doesn't disturb
     the caller's staged changes.
     """
-    import os
     import subprocess
     import tempfile
 
     git_empty_tree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
-    blob_sha = subprocess.check_output(
-        ["git", "hash-object", "-w", "--stdin"], input=content.encode()
-    ).decode().strip()
+    blob_sha = (
+        subprocess.check_output(["git", "hash-object", "-w", "--stdin"], input=content.encode())
+        .decode()
+        .strip()
+    )
 
     idx_fd, idx_path = tempfile.mkstemp(prefix="kitchen-push-")
     os.close(idx_fd)
@@ -584,7 +649,8 @@ def _write_to_git_branch(content: str, file_path: str, branch: str, commit_msg: 
         branch_exists = (
             subprocess.run(
                 ["git", "rev-parse", "--verify", branch_ref], capture_output=True, check=False
-            ).returncode == 0
+            ).returncode
+            == 0
         )
         if branch_exists:
             subprocess.run(["git", "read-tree", branch], env=env, check=True, capture_output=True)
@@ -777,12 +843,22 @@ def _summarize_champion_metrics(metrics: dict[str, float], max_scalars: int = 12
     return lines
 
 
-def _fmt_delta_row(
-    pr_val: object, base_val: object
-) -> tuple[str, str, str]:
+def _fmt_delta_row(pr_val: object, base_val: object) -> tuple[str, str, str]:
     """Return (pr_str, base_str, delta_str) for a comparison metric row."""
-    pr_str = f"{pr_val:.6f}" if isinstance(pr_val, float) else str(pr_val) if pr_val is not None else "(new)"
-    base_str = f"{base_val:.6f}" if isinstance(base_val, float) else str(base_val) if base_val is not None else "(new)"
+    pr_str = (
+        f"{pr_val:.6f}"
+        if isinstance(pr_val, float)
+        else str(pr_val)
+        if pr_val is not None
+        else "(new)"
+    )
+    base_str = (
+        f"{base_val:.6f}"
+        if isinstance(base_val, float)
+        else str(base_val)
+        if base_val is not None
+        else "(new)"
+    )
     if isinstance(pr_val, (int, float)) and isinstance(base_val, (int, float)):
         delta = pr_val - base_val  # type: ignore[operator]
         delta_str = (
@@ -796,6 +872,8 @@ def _fmt_delta_row(
 
 
 app.add_typer(experiments_app, name="experiments")
+
+
 @app.command()
 def leaderboard(
     metric: Annotated[
@@ -863,7 +941,6 @@ def leaderboard(
             err=True,
         )
         raise typer.Exit(1)
-    import os
 
     import mlflow.tracking
 
@@ -923,9 +1000,7 @@ def leaderboard(
         return
 
     # Resolve the champion run_id from the model registry (best-effort — no crash if absent).
-    resolved_model_name = model_name or os.environ.get(
-        "MLFLOW_MODEL_NAME", f"{exp_name}-model"
-    )
+    resolved_model_name = model_name or os.environ.get("MLFLOW_MODEL_NAME", f"{exp_name}-model")
     champion_run_id: str | None = None
     try:
         mv = client.get_model_version_by_alias(resolved_model_name, "champion")
@@ -950,7 +1025,7 @@ def leaderboard(
         for run in runs:
             for key in run.data.metrics:
                 if key.startswith(prefix):
-                    suffix = key[len(prefix):]
+                    suffix = key[len(prefix) :]
                     if suffix not in ("mean", "std"):
                         all_fold_suffixes.add(suffix)
         fold_suffixes = sorted(all_fold_suffixes)
@@ -989,7 +1064,9 @@ def leaderboard(
             f"  {run.data.params.get(key, '-'):>{w}}" for key, w in zip(param_keys, param_widths)
         )
         started = _time_ago(run.info.start_time) if run.info.start_time else "-"
-        typer.echo(f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}{fold_col_vals}  {lb:>10}{param_col_vals}  {started}")
+        typer.echo(
+            f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}{fold_col_vals}  {lb:>10}{param_col_vals}  {started}"
+        )
 
     typer.echo()
     if champion_run_id:
@@ -1086,8 +1163,12 @@ def diff(
     _fi_b = _diff_load_fi(run_id_b)
     fi_rows: list[tuple[int, int, int, str]] = []
     if _fi_a is not None and _fi_b is not None:
-        _rank_a = {n: i + 1 for i, (n, _) in enumerate(sorted(_fi_a.items(), key=lambda x: (-x[1], x[0])))}
-        _rank_b = {n: i + 1 for i, (n, _) in enumerate(sorted(_fi_b.items(), key=lambda x: (-x[1], x[0])))}
+        _rank_a = {
+            n: i + 1 for i, (n, _) in enumerate(sorted(_fi_a.items(), key=lambda x: (-x[1], x[0])))
+        }
+        _rank_b = {
+            n: i + 1 for i, (n, _) in enumerate(sorted(_fi_b.items(), key=lambda x: (-x[1], x[0])))
+        }
         fi_rows = sorted(
             [
                 (abs(_rank_b[f] - _rank_a[f]), _rank_a[f], _rank_b[f], f)
@@ -1147,7 +1228,6 @@ def ingest(
     out_dir: Annotated[str | None, typer.Option("--out", help="Override output directory")] = None,
 ) -> None:
     """Download raw competition data as configured in params.yaml."""
-    import os
 
     from kitchen.config import KitchenConfig
     from kitchen.ingest import source_from_params
@@ -1231,7 +1311,6 @@ def submit(
     ] = False,
 ) -> None:
     """Validate and upload a submission CSV to Kaggle."""
-    import os
 
     import pandas as pd
 
@@ -1324,7 +1403,6 @@ def submit(
             typer.echo("Score not yet available — check the Kaggle leaderboard.")
 
 
-
 app.add_typer(run_app, name="run")
 app.command(name="sweep")(run_sweep)
 
@@ -1340,7 +1418,6 @@ def check(
     ] = "params.yaml",
 ) -> None:
     """Check that all tools, credentials, and project files are ready."""
-    import os
     import shutil
     import subprocess
     import sys
@@ -1498,7 +1575,7 @@ def check(
                             _hint = str(_exc)
                             _prefix = f"secret {_name!r}"
                             if _hint.startswith(_prefix):
-                                _hint = _hint[len(_prefix):].lstrip(": ").strip()
+                                _hint = _hint[len(_prefix) :].lstrip(": ").strip()
                             _fail(f"secret: {_name}", _hint)
                         else:
                             _warn(f"secret: {_name}", f"optional — not resolved ({_spec.source})")
@@ -1521,8 +1598,8 @@ def check(
     # --- Prep: project src modules ---
     _step_probes = [
         (Path("src/features/run.py"), "src.features.run", "FeatureBuilder", "build"),
-        (Path("src/train/run.py"),    "src.train.run",    "Trainer",        "fit"),
-        (Path("src/evaluate/run.py"), "src.evaluate.run", "Evaluator",      "evaluate"),
+        (Path("src/train/run.py"), "src.train.run", "Trainer", "fit"),
+        (Path("src/evaluate/run.py"), "src.evaluate.run", "Evaluator", "evaluate"),
     ]
     src_candidates = [p for p, *_ in _step_probes]
     if any(p.exists() for p in src_candidates):
@@ -1536,6 +1613,7 @@ def check(
             from kitchen.steps import Evaluator as _Ev
             from kitchen.steps import FeatureBuilder as _FB
             from kitchen.steps import Trainer as _Tr
+
             _base_map = {"FeatureBuilder": _FB, "Trainer": _Tr, "Evaluator": _Ev}
         except Exception:
             _base_map = {}
@@ -1687,7 +1765,6 @@ def report(
 ) -> None:
     """Write a metrics summary to stdout (pipe to $GITHUB_STEP_SUMMARY in CI)."""
     import json
-    import os
 
     metrics_path = Path(metrics_file)
     if not metrics_path.exists():
@@ -1721,9 +1798,7 @@ def report(
         from kitchen.tracking import configure_from_env
 
         configure_from_env()
-        resolved_name = model_name or os.environ.get(
-            "MLFLOW_MODEL_NAME", f"{experiment}-model"
-        )
+        resolved_name = model_name or os.environ.get("MLFLOW_MODEL_NAME", f"{experiment}-model")
         base_metrics = get_champion_metrics(resolved_name)
         if base_metrics is None:
             typer.echo(
@@ -1770,7 +1845,9 @@ def report(
             typer.echo("| Metric | Base | PR | Delta |")
             typer.echo("| --- | --- | --- | --- |")
             for key in sorted(set(metrics) | set(base_metrics)):
-                pr_str, base_str, delta_str = _fmt_delta_row(metrics.get(key), base_metrics.get(key))
+                pr_str, base_str, delta_str = _fmt_delta_row(
+                    metrics.get(key), base_metrics.get(key)
+                )
                 typer.echo(f"| `{key}` | {base_str} | {pr_str} | {delta_str} |")
         else:
             typer.echo("| Metric | Value |")
@@ -1787,7 +1864,9 @@ def report(
         typer.echo()
         if base_metrics is not None:
             for key in sorted(set(metrics) | set(base_metrics)):
-                pr_str, base_str, delta_str = _fmt_delta_row(metrics.get(key), base_metrics.get(key))
+                pr_str, base_str, delta_str = _fmt_delta_row(
+                    metrics.get(key), base_metrics.get(key)
+                )
                 typer.echo(f"  {key}: {pr_str} (base: {base_str}, delta: {delta_str})")
         else:
             for key, value in sorted(metrics.items()):
@@ -1902,7 +1981,6 @@ def promote(
     Pass --run-id to promote a specific run directly (e.g. copied from the dashboard).
     Both METRIC and --run-id may be combined: --run-id targets the run, METRIC is shown for context.
     """
-    import os
 
     import mlflow.tracking
 
@@ -1946,7 +2024,9 @@ def promote(
         score = run.data.metrics.get(metric, float("nan"))
         direction = "lower=better" if lower_is_better else "higher=better"
         label = "Run" if run_id else "Best run"
-        typer.echo(f"{label:<11}: {actual_run_id[:8]}  {metric}={score:.6f}{variant_str}  ({direction})")
+        typer.echo(
+            f"{label:<11}: {actual_run_id[:8]}  {metric}={score:.6f}{variant_str}  ({direction})"
+        )
     else:
         run_name = run.data.tags.get("mlflow.runName", "")
         name_str = f"  {run_name}" if run_name else ""
@@ -1983,25 +2063,23 @@ def push(
         str, typer.Option("--metrics", help="Path to metrics.json")
     ] = "metrics.json",
     run_id_override: Annotated[
-        str | None, typer.Option("--run-id", help="Override the MLflow run ID stored in metrics.json")
+        str | None,
+        typer.Option("--run-id", help="Override the MLflow run ID stored in metrics.json"),
     ] = None,
     model_name: Annotated[
         str | None, typer.Option("--model-name", help="Registered model name for champion lookup")
     ] = None,
-    branch: Annotated[
-        str, typer.Option("--branch", help="Branch to write results to")
-    ] = "results",
+    branch: Annotated[str, typer.Option("--branch", help="Branch to write results to")] = "results",
     push_to_remote: Annotated[
         bool, typer.Option("--push/--no-push", help="Push branch to remote after writing")
     ] = False,
-    remote: Annotated[
-        str, typer.Option("--remote", help="Git remote name")
-    ] = "origin",
+    remote: Annotated[str, typer.Option("--remote", help="Git remote name")] = "origin",
     message: Annotated[
         str | None, typer.Option("--message", "-m", help="Custom commit message")
     ] = None,
     top_features_n: Annotated[
-        int, typer.Option("--top-features", help="Max feature importances to include (0 = disable).")
+        int,
+        typer.Option("--top-features", help="Max feature importances to include (0 = disable)."),
     ] = 20,
 ) -> None:
     """Publish current run metrics to the results branch as results/<sha>.json.
@@ -2011,7 +2089,6 @@ def push(
     Optionally pushes to remote.
     """
     import json
-    import os
     import subprocess
     import tempfile
     from datetime import datetime, timezone
@@ -2022,9 +2099,11 @@ def push(
 
     # --- Resolve git SHA ---
     try:
-        git_sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
-        ).decode().strip()
+        git_sha = (
+            subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL)
+            .decode()
+            .strip()
+        )
     except Exception as exc:
         typer.echo(f"error: could not determine git HEAD SHA: {exc}", err=True)
         raise typer.Exit(1)
@@ -2110,15 +2189,10 @@ def push(
                             artifact_path="feature_importances.json",
                             dst_path=_tmp,
                         )
-                        _fi_raw: dict = json.loads(
-                            Path(_fi_path).read_text(encoding="utf-8")
-                        )
-                        _sorted_fi = sorted(
-                            _fi_raw.items(), key=lambda x: x[1], reverse=True
-                        )
+                        _fi_raw: dict = json.loads(Path(_fi_path).read_text(encoding="utf-8"))
+                        _sorted_fi = sorted(_fi_raw.items(), key=lambda x: x[1], reverse=True)
                         top_features = [
-                            {"name": k, "importance": v}
-                            for k, v in _sorted_fi[:top_features_n]
+                            {"name": k, "importance": v} for k, v in _sorted_fi[:top_features_n]
                         ]
                 except Exception:
                     pass
@@ -2131,9 +2205,7 @@ def push(
                         artifact_path="calibration.json",
                         dst_path=_tmp,
                     )
-                    calibration_data = json.loads(
-                        Path(_cal_path).read_text(encoding="utf-8")
-                    )
+                    calibration_data = json.loads(Path(_cal_path).read_text(encoding="utf-8"))
             except Exception:
                 pass
 
@@ -2207,6 +2279,8 @@ def push(
 
 
 app.add_typer(dvc_app, name="dvc")
+
+
 @app.command()
 def init(
     name: str = typer.Argument(..., help="Project / competition name (e.g. spaceship-titanic)"),
@@ -2246,7 +2320,17 @@ def init(
         typer.echo("error: --competition is required when --source kaggle", err=True)
         raise typer.Exit(1)
 
-    valid_templates = {"none", "baseline-xgb", "baseline-lgbm", "baseline-lr", "baseline-rf", "binary-cls", "multiclass-cls", "regression", "tabular-ts"}
+    valid_templates = {
+        "none",
+        "baseline-xgb",
+        "baseline-lgbm",
+        "baseline-lr",
+        "baseline-rf",
+        "binary-cls",
+        "multiclass-cls",
+        "regression",
+        "tabular-ts",
+    }
     if template not in valid_templates:
         typer.echo(
             f"error: invalid template {template!r} — choose from: {', '.join(sorted(valid_templates))}",

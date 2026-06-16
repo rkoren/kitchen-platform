@@ -342,6 +342,85 @@ def resolve_into_env(
 
 
 # ---------------------------------------------------------------------------
+# CI environment export (SECR-007)
+# ---------------------------------------------------------------------------
+
+
+def _load_cfg(params_file: str) -> KitchenConfig | None:
+    """Best-effort load of the project config; ``None`` when absent or unparseable."""
+    p = Path(params_file)
+    if not p.exists():
+        return None
+    try:
+        return KitchenConfig.from_yaml(str(p))
+    except Exception:
+        return None
+
+
+def _github_env_entry(name: str, value: str) -> str:
+    """One GitHub Actions env-file entry in heredoc form (safe for ``=`` and multiline values).
+
+    Uses a randomized delimiter, per GitHub's guidance, so a value can never close the heredoc
+    early or inject extra variables.
+    """
+    import uuid
+
+    delim = f"__KITCHEN_EOF_{uuid.uuid4().hex}__"
+    while delim in value:  # collision is astronomically unlikely, but keep it correct
+        delim = f"__KITCHEN_EOF_{uuid.uuid4().hex}__"
+    return f"{name}<<{delim}\n{value}\n{delim}\n"
+
+
+def export_env_file(
+    target: str | Path,
+    names: list[str] | None = None,
+    *,
+    params_file: str = "params.yaml",
+    cfg: KitchenConfig | None = None,
+) -> list[str]:
+    """Resolve declared secrets and append them to a GitHub Actions env file (masked) — SECR-007.
+
+    Bridges the resolver to CI. After a job assumes an identity (e.g. an OIDC role), this resolves
+    each secret (env/.env → declared cloud source) and appends it to ``target`` (typically
+    ``$GITHUB_ENV``) as a ``NAME<<delimiter`` heredoc entry, so the **next** step sees it in its
+    process environment.
+
+    Required secrets hard-fail with :class:`SecretNotFound` (the message names the secret and the
+    fix); optional secrets (``required: false``) that don't resolve are skipped. ``names`` defaults
+    to every secret in the manifest; an explicitly named secret with no manifest entry is treated
+    as required env-only. Each value is registered with :func:`mask` before writing. Returns the
+    exported names — **never values**.
+
+    Gotcha worth knowing: ``$GITHUB_ENV`` writes are visible to *subsequent* steps, not the step
+    that performs the write — so don't also set per-step ``env:`` blocks for these names; let steps
+    read them from the process environment.
+    """
+    cfg = cfg or _load_cfg(params_file)
+    manifest = cfg.effective_secrets() if cfg is not None else {}
+    if names is None:
+        names = list(manifest)
+
+    entries: list[str] = []
+    exported: list[str] = []
+    for name in names:
+        spec = manifest.get(name, SecretSpec())
+        if spec.required:
+            value = get(name, params_file=params_file, cfg=cfg, use_cache=False)
+        else:
+            value = try_get(name, params_file=params_file, cfg=cfg, use_cache=False)
+            if value is None:
+                continue
+        mask(value)
+        entries.append(_github_env_entry(name, value))
+        exported.append(name)
+
+    if entries:
+        with open(target, "a", encoding="utf-8") as f:
+            f.write("".join(entries))
+    return exported
+
+
+# ---------------------------------------------------------------------------
 # .env.example generation (SECR-005)
 # ---------------------------------------------------------------------------
 

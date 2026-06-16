@@ -507,3 +507,50 @@ def test_lazy_model_unwrap_returns_underlying():
     m = lazy_model(lambda: sentinel)
     assert m.unwrap() is sentinel
     assert m.loaded is True
+
+
+# --- load_champion (MNT-003) ---
+
+
+def _fake_mlflow_loader(monkeypatch, load_model):
+    """Make importlib.import_module('mlflow.<flavor>') return a loader stub."""
+    import types
+
+    fake = types.SimpleNamespace(load_model=load_model)
+    monkeypatch.setattr("importlib.import_module", lambda name: fake)
+
+
+def test_load_champion_returns_model_on_success(monkeypatch):
+    from kitchen.serve import load_champion
+
+    sentinel = object()
+    _fake_mlflow_loader(monkeypatch, lambda uri: sentinel)
+    assert load_champion("models:/proj@champion") is sentinel
+
+
+def test_load_champion_translates_artifact_drift(monkeypatch):
+    from kitchen.serve import load_champion
+    from kitchen.tracking import ArtifactLocationError
+
+    def boom(uri):
+        raise OSError("no such file")
+
+    _fake_mlflow_loader(monkeypatch, boom)
+    monkeypatch.setattr(
+        "kitchen.tracking.explain_model_load_error",
+        lambda uri, exc: ArtifactLocationError("unreachable artifact"),
+    )
+    with pytest.raises(ArtifactLocationError, match="unreachable artifact"):
+        load_champion("models:/proj@champion")
+
+
+def test_load_champion_passes_through_unrelated_errors(monkeypatch):
+    from kitchen.serve import load_champion
+
+    def boom(uri):
+        raise ValueError("genuinely broken")
+
+    _fake_mlflow_loader(monkeypatch, boom)
+    monkeypatch.setattr("kitchen.tracking.explain_model_load_error", lambda uri, exc: None)
+    with pytest.raises(ValueError, match="genuinely broken"):
+        load_champion("models:/proj@champion")

@@ -351,3 +351,88 @@ def test_iam_policy_passes_through_full_arn():
 def test_iam_policy_empty_when_no_cloud_secrets():
     cfg = _cfg({"LOCAL": {}}, required_env=["LEGACY"])
     assert sec.iam_policy(cfg)["Statement"] == []
+
+
+# ---------------------------------------------------------------------------
+# CI environment export (SECR-007)
+# ---------------------------------------------------------------------------
+
+
+def test_export_env_file_writes_heredoc_entry(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN", "tok-value")
+    cfg = _cfg({"TOKEN": {"required": True}})
+    target = tmp_path / "gh_env"
+    exported = sec.export_env_file(target, cfg=cfg, params_file="nope.yaml")
+    assert exported == ["TOKEN"]
+    content = target.read_text()
+    # heredoc form: NAME<<DELIM \n value \n DELIM
+    assert content.startswith("TOKEN<<")
+    assert "\ntok-value\n" in content
+
+
+def test_export_env_file_defaults_to_all_declared(tmp_path, monkeypatch):
+    monkeypatch.setenv("A", "av")
+    monkeypatch.setenv("B", "bv")
+    cfg = _cfg({"A": {"required": True}, "B": {"required": True}})
+    target = tmp_path / "gh_env"
+    exported = sec.export_env_file(target, cfg=cfg, params_file="nope.yaml")
+    assert sorted(exported) == ["A", "B"]
+
+
+def test_export_env_file_skips_unresolved_optional(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPT", raising=False)
+    cfg = _cfg({"OPT": {"required": False}})
+    target = tmp_path / "gh_env"
+    exported = sec.export_env_file(target, cfg=cfg, params_file="nope.yaml")
+    assert exported == []
+    assert not target.exists()  # nothing written when no entries resolve
+
+
+def test_export_env_file_required_missing_raises(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("REQ", raising=False)
+    cfg = _cfg({"REQ": {"required": True}})
+    with pytest.raises(sec.SecretNotFound):
+        sec.export_env_file(tmp_path / "gh_env", cfg=cfg, params_file="nope.yaml")
+
+
+def test_export_env_file_explicit_names_filter(tmp_path, monkeypatch):
+    monkeypatch.setenv("A", "av")
+    monkeypatch.setenv("B", "bv")
+    cfg = _cfg({"A": {"required": True}, "B": {"required": True}})
+    target = tmp_path / "gh_env"
+    exported = sec.export_env_file(target, ["A"], cfg=cfg, params_file="nope.yaml")
+    assert exported == ["A"]
+    assert "B<<" not in target.read_text()
+
+
+def test_export_env_file_masks_in_ci(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("TOKEN", "tok-value")
+    cfg = _cfg({"TOKEN": {"required": True}})
+    sec.export_env_file(tmp_path / "gh_env", cfg=cfg, params_file="nope.yaml")
+    assert "::add-mask::tok-value" in capsys.readouterr().out
+
+
+def test_export_env_file_does_not_leak_outside_ci(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("TOKEN", "leaky-value")
+    cfg = _cfg({"TOKEN": {"required": True}})
+    target = tmp_path / "gh_env"
+    sec.export_env_file(target, cfg=cfg, params_file="nope.yaml")
+    out = capsys.readouterr()
+    assert "leaky-value" not in out.out and "leaky-value" not in out.err
+    assert "leaky-value" in target.read_text()  # but it IS written to the env file
+
+
+def test_export_env_file_heredoc_delimiter_not_in_value(tmp_path, monkeypatch):
+    # A value containing '=' and newlines must still round-trip safely.
+    monkeypatch.setenv("MULTI", "line1\nKEY=val\nline3")
+    cfg = _cfg({"MULTI": {"required": True}})
+    target = tmp_path / "gh_env"
+    sec.export_env_file(target, cfg=cfg, params_file="nope.yaml")
+    content = target.read_text()
+    delim = content.split("<<", 1)[1].splitlines()[0]
+    assert delim not in "line1\nKEY=val\nline3"
+    assert f"\nline1\nKEY=val\nline3\n{delim}\n" in content
