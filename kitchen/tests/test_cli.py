@@ -877,6 +877,29 @@ def test_run_monitor_missing_output_config(tmp_path, monkeypatch):
 
 EVAL_PARAMS = "experiment: test-project\n"
 
+# The CLI loads models via importlib.import_module(<mlflow loader module>). Tests
+# intercept only those loader modules and delegate every other import to the real
+# import_module, so patching import_module can never hand the fake Loader to
+# unrelated importers (the CLI, mlflow, or pytest's own monkeypatch resolution).
+_MLFLOW_LOADER_MODULES = frozenset(
+    {"mlflow.sklearn", "mlflow.xgboost", "mlflow.lightgbm", "mlflow.pyfunc"}
+)
+
+
+def _loader_only_import(fake_loader, record=None):
+    """Build an import_module replacement that returns fake_loader only for the
+    mlflow loader modules and delegates all other names to the real import_module."""
+    real_import_module = importlib.import_module
+
+    def _import(name, *args, **kwargs):
+        if record is not None:
+            record.append(name)
+        if name in _MLFLOW_LOADER_MODULES:
+            return fake_loader
+        return real_import_module(name, *args, **kwargs)
+
+    return _import
+
 
 def _make_evaluate_mocks(monkeypatch, model=None, metrics=None, load_raises=None):
     """Wire up the three external boundaries for run evaluate tests."""
@@ -888,8 +911,16 @@ def _make_evaluate_mocks(monkeypatch, model=None, metrics=None, load_raises=None
         return fake_model
 
     fake_loader = type("Loader", (), {"load_model": staticmethod(fake_load)})()
-    monkeypatch.setattr("importlib.import_module", lambda name: fake_loader)
+
+    # Patch configure_from_env first so monkeypatch can still resolve the dotted
+    # path via the real import machinery, then swap import_module. The swap only
+    # intercepts the mlflow loader modules and delegates everything else to the
+    # real import_module — a blanket `lambda name: fake_loader` would hand the
+    # Loader back to anything that imports (including pytest internals on some
+    # versions), which is what produced the spurious "'Loader' object ... has no
+    # attribute 'tracking'" failures.
     monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+    monkeypatch.setattr("importlib.import_module", _loader_only_import(fake_loader))
 
     returned_metrics = metrics if metrics is not None else {"val_brier": 0.18, "val_accuracy": 0.72}
     calls = []
@@ -1137,8 +1168,10 @@ def _setup_flavor_autodetect(tmp_path, monkeypatch):
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
     imported_modules: list[str] = []
     fake_loader = type("Loader", (), {"load_model": staticmethod(lambda uri: object())})()
-    monkeypatch.setattr("importlib.import_module", lambda name: (imported_modules.append(name), fake_loader)[1])
     monkeypatch.setattr("kitchen.tracking.configure_from_env", lambda: None)
+    monkeypatch.setattr(
+        "importlib.import_module", _loader_only_import(fake_loader, record=imported_modules)
+    )
     fake_mod = type(sys)("src.evaluate.run")
     fake_mod.evaluate = lambda m, p, s: {"val_accuracy": 0.8}
     monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
@@ -4021,3 +4054,53 @@ def test_secrets_template_missing_params(tmp_path, monkeypatch):
     result = runner.invoke(app, ["secrets", "template"])
     assert result.exit_code == 1
     assert "not found" in result.output
+
+
+# ---------------------------------------------------------------------------
+# kitchen secrets iam-policy (SECR-006)
+# ---------------------------------------------------------------------------
+
+_CLOUD_SECRETS_PARAMS = (
+    "experiment: demo\nsecrets:\n"
+    "  API:\n    aws_secret: proj/prod\n    key: API\n"
+    "  LOCAL: {}\n"
+)
+
+
+def test_secrets_iam_policy_stdout(tmp_path):
+    (tmp_path / "params.yaml").write_text(_CLOUD_SECRETS_PARAMS)
+    result = runner.invoke(
+        app, ["secrets", "iam-policy", "--params", str(tmp_path / "params.yaml")]
+    )
+    assert result.exit_code == 0
+    assert "secretsmanager:GetSecretValue" in result.output
+    assert "arn:aws:secretsmanager:*:*:secret:proj/prod-*" in result.output
+
+
+def test_secrets_iam_policy_scoped(tmp_path):
+    (tmp_path / "params.yaml").write_text(_CLOUD_SECRETS_PARAMS)
+    result = runner.invoke(
+        app,
+        ["secrets", "iam-policy", "--params", str(tmp_path / "params.yaml"),
+         "--account", "123456789012", "--region", "us-east-1"],
+    )
+    assert result.exit_code == 0
+    assert "arn:aws:secretsmanager:us-east-1:123456789012:secret:proj/prod-*" in result.output
+
+
+def test_secrets_iam_policy_no_cloud_secrets(tmp_path):
+    (tmp_path / "params.yaml").write_text("experiment: demo\nsecrets:\n  LOCAL: {}\n")
+    result = runner.invoke(
+        app, ["secrets", "iam-policy", "--params", str(tmp_path / "params.yaml")]
+    )
+    assert result.exit_code == 0
+    assert "nothing to grant" in result.output
+
+
+def test_secrets_iam_policy_writes_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(_CLOUD_SECRETS_PARAMS)
+    result = runner.invoke(app, ["secrets", "iam-policy", "-o", "policy.json"])
+    assert result.exit_code == 0
+    assert "Wrote policy.json" in result.output
+    assert "secretsmanager:GetSecretValue" in (tmp_path / "policy.json").read_text()

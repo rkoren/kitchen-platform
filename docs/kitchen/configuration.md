@@ -175,6 +175,20 @@ kitchen secrets template            # writes .env.example
 kitchen secrets template --stdout   # print instead
 ```
 
+**Least-privilege IAM for CI.** When secrets live in Secrets Manager / SSM, the CI or deploy
+role needs read access to exactly those — and no more. `kitchen secrets iam-policy` emits that
+policy from the manifest (one statement per source type, scoped to the declared ARNs):
+
+```bash
+kitchen secrets iam-policy --account 123456789012 --region us-east-1 \
+  | aws iam put-role-policy --role-name <ci-role> \
+      --policy-name kitchen-secrets --policy-document file:///dev/stdin
+```
+
+With no `--account`/`--region` the ARNs use `*` wildcards (still name-scoped; no account ID
+embedded). Pair this with a GitHub-OIDC role (`bootstrap-aws.sh` / SEC-007–008) so CI assumes a
+short-lived role and resolves secrets from the cloud — no long-lived keys.
+
 ### `monitor:` section
 
 Required by `kitchen run monitor`. At least one of `report_bucket` or `local_path` must be set.
