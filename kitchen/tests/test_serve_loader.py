@@ -512,12 +512,32 @@ def test_lazy_model_unwrap_returns_underlying():
 # --- load_champion (MNT-003) ---
 
 
+_MLFLOW_LOADER_MODULES = frozenset(
+    {"mlflow.pyfunc", "mlflow.sklearn", "mlflow.xgboost", "mlflow.lightgbm"}
+)
+
+
 def _fake_mlflow_loader(monkeypatch, load_model):
-    """Make importlib.import_module('mlflow.<flavor>') return a loader stub."""
+    """Make importlib.import_module('mlflow.<flavor>') return a loader stub.
+
+    Only the mlflow loader modules are intercepted; every other name delegates to
+    the real import_module. A blanket ``lambda name: fake`` would also be handed to
+    pytest's own ``monkeypatch.setattr`` dotted-path resolution (which uses
+    importlib.import_module on some pytest versions), breaking a later
+    ``setattr("kitchen.tracking....")`` with a spurious AttributeError.
+    """
+    import importlib
     import types
 
+    real_import_module = importlib.import_module
     fake = types.SimpleNamespace(load_model=load_model)
-    monkeypatch.setattr("importlib.import_module", lambda name: fake)
+
+    def _import(name, *args, **kwargs):
+        if name in _MLFLOW_LOADER_MODULES:
+            return fake
+        return real_import_module(name, *args, **kwargs)
+
+    monkeypatch.setattr("importlib.import_module", _import)
 
 
 def test_load_champion_returns_model_on_success(monkeypatch):
