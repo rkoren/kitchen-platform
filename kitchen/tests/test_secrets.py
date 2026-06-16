@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -304,3 +305,49 @@ def test_env_example_includes_legacy_required_env():
     body = sec.env_example(_cfg(required_env=["LEGACY"]))
     assert "# LEGACY (required) — env-only" in body
     assert "LEGACY=" in body
+
+
+# ---------------------------------------------------------------------------
+# Least-privilege IAM policy generation (SECR-006)
+# ---------------------------------------------------------------------------
+
+
+def test_iam_policy_sm_and_ssm_statements():
+    cfg = _cfg(
+        {
+            "API": {"aws_secret": "proj/prod", "key": "API"},
+            "DBP": {"ssm": "/proj/db"},
+            "LOCAL": {},  # env-only → excluded
+        }
+    )
+    pol = sec.iam_policy(cfg, account="123456789012", region="us-east-1")
+    sids = {s["Sid"] for s in pol["Statement"]}
+    assert sids == {"KitchenSecretsManagerRead", "KitchenSsmParameterRead"}
+    sm = next(s for s in pol["Statement"] if s["Sid"] == "KitchenSecretsManagerRead")
+    assert sm["Action"] == ["secretsmanager:GetSecretValue"]
+    assert sm["Resource"] == ["arn:aws:secretsmanager:us-east-1:123456789012:secret:proj/prod-*"]
+    ssm = next(s for s in pol["Statement"] if s["Sid"] == "KitchenSsmParameterRead")
+    assert ssm["Resource"] == ["arn:aws:ssm:us-east-1:123456789012:parameter/proj/db"]
+
+
+def test_iam_policy_default_wildcards_no_account():
+    """SEC-001-style guard: default output embeds no account ID / personal value."""
+    import re
+
+    cfg = _cfg({"API": {"aws_secret": "kenpom_key", "key": "API"}})
+    text = json.dumps(sec.iam_policy(cfg))
+    assert "arn:aws:secretsmanager:*:*:secret:kenpom_key-*" in text
+    assert re.search(r":\d{12}:", text) is None  # no 12-digit AWS account number
+    for needle in ("rkoren", "reilly", "674325521451"):
+        assert needle not in text
+
+
+def test_iam_policy_passes_through_full_arn():
+    cfg = _cfg({"API": {"aws_secret": "arn:aws:secretsmanager:us-east-1:111:secret:x-AbC", "key": "API"}})
+    pol = sec.iam_policy(cfg)
+    assert pol["Statement"][0]["Resource"] == ["arn:aws:secretsmanager:us-east-1:111:secret:x-AbC"]
+
+
+def test_iam_policy_empty_when_no_cloud_secrets():
+    cfg = _cfg({"LOCAL": {}}, required_env=["LEGACY"])
+    assert sec.iam_policy(cfg)["Statement"] == []

@@ -374,3 +374,64 @@ def env_example(cfg: KitchenConfig) -> str:
         lines.append(f"# {name} ({req}) — {_env_example_hint(spec)}")
         lines.append(f"{name}=")
     return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Least-privilege IAM policy generation (SECR-006)
+# ---------------------------------------------------------------------------
+
+
+def _sm_resource(aws_secret: str, account: str | None, region: str | None) -> str:
+    """Secrets Manager ARN for a bundle name (the ``-*`` covers SM's random suffix)."""
+    if aws_secret.startswith("arn:"):
+        return aws_secret
+    return f"arn:aws:secretsmanager:{region or '*'}:{account or '*'}:secret:{aws_secret}-*"
+
+
+def _ssm_resource(path: str, account: str | None, region: str | None) -> str:
+    """SSM Parameter Store ARN for a parameter path."""
+    if path.startswith("arn:"):
+        return path
+    suffix = path if path.startswith("/") else f"/{path}"
+    return f"arn:aws:ssm:{region or '*'}:{account or '*'}:parameter{suffix}"
+
+
+def iam_policy(
+    cfg: KitchenConfig, *, account: str | None = None, region: str | None = None
+) -> dict:
+    """Build a least-privilege IAM policy granting read to exactly the declared cloud secrets.
+
+    One statement per source type — ``secretsmanager:GetSecretValue`` for declared SM bundles,
+    ``ssm:GetParameter`` for declared SSM parameters — scoped to those resources only (SECR-006).
+    ``account``/``region`` tighten the ARNs; when omitted they default to ``*`` wildcards so the
+    generated policy embeds **no account ID or personal value** (still scoped by secret name).
+    Returns a policy dict with an empty ``Statement`` list when no cloud secrets are declared.
+    """
+    sm_resources: list[str] = []
+    ssm_resources: list[str] = []
+    for spec in cfg.effective_secrets().values():
+        if spec.aws_secret:
+            sm_resources.append(_sm_resource(spec.aws_secret, account, region))
+        elif spec.ssm:
+            ssm_resources.append(_ssm_resource(spec.ssm, account, region))
+
+    statements: list[dict] = []
+    if sm_resources:
+        statements.append(
+            {
+                "Sid": "KitchenSecretsManagerRead",
+                "Effect": "Allow",
+                "Action": ["secretsmanager:GetSecretValue"],
+                "Resource": sorted(set(sm_resources)),
+            }
+        )
+    if ssm_resources:
+        statements.append(
+            {
+                "Sid": "KitchenSsmParameterRead",
+                "Effect": "Allow",
+                "Action": ["ssm:GetParameter"],
+                "Resource": sorted(set(ssm_resources)),
+            }
+        )
+    return {"Version": "2012-10-17", "Statement": statements}

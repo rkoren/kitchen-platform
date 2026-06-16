@@ -496,6 +496,65 @@ def secrets_template(
     typer.echo(f"Wrote {output} ({n} secret{'s' if n != 1 else ''})")
 
 
+@secrets_app.command("iam-policy")
+def secrets_iam_policy(
+    params_file: Annotated[str, typer.Option("--params", help="Path to params.yaml")] = "params.yaml",
+    account: Annotated[
+        str | None, typer.Option("--account", help="AWS account ID to scope ARNs to (default: * wildcard)")
+    ] = None,
+    region: Annotated[
+        str | None, typer.Option("--region", help="AWS region to scope ARNs to (default: * wildcard)")
+    ] = None,
+    output: Annotated[
+        str | None, typer.Option("--output", "-o", help="Write to this file (default: stdout)")
+    ] = None,
+) -> None:
+    """Emit a least-privilege IAM policy granting read to the declared cloud secrets.
+
+    One statement per source type, scoped to exactly the SM bundles / SSM parameters in the
+    `secrets:` manifest. Attach it to your CI/deploy role, e.g.:
+
+        kitchen secrets iam-policy --account 123456789012 --region us-east-1 \\
+          | aws iam put-role-policy --role-name <ci-role> \\
+              --policy-name kitchen-secrets --policy-document file:///dev/stdin
+
+    With no `--account`/`--region` the ARNs use `*` wildcards (no account ID embedded).
+    """
+    import json
+
+    from pydantic import ValidationError
+
+    from kitchen import secrets as secrets_mod
+    from kitchen.config import KitchenConfig
+
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+    try:
+        cfg = KitchenConfig.from_yaml(str(path))
+    except ValidationError:
+        typer.echo(f"error: invalid params — run `kitchen validate {params_file}`", err=True)
+        raise typer.Exit(1)
+    except Exception as exc:
+        typer.echo(f"error reading {params_file}: {exc}", err=True)
+        raise typer.Exit(1)
+
+    policy = secrets_mod.iam_policy(cfg, account=account, region=region)
+    if not policy["Statement"]:
+        typer.echo(
+            "No cloud-sourced secrets declared (aws_secret/ssm) — nothing to grant.", err=True
+        )
+        raise typer.Exit(0)
+
+    content = json.dumps(policy, indent=2) + "\n"
+    if output:
+        Path(output).write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote {output}")
+    else:
+        typer.echo(content, nl=False)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
