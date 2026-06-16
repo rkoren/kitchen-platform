@@ -91,6 +91,36 @@ def lazy_model(loader: Callable[[], Any]) -> LazyModel:
     """
     return LazyModel(loader)
 
+
+def load_champion(model_uri: str, flavor: str = "pyfunc") -> Any:
+    """Load a registered/logged model, translating artifact-location drift (MNT-003).
+
+    A thin wrapper over ``mlflow.<flavor>.load_model(model_uri)`` that, on failure,
+    detects the SQLite→remote migration footgun — the registered version's stored
+    artifact ``source`` pointing at a local path that no longer exists here — and
+    re-raises it as :class:`kitchen.tracking.ArtifactLocationError` with remediation,
+    instead of a raw MLflow traceback at predictor import / Lambda cold start. Any
+    other failure (genuine S3 permissions, network) propagates unchanged.
+
+    Pair with :func:`lazy_model` so the (slow) load and this check run on the first
+    prediction rather than at import::
+
+        from kitchen.serve import lazy_model, load_champion
+        model = lazy_model(lambda: load_champion("models:/my-project-model@champion"))
+    """
+    # kitchen.tracking is imported lazily — it pulls in mlflow, which we defer so
+    # importing kitchen.serve stays cheap (Lambda cold start / predictor import).
+    from kitchen.tracking import explain_model_load_error
+
+    loader = importlib.import_module(f"mlflow.{flavor}")
+    try:
+        return loader.load_model(model_uri)
+    except Exception as exc:
+        drift = explain_model_load_error(model_uri, exc)
+        if drift is not None:
+            raise drift from exc
+        raise
+
 _DEFAULT_FILENAME = "predictor.py"
 
 #: Environment variable that pins the predictor directory.

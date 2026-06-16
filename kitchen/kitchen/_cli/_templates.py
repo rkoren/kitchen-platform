@@ -1075,10 +1075,11 @@ from __future__ import annotations
 # Uncomment once your champion model is promoted to the registry.
 # lazy_model defers the (slow) load to the first prediction instead of import
 # time, so Lambda cold starts are faster; it loads once and caches thereafter.
+# load_champion translates an unreachable-artifact failure (e.g. after migrating
+# the tracking store from local SQLite to a remote server) into a clear error.
 # ---------------------------------------------------------------------------
-# import mlflow
-# from kitchen.serve import lazy_model
-# model = lazy_model(lambda: mlflow.pyfunc.load_model(\"models:/$name-model@champion\"))
+# from kitchen.serve import lazy_model, load_champion
+# model = lazy_model(lambda: load_champion(\"models:/$name-model@champion\"))
 # # model.predict(...) works transparently and triggers the load on first use.
 
 # ---------------------------------------------------------------------------

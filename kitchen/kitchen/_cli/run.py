@@ -44,7 +44,6 @@ def _try_auto_promote(
     model_name: str | None,
 ) -> None:
     """Compare the latest run against the current champion; promote if it wins."""
-    import os
 
     import mlflow.tracking
 
@@ -122,7 +121,6 @@ def _try_auto_promote(
             pass
     else:
         typer.echo(f"auto-promote: skipped — new run did not beat champion  ({reason})")
-
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +201,6 @@ def _reproduced_params_file(params_file: str, run_id: str) -> str:
 run_app = typer.Typer(help="Run pipeline stages.", no_args_is_help=True)
 
 
-
-
 @run_app.command("features")
 def run_features(
     params_file: Annotated[
@@ -259,7 +255,9 @@ def run_features(
     except Exception as exc:
         if _debug_enabled(debug):
             raise
-        typer.echo(f"error: {exc}\n  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)", err=True)
+        typer.echo(
+            f"error: {exc}\n  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)", err=True
+        )
         raise typer.Exit(1)
 
     processed = params.get("features", {}).get("processed_file", "features.parquet")
@@ -284,11 +282,16 @@ def run_train(
     ] = None,
     lower_is_better: Annotated[
         bool,
-        typer.Option("--lower-is-better/--higher-is-better", help="Metric direction for promotion comparison"),
+        typer.Option(
+            "--lower-is-better/--higher-is-better", help="Metric direction for promotion comparison"
+        ),
     ] = False,
     promote_model_name: Annotated[
         str | None,
-        typer.Option("--model-name", help="Registered model name for auto-promote (defaults to <experiment>-model)"),
+        typer.Option(
+            "--model-name",
+            help="Registered model name for auto-promote (defaults to <experiment>-model)",
+        ),
     ] = None,
     override: Annotated[
         list[str] | None,
@@ -347,9 +350,7 @@ def run_train(
         parsed_overrides = {}
         for item in override:
             if "=" not in item:
-                typer.echo(
-                    f"error: --override {item!r} must be in key=value format", err=True
-                )
+                typer.echo(f"error: --override {item!r} must be in key=value format", err=True)
                 raise typer.Exit(1)
             key, _, raw_val = item.partition("=")
             parsed_overrides[key.strip()] = _coerce_override_value(raw_val)
@@ -591,7 +592,6 @@ def run_evaluate(
     debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
     """Load a model from MLflow and run the project's evaluator."""
-    import os
     import sys
 
     import yaml
@@ -619,7 +619,12 @@ def run_evaluate(
 
     configure_from_env()
 
-    _loaders = {"sklearn": "mlflow.sklearn", "xgboost": "mlflow.xgboost", "lightgbm": "mlflow.lightgbm", "pyfunc": "mlflow.pyfunc"}
+    _loaders = {
+        "sklearn": "mlflow.sklearn",
+        "xgboost": "mlflow.xgboost",
+        "lightgbm": "mlflow.lightgbm",
+        "pyfunc": "mlflow.pyfunc",
+    }
     if flavor not in _loaders:
         typer.echo(
             f"error: unknown flavor {flavor!r} — choose from: {', '.join(_loaders)}", err=True
@@ -629,6 +634,7 @@ def run_evaluate(
     if flavor == "sklearn":
         try:
             import mlflow as _mlflow_fl
+
             _info = _mlflow_fl.models.get_model_info(model_uri)
             for _f in ("xgboost", "lightgbm", "sklearn"):
                 if _f in _info.flavors and _f in _loaders:
@@ -659,7 +665,13 @@ def run_evaluate(
                 err=True,
             )
         else:
-            typer.echo(f"error loading model from {model_uri!r}: {exc}", err=True)
+            from kitchen.tracking import explain_model_load_error
+
+            drift = explain_model_load_error(model_uri, exc)
+            if drift is not None:
+                typer.echo(f"error: {drift}", err=True)
+            else:
+                typer.echo(f"error loading model from {model_uri!r}: {exc}", err=True)
         raise typer.Exit(1)
 
     try:
@@ -713,7 +725,9 @@ def run_monitor(
     ] = "params.yaml",
     local: Annotated[
         str | None,
-        typer.Option("--local", help="Write report to this local path (overrides params.yaml monitor config)"),
+        typer.Option(
+            "--local", help="Write report to this local path (overrides params.yaml monitor config)"
+        ),
     ] = None,
 ) -> None:
     """Run drift monitoring and generate an HTML drift report."""
@@ -743,4 +757,3 @@ def run_monitor(
     except ValueError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1)
-

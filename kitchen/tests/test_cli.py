@@ -1082,6 +1082,45 @@ def test_run_evaluate_non_alias_mlflow_error_shows_generic_message(tmp_path, mon
     assert "auto-promote" not in result.output
 
 
+def test_run_evaluate_artifact_drift_shows_remediation(tmp_path, monkeypatch):
+    """MNT-003: an unreachable-artifact load failure shows the migration remediation."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    from kitchen.tracking import ArtifactLocationError
+
+    _make_evaluate_mocks(monkeypatch, load_raises=OSError("no such file or directory"))
+    monkeypatch.setattr(
+        "kitchen.tracking.explain_model_load_error",
+        lambda uri, exc: ArtifactLocationError("artifact location is not reachable"),
+    )
+
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = lambda m, p, s: {}
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code != 0
+    assert "artifact location is not reachable" in result.output
+    assert "error loading model" not in result.output  # the specific message replaces the generic one
+
+
+def test_run_evaluate_artifact_drift_debug_reraises_original(tmp_path, monkeypatch):
+    """Under --debug the original load exception propagates, not the translated one."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    sentinel = OSError("no such file or directory")
+    _make_evaluate_mocks(monkeypatch, load_raises=sentinel)
+
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = lambda m, p, s: {}
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    result = runner.invoke(app, ["run", "evaluate", "--debug"])
+    assert result.exception is sentinel
+
+
 # --- CBB-003: surface project tracebacks behind --debug / KITCHEN_DEBUG ---
 
 
@@ -1665,7 +1704,8 @@ def test_init_predictor_py_has_mlflow_comment(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-proj"], catch_exceptions=False)
     content = (tmp_path / "my-proj" / "src" / "serve" / "predictor.py").read_text()
-    assert "mlflow" in content
+    assert "load_champion" in content
+    assert "models:/my-proj-model@champion" in content
 
 
 def test_init_predictor_py_has_pydantic_comment(tmp_path, monkeypatch):

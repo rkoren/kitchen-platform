@@ -186,6 +186,34 @@ mlflow:
 
 ---
 
+### `error: the champion's stored artifact location is not reachable from this environment`
+
+`kitchen run evaluate` (or a `predictor.py` loading the champion via
+`kitchen.serve.load_champion`) detected that the registered model version's stored
+artifact `source` points at a location this machine can't reach. The usual cause is
+**migrating the tracking store** — e.g. from a local `sqlite:///mlruns.db` to a remote
+MLflow server — or moving the project: the model version still records its original,
+local artifact path, which no longer exists here. A model version's `source` is
+immutable, so it can't be edited in place.
+
+**Fix:** pick one:
+
+1. Re-train and re-promote against the current store:
+
+   ```bash
+   kitchen run train --auto-promote --promote-metric <metric>
+   ```
+
+2. Re-register a run whose artifacts already live in the current store, then re-point
+   the alias: `kitchen promote <metric>` (or `kitchen promote --run-id <id>`).
+
+3. If you still have the original artifacts, copy them to the location named in the
+   error so the recorded `source` resolves again.
+
+Re-run with `--debug` (or `KITCHEN_DEBUG=1`) to see the underlying MLflow traceback.
+
+---
+
 ## Terraform state
 
 The generated S3 backend encrypts state at rest (`encrypt = true`) and locks it using

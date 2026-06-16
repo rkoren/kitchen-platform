@@ -5,6 +5,7 @@ import mlflow
 import pytest
 
 from kitchen.tracking import (
+    ArtifactLocationError,
     MlflowSchemaError,
     Tracker,
     _dict_hash,
@@ -12,11 +13,13 @@ from kitchen.tracking import (
     _flatten,
     _git_sha,
     _is_schema_outdated,
+    _local_path_from_uri,
     _package_versions,
     _schema_remediation,
     _verify_store_schema,
     configure,
     configure_from_env,
+    explain_model_load_error,
     init_experiment,
     log_run_context,
 )
@@ -323,3 +326,100 @@ def test_tracker_run_sets_context_tags(tmp_path):
     mlflow.set_tracking_uri(uri)
     runs = mlflow.search_runs(experiment_names=["ctx-tracker-test"])
     assert "tags.kitchen.python" in runs.columns
+
+
+# ── MNT-003: artifact-location drift ──────────────────────────────────────────
+
+
+def _patch_version_source(monkeypatch, source, *, by_alias=True):
+    """Make MlflowClient resolve a model version with the given .source."""
+    client = MagicMock()
+    mv = MagicMock(source=source)
+    client.get_model_version_by_alias.return_value = mv
+    client.get_model_version.return_value = mv
+    monkeypatch.setattr("kitchen.tracking.mlflow.tracking.MlflowClient", lambda: client)
+    return client
+
+
+def test_local_path_from_uri_classifies_sources():
+    assert _local_path_from_uri("file:///abs/path/model").as_posix() == "/abs/path/model"
+    assert _local_path_from_uri("./mlruns/0/run/artifacts").as_posix().endswith("artifacts")
+    assert _local_path_from_uri("s3://bucket/model") is None
+    assert _local_path_from_uri("mlflow-artifacts:/0/run/artifacts/model") is None
+
+
+def test_explain_drift_local_missing_source(monkeypatch, tmp_path):
+    missing = tmp_path / "deleted"  # never created — guaranteed absent
+    _patch_version_source(monkeypatch, f"file://{missing}")
+    err = explain_model_load_error("models:/proj-model@champion", OSError("no such file"))
+    assert isinstance(err, ArtifactLocationError)
+    assert "not reachable from this environment" in str(err)
+    assert str(missing) in str(err)
+    assert "kitchen run train --auto-promote" in str(err)
+
+
+def test_explain_no_drift_when_local_source_exists(monkeypatch, tmp_path):
+    _patch_version_source(monkeypatch, f"file://{tmp_path}")
+    assert explain_model_load_error("models:/proj-model@champion", OSError("boom")) is None
+
+
+def test_explain_no_drift_for_s3_source(monkeypatch):
+    _patch_version_source(monkeypatch, "s3://bucket/mlflow/0/abc/artifacts/model")
+    # An unreachable S3 source is a different bug (perms/network) — not our case.
+    assert explain_model_load_error("models:/proj-model@champion", OSError("denied")) is None
+
+
+def test_explain_no_drift_for_s3_source_even_with_notfound_exc(monkeypatch):
+    """A 'could not find'-style failure against an S3 source is perms/network, not drift.
+
+    Pins the negative discriminator: the mlflow-artifacts missing-exc gate must not be
+    widened to all non-local sources, or real S3 errors would false-positive as drift.
+    """
+    _patch_version_source(monkeypatch, "s3://bucket/mlflow/0/abc/artifacts/model")
+    assert explain_model_load_error("models:/proj-model@champion", Exception("could not find")) is None
+
+
+def test_explain_ignores_non_models_uri(monkeypatch):
+    called = MagicMock()
+    monkeypatch.setattr("kitchen.tracking.mlflow.tracking.MlflowClient", called)
+    assert explain_model_load_error("runs:/abc123/model", OSError("x")) is None
+    assert explain_model_load_error("s3://bucket/model", OSError("x")) is None
+    called.assert_not_called()
+
+
+def test_explain_mlflow_artifacts_source_gated_on_missing_exc(monkeypatch):
+    _patch_version_source(monkeypatch, "mlflow-artifacts:/0/abc/artifacts/model")
+    missing = explain_model_load_error(
+        "models:/proj-model@champion", Exception("Failed to download artifacts")
+    )
+    assert isinstance(missing, ArtifactLocationError)
+    # A benign-looking failure against a proxied source isn't claimed as drift.
+    assert explain_model_load_error("models:/proj-model@champion", Exception("oom")) is None
+
+
+def test_explain_version_uri_uses_get_model_version(monkeypatch):
+    client = _patch_version_source(monkeypatch, "file:///gone/model")
+    err = explain_model_load_error("models:/proj-model/3", OSError("no such file"))
+    assert isinstance(err, ArtifactLocationError)
+    client.get_model_version.assert_called_once_with("proj-model", "3")
+
+
+def test_explain_follows_mlflow3_logged_model_indirection(monkeypatch, tmp_path):
+    """MLflow 3.x: mv.source is a logged-model URI; the real path is its artifact_location."""
+    missing = tmp_path / "deleted"  # never created — guaranteed absent
+    client = MagicMock()
+    client.get_model_version_by_alias.return_value = MagicMock(source="models:/m-abc123")
+    client.get_logged_model.return_value = MagicMock(artifact_location=str(missing))
+    monkeypatch.setattr("kitchen.tracking.mlflow.tracking.MlflowClient", lambda: client)
+
+    err = explain_model_load_error("models:/proj-model@champion", OSError("no such file"))
+    assert isinstance(err, ArtifactLocationError)
+    assert str(missing) in str(err)
+    client.get_logged_model.assert_called_once_with("m-abc123")
+
+
+def test_explain_returns_none_when_lookup_fails(monkeypatch):
+    client = MagicMock()
+    client.get_model_version_by_alias.side_effect = Exception("registry down")
+    monkeypatch.setattr("kitchen.tracking.mlflow.tracking.MlflowClient", lambda: client)
+    assert explain_model_load_error("models:/proj-model@champion", OSError("x")) is None

@@ -9,6 +9,7 @@ Public API::
     from kitchen.serve import load_predictor, load_predictor_bundle
     from kitchen.serve import PredictorBundle, PredictorLoadError, PredictFn
     from kitchen.serve import lazy_model  # defer model load to first prediction
+    from kitchen.serve import load_champion  # load champion + explain artifact drift
 """
 
 from kitchen.serve.loader import (
@@ -17,6 +18,7 @@ from kitchen.serve.loader import (
     PredictorBundle,
     PredictorLoadError,
     lazy_model,
+    load_champion,
     load_predictor,
     load_predictor_bundle,
 )
@@ -29,4 +31,5 @@ __all__ = [
     "PredictFn",
     "lazy_model",
     "LazyModel",
+    "load_champion",
 ]
