@@ -41,20 +41,28 @@ def test_check_python_ok(tmp_path, monkeypatch):
     assert "✓ python" in result.output
 
 
-def test_check_terraform_missing(tmp_path, monkeypatch):
+def test_check_terraform_missing_warns_not_fails(tmp_path, monkeypatch):
+    """Missing terraform is a soft warning (only gates `recipes generate`), not a hard fail.
+
+    Everything else is green (docker/dvc present, AWS + Kaggle resolved) so the only finding is
+    terraform — which must NOT drive a non-zero exit.
+    """
+    def fake_which(name):
+        return None if name == "terraform" else f"/usr/bin/{name}"
+
     with (
-        patch("shutil.which", return_value=None),
+        patch("shutil.which", side_effect=fake_which),
+        patch("subprocess.check_output", return_value="v1.0\n"),
         patch("boto3.Session") as mock_session,
         patch("pathlib.Path.home", return_value=tmp_path),
     ):
-        mock_session.return_value.get_credentials.return_value = None
+        mock_session.return_value.get_credentials.return_value = MagicMock()
         result = _invoke(
-            tmp_path,
-            monkeypatch,
-            env={"MLFLOW_TRACKING_URI": "sqlite:///x.db", "KAGGLE_USERNAME": "u"},
+            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"}
         )
-    assert "✗ terraform" in result.output
-    assert result.exit_code != 0
+    assert "~ terraform" in result.output
+    assert "✗ terraform" not in result.output
+    assert result.exit_code == 0
 
 
 def test_check_tool_present_shows_version(tmp_path, monkeypatch):
