@@ -1453,14 +1453,19 @@ def check(
     else:
         _fail("python", f"found {v.major}.{v.minor} — requires >=3.11")
 
-    for name, hint in [
-        ("terraform", "needed for `recipes generate`"),
-        ("docker", "needed for `kitchen serve`"),
-    ]:
-        if shutil.which(name):
-            _ok(name, _bin_version(name))
-        else:
-            _fail(name, hint)
+    # terraform only gates the optional `recipes generate` scaffolding, which a
+    # features/train/evaluate run never touches — soft-warn so a stock CI runner
+    # (no terraform preinstalled) isn't blocked. Mirrors the DVC handling below.
+    if shutil.which("terraform"):
+        _ok("terraform", _bin_version("terraform"))
+    else:
+        _warn("terraform", "needed for `recipes generate`")
+
+    # docker gates `kitchen serve` (a real, implemented feature) — hard-fail if absent.
+    if shutil.which("docker"):
+        _ok("docker", _bin_version("docker"))
+    else:
+        _fail("docker", "needed for `kitchen serve`")
 
     # DVC: hard-fail only if this project uses it (dvc.yaml present); otherwise soft-warn.
     if shutil.which("dvc"):
