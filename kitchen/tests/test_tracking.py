@@ -74,6 +74,32 @@ def test_tracker_log_model_unknown_flavour(tmp_path):
             tracker.log_model(object(), "model", flavour="tensorflow")
 
 
+def test_log_model_forwards_kwargs_to_flavour(monkeypatch):
+    """Extra kwargs pass straight through to mlflow.<flavour>.log_model (serialization, etc.)."""
+    import types
+
+    from kitchen.tracking import _FLAVOURS
+
+    rec = MagicMock()
+    monkeypatch.setitem(_FLAVOURS, "sklearn", types.SimpleNamespace(log_model=rec))
+    model = object()
+    Tracker.log_model(model, "model", flavour="sklearn", serialization_format="cloudpickle")
+    rec.assert_called_once_with(model, "model", serialization_format="cloudpickle")
+
+
+def test_log_model_without_kwargs_is_unchanged(monkeypatch):
+    """Backward compatibility: no extra kwargs → same positional call as before."""
+    import types
+
+    from kitchen.tracking import _FLAVOURS
+
+    rec = MagicMock()
+    monkeypatch.setitem(_FLAVOURS, "sklearn", types.SimpleNamespace(log_model=rec))
+    model = object()
+    Tracker.log_model(model, "model", flavour="sklearn")
+    rec.assert_called_once_with(model, "model")
+
+
 # ── configure ─────────────────────────────────────────────────────────────────
 
 

@@ -171,12 +171,25 @@ class Tracker:
         mlflow.log_metrics(metrics, step=step)
 
     @staticmethod
-    def log_model(model: Any, artifact_path: str, flavour: str = "sklearn") -> None:
-        """Persist a model artifact using the named MLflow flavour (sklearn, xgboost, lightgbm, pyfunc)."""
+    def log_model(model: Any, artifact_path: str, flavour: str = "sklearn", **kwargs: Any) -> None:
+        """Persist a model artifact using the named MLflow flavour (sklearn, xgboost, lightgbm, pyfunc).
+
+        Extra keyword arguments pass straight through to the underlying
+        ``mlflow.<flavour>.log_model`` call, so a project can control serialization
+        and metadata without bypassing the platform (e.g. a custom or xgboost
+        sklearn-flavor model that needs ``serialization_format="cloudpickle"`` to
+        avoid the default pickle/skops path)::
+
+            tracker.log_model(model, "model", flavour="sklearn",
+                              serialization_format="cloudpickle")
+
+        Any flavor-appropriate kwarg works (``signature``, ``input_example``,
+        ``registered_model_name``, ``metadata``, …).
+        """
         mod = _FLAVOURS.get(flavour)
         if mod is None:
             raise ValueError(f"Unknown flavour: {flavour!r}. Choose from: {list(_FLAVOURS)}")
-        mod.log_model(model, artifact_path)
+        mod.log_model(model, artifact_path, **kwargs)
 
 
 # ── Functional API for env-driven setup ───────────────────────────────────────
