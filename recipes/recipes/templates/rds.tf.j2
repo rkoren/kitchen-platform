@@ -21,8 +21,8 @@ resource "aws_db_instance" "{{ name | tf_id }}" {
 {%- if db_subnet_group_name %}
   {{ "%-*s"|format(settings_width, "db_subnet_group_name") }} = "{{ db_subnet_group_name }}"
 {%- endif %}
-{%- if vpc_security_group_ids %}
-  {{ "%-*s"|format(settings_width, "vpc_security_group_ids") }} = [{% for sg in vpc_security_group_ids %}"{{ sg }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- if sg_entries %}
+  {{ "%-*s"|format(settings_width, "vpc_security_group_ids") }} = [{{ sg_entries | join(", ") }}]
 {%- endif %}
 }
 

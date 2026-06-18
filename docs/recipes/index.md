@@ -43,6 +43,6 @@ See [`recipes/examples/`](https://github.com/rkoren/kitchen-platform/tree/main/r
 
 - `s3-data-bucket.yaml` — a standalone S3 data bucket (versioning + lifecycle; encryption and public-access-block on by default). The simplest spec.
 - `mlflow-artifacts.yaml` — an S3 bucket for MLflow artifacts (versioned, no lifecycle expiration so registered model artifacts are never auto-deleted).
-- `mlflow-tracking-backend.yaml` — a persistent MLflow tracking backend so registry champions survive across runs: an RDS Postgres backend store (master password managed in Secrets Manager) + a versioned S3 artifact bucket.
+- `mlflow-tracking-backend.yaml` — a persistent MLflow tracking backend so registry champions survive across runs: a security group (Postgres reachability) + an RDS Postgres backend store (master password managed in Secrets Manager) + a versioned S3 artifact bucket.
 - `ecr-lambda-inference-api.yaml` — a containerised model-inference API (ECR repo + Lambda behind an HTTPS function URL + an artifacts bucket).
 - `kaggle-serving-stack.yaml` — the full serving stack: data + MLflow artifact buckets, ECR with lifecycle, a least-privilege IAM role (managed + scoped inline policy), and a Lambda with function URL and log retention.

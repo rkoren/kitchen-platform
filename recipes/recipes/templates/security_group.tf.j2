@@ -1,0 +1,30 @@
+resource "aws_security_group" "{{ name | tf_id }}" {
+  name        = "{{ name }}"
+  description = "{{ description }}"
+{%- if vpc_id %}
+  vpc_id      = "{{ vpc_id }}"
+{%- endif %}
+{% for rule in ingress %}
+  ingress {
+    description = "{{ rule.description or '' }}"
+    from_port   = {{ rule.port }}
+    to_port     = {{ rule.port }}
+    protocol    = "{{ rule.protocol }}"
+    cidr_blocks = [{% for c in rule.cidr_blocks %}"{{ c }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+  }
+{% endfor %}
+{%- if egress_all %}
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+{%- endif %}
+}
+
+output "{{ name | tf_id }}_id" {
+  description = "ID of the {{ name }} security group."
+  value       = aws_security_group.{{ name | tf_id }}.id
+}

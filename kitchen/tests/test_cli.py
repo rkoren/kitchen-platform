@@ -1811,6 +1811,19 @@ def test_init_ci_workflow_has_workflow_dispatch(_ci_local):
     assert "workflow_dispatch" in raw
 
 
+def test_init_ci_workflow_sqlite_default_with_persistent_backend_optin(_ci_local):
+    """LML-012: SQLite is the active default; the persistent-RDS path is documented/opt-in."""
+    raw, data = _ci_local
+    env = data["jobs"]["train-evaluate"]["env"]
+    # SQLite is the active (uncommented) default; the artifact bucket stays commented out.
+    assert env.get("MLFLOW_TRACKING_URI") == "sqlite:///mlruns.db"
+    assert "MLFLOW_ARTIFACT_BUCKET" not in env
+    # The opt-in persistent-backend guidance + export step are present as comments.
+    assert "MLFLOW_ARTIFACT_BUCKET" in raw  # commented hint
+    assert "kitchen secrets export --name MLFLOW_TRACKING_URI" in raw
+    assert "mlflow-tracking-backend" in raw
+
+
 def test_init_ci_kaggle_includes_ingest_step(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(

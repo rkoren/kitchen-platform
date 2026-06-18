@@ -1476,7 +1476,15 @@ jobs:
       pull-requests: write
 
     env:
+      # Default: ephemeral per-run SQLite — the registry is empty each run, so champions
+      # do NOT persist across runs (`--auto-promote` always sees no champion and promotes
+      # unconditionally). For champions that carry across runs, deploy a persistent backend
+      # (`recipes apply mlflow-tracking-backend.yaml` — RDS + S3), store the Postgres URL in
+      # Secrets Manager, declare it in params.yaml `secrets:` as MLFLOW_TRACKING_URI, then:
+      # delete the line below, set MLFLOW_ARTIFACT_BUCKET, and uncomment the "Resolve
+      # persistent MLflow backend" step. See docs/kitchen/configuration.md.
       MLFLOW_TRACKING_URI: sqlite:///mlruns.db
+      # MLFLOW_ARTIFACT_BUCKET: my-project-mlflow-artifacts
 
     steps:
       - uses: actions/checkout@v4
@@ -1500,6 +1508,13 @@ jobs:
 
       - name: Install project
         run: pip install -e ".[dev]"
+
+      # Persistent backend only: resolve MLFLOW_TRACKING_URI from the secrets manifest into
+      # the GitHub env file so the steps below use the RDS store (needs AWS creds — add an
+      # aws-actions/configure-aws-credentials step with your OIDC role first). The `secrets`
+      # command ships with kitchen; see docs/kitchen/configuration.md.
+      # - name: Resolve persistent MLflow backend
+      #   run: kitchen secrets export --name MLFLOW_TRACKING_URI
 
       - name: Train
         run: kitchen run train --auto-promote
@@ -1654,7 +1669,15 @@ jobs:
       pull-requests: write
 
     env:
+      # Default: ephemeral per-run SQLite — the registry is empty each run, so champions
+      # do NOT persist across runs (`--auto-promote` always sees no champion and promotes
+      # unconditionally). For champions that carry across runs, deploy a persistent backend
+      # (`recipes apply mlflow-tracking-backend.yaml` — RDS + S3), store the Postgres URL in
+      # Secrets Manager, declare it in params.yaml `secrets:` as MLFLOW_TRACKING_URI, then:
+      # delete the line below, set MLFLOW_ARTIFACT_BUCKET, and uncomment the "Resolve
+      # persistent MLflow backend" step. See docs/kitchen/configuration.md.
       MLFLOW_TRACKING_URI: sqlite:///mlruns.db
+      # MLFLOW_ARTIFACT_BUCKET: my-project-mlflow-artifacts
 
     steps:
       - uses: actions/checkout@v4
@@ -1684,6 +1707,13 @@ jobs:
           KAGGLE_USERNAME: $${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: $${{ secrets.KAGGLE_KEY }}
         run: kitchen ingest
+
+      # Persistent backend only: resolve MLFLOW_TRACKING_URI from the secrets manifest into
+      # the GitHub env file so the steps below use the RDS store (needs AWS creds — add an
+      # aws-actions/configure-aws-credentials step with your OIDC role first). The `secrets`
+      # command ships with kitchen; see docs/kitchen/configuration.md.
+      # - name: Resolve persistent MLflow backend
+      #   run: kitchen secrets export --name MLFLOW_TRACKING_URI
 
       - name: Train
         run: kitchen run train --auto-promote
