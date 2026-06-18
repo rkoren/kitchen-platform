@@ -1,0 +1,37 @@
+resource "aws_db_instance" "{{ name | tf_id }}" {
+  identifier     = "{{ name }}"
+  engine         = "postgres"
+  engine_version = "{{ engine_version }}"
+  instance_class = "{{ instance_class }}"
+
+  allocated_storage       = {{ allocated_storage }}
+  storage_encrypted       = {{ storage_encrypted | lower }}
+  backup_retention_period = {{ backup_retention_days }}
+
+  db_name  = "{{ db_name }}"
+  username = "{{ username }}"
+  # Master password is created and rotated by RDS in AWS Secrets Manager —
+  # never rendered into Terraform config or state.
+  manage_master_user_password = true
+
+  {{ "%-*s"|format(settings_width, "multi_az") }} = {{ multi_az | lower }}
+  {{ "%-*s"|format(settings_width, "publicly_accessible") }} = {{ publicly_accessible | lower }}
+  {{ "%-*s"|format(settings_width, "deletion_protection") }} = {{ deletion_protection | lower }}
+  {{ "%-*s"|format(settings_width, "skip_final_snapshot") }} = {{ skip_final_snapshot | lower }}
+{%- if db_subnet_group_name %}
+  {{ "%-*s"|format(settings_width, "db_subnet_group_name") }} = "{{ db_subnet_group_name }}"
+{%- endif %}
+{%- if vpc_security_group_ids %}
+  {{ "%-*s"|format(settings_width, "vpc_security_group_ids") }} = [{% for sg in vpc_security_group_ids %}"{{ sg }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- endif %}
+}
+
+output "{{ name | tf_id }}_endpoint" {
+  description = "Connection endpoint (host:port) for the {{ name }} database."
+  value       = aws_db_instance.{{ name | tf_id }}.endpoint
+}
+
+output "{{ name | tf_id }}_master_user_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the RDS-managed master credentials."
+  value       = aws_db_instance.{{ name | tf_id }}.master_user_secret[0].secret_arn
+}

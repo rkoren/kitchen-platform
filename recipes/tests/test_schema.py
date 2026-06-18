@@ -6,7 +6,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from recipes.schema import ECRSpec, IAMRoleSpec, LambdaSpec, RecipeSpec, S3Spec
+from recipes.schema import ECRSpec, IAMRoleSpec, LambdaSpec, RDSSpec, RecipeSpec, S3Spec
 
 FULL_SPEC = {
     "name": "my-api",
@@ -84,6 +84,33 @@ def test_ecr_immutable():
 def test_ecr_invalid_mutability_raises():
     with pytest.raises(ValidationError):
         ECRSpec.model_validate({"type": "ecr", "name": "x", "image_tag_mutability": "INVALID"})
+
+
+def test_rds_defaults():
+    spec = RDSSpec.model_validate({"type": "rds", "name": "mlflow-backend"})
+    assert spec.engine_version == "16"
+    assert spec.instance_class == "db.t4g.micro"
+    assert spec.allocated_storage == 20
+    assert spec.backup_retention_days == 7
+    assert spec.db_name == "mlflow"
+    assert spec.storage_encrypted is True
+    assert spec.deletion_protection is True
+    assert spec.publicly_accessible is False
+    assert spec.db_subnet_group_name is None
+    assert spec.vpc_security_group_ids == []
+
+
+def test_rds_discriminated_in_recipe():
+    spec = RecipeSpec.model_validate(
+        {"name": "r", "resources": [{"type": "rds", "name": "db", "instance_class": "db.t4g.small"}]}
+    )
+    assert isinstance(spec.resources[0], RDSSpec)
+    assert spec.resources[0].instance_class == "db.t4g.small"
+
+
+def test_unknown_field_on_rds_raises():
+    with pytest.raises(ValidationError):
+        RDSSpec.model_validate({"type": "rds", "name": "db", "password": "hunter2"})
 
 
 def test_lambda_defaults():
@@ -279,6 +306,19 @@ def test_example_mlflow_artifacts_yaml_validates():
     assert bucket.versioning is True
     # Model artifacts must not be auto-expired.
     assert bucket.lifecycle_expiration_days is None
+
+
+def test_example_mlflow_tracking_backend_yaml_validates():
+    example = Path(__file__).parent.parent / "examples" / "mlflow-tracking-backend.yaml"
+    data = yaml.safe_load(example.read_text())
+    spec = RecipeSpec.model_validate(data)
+    # RDS backend store + S3 artifact bucket.
+    assert [r.type for r in spec.resources] == ["rds", "s3"]
+    rds = spec.resources[0]
+    assert rds.db_name == "mlflow"
+    assert rds.deletion_protection is True
+    artifacts = spec.resources[1]
+    assert artifacts.versioning is True
 
 
 def test_example_serving_stack_yaml_validates():

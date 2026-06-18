@@ -5,7 +5,7 @@ from recipes.schema import ResourceSpec
 
 def generate_resource(spec: ResourceSpec, all_resources: list = None) -> str:
     """Dispatch to the appropriate generator based on resource type."""
-    from recipes.generators import ecr, iam, lambda_, s3
+    from recipes.generators import ecr, iam, lambda_, rds, s3
 
     if spec.type == "lambda":
         return lambda_.generate(spec, all_resources or [])
@@ -14,6 +14,7 @@ def generate_resource(spec: ResourceSpec, all_resources: list = None) -> str:
         "s3": s3.generate,
         "iam_role": iam.generate,
         "ecr": ecr.generate,
+        "rds": rds.generate,
     }
     fn = registry.get(spec.type)
     if fn is None:

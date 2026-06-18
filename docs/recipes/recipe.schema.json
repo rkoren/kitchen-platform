@@ -241,6 +241,102 @@
       "title": "LambdaSpec",
       "type": "object"
     },
+    "RDSSpec": {
+      "additionalProperties": false,
+      "description": "A managed Postgres instance \u2014 e.g. the MLflow backend store that makes\nregistry champions persist across runs (see docs/decisions/mlflow-tracking-backend.md).\n\nThe master password is created and rotated by RDS in AWS Secrets Manager\n(``manage_master_user_password``) \u2014 it is never rendered into Terraform config\nor state. The generated ``<name>_master_user_secret_arn`` output is the ARN to\nwire into a project's ``secrets:`` manifest.",
+      "properties": {
+        "type": {
+          "const": "rds",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "engine_version": {
+          "default": "16",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "instance_class": {
+          "default": "db.t4g.micro",
+          "title": "Instance Class",
+          "type": "string"
+        },
+        "allocated_storage": {
+          "default": 20,
+          "title": "Allocated Storage",
+          "type": "integer"
+        },
+        "backup_retention_days": {
+          "default": 7,
+          "title": "Backup Retention Days",
+          "type": "integer"
+        },
+        "db_name": {
+          "default": "mlflow",
+          "title": "Db Name",
+          "type": "string"
+        },
+        "username": {
+          "default": "mlflow",
+          "title": "Username",
+          "type": "string"
+        },
+        "storage_encrypted": {
+          "default": true,
+          "title": "Storage Encrypted",
+          "type": "boolean"
+        },
+        "multi_az": {
+          "default": false,
+          "title": "Multi Az",
+          "type": "boolean"
+        },
+        "publicly_accessible": {
+          "default": false,
+          "title": "Publicly Accessible",
+          "type": "boolean"
+        },
+        "deletion_protection": {
+          "default": true,
+          "title": "Deletion Protection",
+          "type": "boolean"
+        },
+        "skip_final_snapshot": {
+          "default": true,
+          "title": "Skip Final Snapshot",
+          "type": "boolean"
+        },
+        "db_subnet_group_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Db Subnet Group Name"
+        },
+        "vpc_security_group_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Vpc Security Group Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "name"
+      ],
+      "title": "RDSSpec",
+      "type": "object"
+    },
     "S3Spec": {
       "additionalProperties": false,
       "properties": {
@@ -308,6 +404,7 @@
             "ecr": "#/$defs/ECRSpec",
             "iam_role": "#/$defs/IAMRoleSpec",
             "lambda": "#/$defs/LambdaSpec",
+            "rds": "#/$defs/RDSSpec",
             "s3": "#/$defs/S3Spec"
           },
           "propertyName": "type"
@@ -324,6 +421,9 @@
           },
           {
             "$ref": "#/$defs/LambdaSpec"
+          },
+          {
+            "$ref": "#/$defs/RDSSpec"
           }
         ]
       },

@@ -4,8 +4,9 @@ from recipes.generators import generate_resource
 from recipes.generators.ecr import generate as ecr_generate
 from recipes.generators.iam import generate as iam_generate
 from recipes.generators.lambda_ import generate as lambda_generate
+from recipes.generators.rds import generate as rds_generate
 from recipes.generators.s3 import generate as s3_generate
-from recipes.schema import ECRSpec, IAMRoleSpec, LambdaSpec, S3Spec
+from recipes.schema import ECRSpec, IAMRoleSpec, LambdaSpec, RDSSpec, S3Spec
 
 # --- S3 ---
 
@@ -292,6 +293,11 @@ def test_generate_resource_dispatches_lambda():
     assert "aws_lambda_function" in generate_resource(spec)
 
 
+def test_generate_resource_dispatches_rds():
+    spec = RDSSpec(type="rds", name="db")
+    assert "aws_db_instance" in generate_resource(spec)
+
+
 # --- S3: encryption / public access block / lifecycle (R-009) ---
 
 
@@ -448,3 +454,81 @@ def test_iam_inline_policy_emits_role_policy():
     assert 'name = "artifacts"' in out
     assert '"s3:GetObject", "s3:ListBucket"' in out
     assert '"arn:aws:s3:::b", "arn:aws:s3:::b/*"' in out
+
+
+# --- RDS (R-015) ---
+
+
+def test_rds_resource_block():
+    out = rds_generate(RDSSpec(type="rds", name="mlflow-backend"))
+    assert 'resource "aws_db_instance" "mlflow_backend"' in out
+    assert 'identifier     = "mlflow-backend"' in out
+    assert 'engine         = "postgres"' in out
+
+
+def test_rds_defaults():
+    out = rds_generate(RDSSpec(type="rds", name="db"))
+    assert 'engine_version = "16"' in out
+    assert 'instance_class = "db.t4g.micro"' in out
+    assert "allocated_storage       = 20" in out
+    assert "storage_encrypted       = true" in out
+    assert "backup_retention_period = 7" in out
+    assert "deletion_protection = true" in out
+    assert "publicly_accessible = false" in out
+
+
+def test_rds_db_name_and_username():
+    out = rds_generate(RDSSpec(type="rds", name="db", db_name="tracking", username="admin"))
+    assert 'db_name  = "tracking"' in out
+    assert 'username = "admin"' in out
+
+
+def test_rds_master_password_managed_by_secrets_manager():
+    """No inline password argument — RDS manages it in Secrets Manager."""
+    out = rds_generate(RDSSpec(type="rds", name="db"))
+    assert "manage_master_user_password = true" in out
+    # No literal `password = "..."` argument anywhere (the only "password" tokens are
+    # `manage_master_user_password` and the explanatory comment).
+    assert not any(ln.strip().startswith("password") and "=" in ln for ln in out.splitlines())
+
+
+def test_rds_outputs_endpoint_and_secret_arn():
+    out = rds_generate(RDSSpec(type="rds", name="mlflow-backend"))
+    assert 'output "mlflow_backend_endpoint"' in out
+    assert "aws_db_instance.mlflow_backend.endpoint" in out
+    assert 'output "mlflow_backend_master_user_secret_arn"' in out
+    assert "aws_db_instance.mlflow_backend.master_user_secret[0].secret_arn" in out
+
+
+def test_rds_no_networking_by_default():
+    out = rds_generate(RDSSpec(type="rds", name="db"))
+    assert "db_subnet_group_name" not in out
+    assert "vpc_security_group_ids" not in out
+
+
+def test_rds_networking_rendered_when_set():
+    out = rds_generate(
+        RDSSpec(
+            type="rds",
+            name="db",
+            db_subnet_group_name="mlflow-subnets",
+            vpc_security_group_ids=["sg-0123", "sg-0456"],
+        )
+    )
+    assert 'db_subnet_group_name   = "mlflow-subnets"' in out
+    assert 'vpc_security_group_ids = ["sg-0123", "sg-0456"]' in out
+
+
+def test_rds_settings_block_aligned_with_networking():
+    """The settings `=` align (terraform fmt no-op) even when the wider subnet/sg keys render."""
+    out = rds_generate(
+        RDSSpec(
+            type="rds",
+            name="db",
+            db_subnet_group_name="subnets",
+            vpc_security_group_ids=["sg-1"],
+        )
+    )
+    keys = ("multi_az", "publicly_accessible", "db_subnet_group_name", "vpc_security_group_ids")
+    eq_cols = {ln.index("=") for ln in out.splitlines() if ln.strip().startswith(keys)}
+    assert len(eq_cols) == 1, f"settings `=` not aligned: {eq_cols}"

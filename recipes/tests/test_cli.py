@@ -386,6 +386,25 @@ def test_generate_check_passes_on_generated_hcl(tmp_path):
     assert "terraform fmt" in result.output
 
 
+@pytest.mark.skipif(shutil.which("terraform") is None, reason="terraform not installed")
+def test_generate_check_passes_on_rds_hcl(tmp_path):
+    """R-015: the rds generator must emit canonical HCL, including the subnet/sg variant."""
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(
+        "name: rds-infra\n"
+        "region: us-east-1\n"
+        "resources:\n"
+        "  - type: rds\n"
+        "    name: mlflow-backend\n"
+        "    db_subnet_group_name: mlflow-subnets\n"
+        "    vpc_security_group_ids: [sg-0123, sg-0456]\n"
+    )
+    out = tmp_path / "tf"
+    result = runner.invoke(app, ["generate", str(spec), "--out", str(out), "--check"])
+    assert result.exit_code == 0, result.output
+    assert "terraform fmt" in result.output
+
+
 def test_generate_check_fails_when_terraform_missing(tmp_path):
     spec = tmp_path / "infra.yaml"
     spec.write_text(VALID_SPEC)
