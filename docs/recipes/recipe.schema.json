@@ -93,6 +93,48 @@
       "title": "IAMRoleSpec",
       "type": "object"
     },
+    "IngressRule": {
+      "additionalProperties": false,
+      "description": "A single inbound rule on a security group.",
+      "properties": {
+        "port": {
+          "title": "Port",
+          "type": "integer"
+        },
+        "protocol": {
+          "default": "tcp",
+          "title": "Protocol",
+          "type": "string"
+        },
+        "cidr_blocks": {
+          "default": [
+            "0.0.0.0/0"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Cidr Blocks",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        }
+      },
+      "required": [
+        "port"
+      ],
+      "title": "IngressRule",
+      "type": "object"
+    },
     "InlinePolicy": {
       "additionalProperties": false,
       "description": "An inline allow policy for project-scoped access (e.g. a specific S3 bucket).",
@@ -321,6 +363,14 @@
           "default": null,
           "title": "Db Subnet Group Name"
         },
+        "security_groups": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Security Groups",
+          "type": "array"
+        },
         "vpc_security_group_ids": {
           "default": [],
           "items": {
@@ -383,6 +433,56 @@
       ],
       "title": "S3Spec",
       "type": "object"
+    },
+    "SecurityGroupSpec": {
+      "additionalProperties": false,
+      "description": "A security group \u2014 typically the inbound rule that makes an `rds` instance\nreachable (default: Postgres 5432). Attach it from an `rds` resource via\n``security_groups: [<this name>]``.\n\nThe default ingress CIDR is ``0.0.0.0/0`` (reachable from anywhere, e.g.\nGitHub-hosted CI runners with dynamic IPs) \u2014 pair it with TLS and the\nRDS-managed password, or narrow ``cidr_blocks`` to known ranges.",
+      "properties": {
+        "type": {
+          "const": "security_group",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "Managed by recipes",
+          "title": "Description",
+          "type": "string"
+        },
+        "vpc_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vpc Id"
+        },
+        "ingress": {
+          "items": {
+            "$ref": "#/$defs/IngressRule"
+          },
+          "title": "Ingress",
+          "type": "array"
+        },
+        "egress_all": {
+          "default": true,
+          "title": "Egress All",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "name"
+      ],
+      "title": "SecurityGroupSpec",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -405,7 +505,8 @@
             "iam_role": "#/$defs/IAMRoleSpec",
             "lambda": "#/$defs/LambdaSpec",
             "rds": "#/$defs/RDSSpec",
-            "s3": "#/$defs/S3Spec"
+            "s3": "#/$defs/S3Spec",
+            "security_group": "#/$defs/SecurityGroupSpec"
           },
           "propertyName": "type"
         },
@@ -424,6 +525,9 @@
           },
           {
             "$ref": "#/$defs/RDSSpec"
+          },
+          {
+            "$ref": "#/$defs/SecurityGroupSpec"
           }
         ]
       },

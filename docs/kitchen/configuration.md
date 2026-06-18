@@ -208,6 +208,44 @@ Required by `kitchen run monitor`. At least one of `report_bucket` or `local_pat
 | `tracking_uri` | `sqlite:///mlruns.db` | MLflow tracking backend URI |
 | `artifact_bucket` | `null` | S3 bucket for model artifacts (overrides MLflow default artifact root) |
 
+#### Persistent tracking backend (champions across runs)
+
+The default `sqlite:///mlruns.db` is **per-run** in CI: the registry starts empty every run, so `kitchen run train --auto-promote` never sees a champion and promotes unconditionally — cross-run comparison is a no-op. To make champions persist (and `--auto-promote` actually compare against the last good model), point MLflow at a **persistent backend store** (the registry/champion lives there) plus a shared **artifact store** (the model files). Rationale and the full decision: [`mlflow-tracking-backend`](../decisions/mlflow-tracking-backend.md).
+
+1. **Deploy** the backend with `recipes` — `recipes/examples/mlflow-tracking-backend.yaml` provisions a security group, an RDS Postgres instance (master password managed in Secrets Manager — never in Terraform/state), and a versioned S3 artifact bucket:
+
+   ```bash
+   recipes apply mlflow-tracking-backend.yaml --state-bucket <your-tf-state-bucket>
+   ```
+
+   Terraform outputs the connection `…_endpoint`, the `…_master_user_secret_arn`, and the bucket.
+
+2. **Store the connection URL** as a Secrets Manager secret, e.g. a plaintext secret holding `postgresql://mlflow:<password>@<endpoint>/mlflow` (build it from the endpoint + the RDS-managed credentials).
+
+3. **Declare it** in `params.yaml` `secrets:` and set the artifact bucket:
+
+   ```yaml
+   secrets:
+     MLFLOW_TRACKING_URI:
+       aws_secret: my-project/mlflow-tracking-uri   # the SM secret holding the postgres URL
+       required: true
+   mlflow:
+     artifact_bucket: my-project-mlflow-artifacts
+   ```
+
+4. **CI** — in the scaffolded `train-evaluate.yml`, set `MLFLOW_ARTIFACT_BUCKET`, remove the SQLite `MLFLOW_TRACKING_URI` line, and uncomment the *Resolve persistent MLflow backend* step (it runs `kitchen secrets export --name MLFLOW_TRACKING_URI`, resolving the secret into the job environment for the steps that follow). The runner needs AWS credentials first — add an `aws-actions/configure-aws-credentials` step with your OIDC role (see [aws-deployment](aws-deployment.md)).
+
+5. **Local / notebooks** — put the URL in `.env` (loaded automatically at startup), or bridge it from Secrets Manager once:
+
+   ```bash
+   echo "MLFLOW_TRACKING_URI=$(aws secretsmanager get-secret-value \
+     --secret-id my-project/mlflow-tracking-uri --query SecretString --output text)" >> .env
+   ```
+
+**Migrating from local SQLite:** champions registered against the old `mlruns.db` do not carry over — re-train against the new store (the first `--auto-promote` registers a fresh champion), or `mlflow db upgrade <uri>` if you are moving an existing DB (see [troubleshooting](troubleshooting.md) for the schema-mismatch guidance). A champion whose **artifacts** were written to a local path before the move won't load against the new store — `kitchen run evaluate` / `predictor.py` detect this and explain it (`ArtifactLocationError`), so keep `MLFLOW_ARTIFACT_BUCKET` set so artifacts land in S3 from the start.
+
+**Reachability:** the example RDS is `publicly_accessible` with an open security group so GitHub-hosted runners (dynamic IPs) and your laptop can connect — gated by TLS and the RDS-managed password. For a private backend, drop public access and run an MLflow tracking server in front (the decision doc's upgrade path).
+
 ### What belongs in `params.yaml`
 
 - Data source and file names

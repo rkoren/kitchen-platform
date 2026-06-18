@@ -2504,11 +2504,12 @@ app.add_typer(secrets_app, name="secrets")
 
 def main() -> None:
     """Console-script entry point: render known fatal errors cleanly (no traceback)."""
+    from kitchen.secrets import SecretNotFound
     from kitchen.tracking import MlflowSchemaError
 
     try:
         app()
-    except MlflowSchemaError as exc:
+    except (MlflowSchemaError, SecretNotFound) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise SystemExit(1)
 

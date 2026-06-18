@@ -6,7 +6,15 @@ from recipes.generators.iam import generate as iam_generate
 from recipes.generators.lambda_ import generate as lambda_generate
 from recipes.generators.rds import generate as rds_generate
 from recipes.generators.s3 import generate as s3_generate
-from recipes.schema import ECRSpec, IAMRoleSpec, LambdaSpec, RDSSpec, S3Spec
+from recipes.generators.security_group import generate as sg_generate
+from recipes.schema import (
+    ECRSpec,
+    IAMRoleSpec,
+    LambdaSpec,
+    RDSSpec,
+    S3Spec,
+    SecurityGroupSpec,
+)
 
 # --- S3 ---
 
@@ -298,6 +306,11 @@ def test_generate_resource_dispatches_rds():
     assert "aws_db_instance" in generate_resource(spec)
 
 
+def test_generate_resource_dispatches_security_group():
+    spec = SecurityGroupSpec(type="security_group", name="sg")
+    assert "aws_security_group" in generate_resource(spec)
+
+
 # --- S3: encryption / public access block / lifecycle (R-009) ---
 
 
@@ -532,3 +545,74 @@ def test_rds_settings_block_aligned_with_networking():
     keys = ("multi_az", "publicly_accessible", "db_subnet_group_name", "vpc_security_group_ids")
     eq_cols = {ln.index("=") for ln in out.splitlines() if ln.strip().startswith(keys)}
     assert len(eq_cols) == 1, f"settings `=` not aligned: {eq_cols}"
+
+
+def test_rds_security_groups_render_as_references():
+    """Logical security_group names become aws_security_group.<name>.id references."""
+    out = rds_generate(RDSSpec(type="rds", name="db", security_groups=["mlflow-db-sg"]))
+    assert "vpc_security_group_ids = [aws_security_group.mlflow_db_sg.id]" in out
+
+
+def test_rds_combines_sg_references_and_literal_ids():
+    out = rds_generate(
+        RDSSpec(type="rds", name="db", security_groups=["my-sg"], vpc_security_group_ids=["sg-0123"])
+    )
+    assert 'vpc_security_group_ids = [aws_security_group.my_sg.id, "sg-0123"]' in out
+
+
+# --- Security group (R-016) ---
+
+
+def test_security_group_resource_block():
+    out = sg_generate(SecurityGroupSpec(type="security_group", name="mlflow-db-sg"))
+    assert 'resource "aws_security_group" "mlflow_db_sg"' in out
+    assert 'name        = "mlflow-db-sg"' in out
+
+
+def test_security_group_default_ingress_is_postgres():
+    out = sg_generate(SecurityGroupSpec(type="security_group", name="sg"))
+    assert "from_port   = 5432" in out
+    assert "to_port     = 5432" in out
+    assert 'protocol    = "tcp"' in out
+    assert 'cidr_blocks = ["0.0.0.0/0"]' in out
+
+
+def test_security_group_custom_ingress():
+    out = sg_generate(
+        SecurityGroupSpec(
+            type="security_group",
+            name="sg",
+            ingress=[{"port": 443, "cidr_blocks": ["10.0.0.0/8"], "description": "https"}],
+        )
+    )
+    assert "from_port   = 443" in out
+    assert 'cidr_blocks = ["10.0.0.0/8"]' in out
+    assert 'description = "https"' in out
+    assert "5432" not in out  # default rule replaced
+
+
+def test_security_group_egress_all_by_default():
+    out = sg_generate(SecurityGroupSpec(type="security_group", name="sg"))
+    assert "egress {" in out
+    assert 'protocol    = "-1"' in out
+
+
+def test_security_group_egress_can_be_disabled():
+    out = sg_generate(SecurityGroupSpec(type="security_group", name="sg", egress_all=False))
+    assert "egress {" not in out
+
+
+def test_security_group_no_vpc_id_by_default():
+    out = sg_generate(SecurityGroupSpec(type="security_group", name="sg"))
+    assert "vpc_id" not in out
+
+
+def test_security_group_vpc_id_rendered_when_set():
+    out = sg_generate(SecurityGroupSpec(type="security_group", name="sg", vpc_id="vpc-0abc"))
+    assert 'vpc_id      = "vpc-0abc"' in out
+
+
+def test_security_group_outputs_id():
+    out = sg_generate(SecurityGroupSpec(type="security_group", name="mlflow-db-sg"))
+    assert 'output "mlflow_db_sg_id"' in out
+    assert "aws_security_group.mlflow_db_sg.id" in out

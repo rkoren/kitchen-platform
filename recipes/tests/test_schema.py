@@ -6,7 +6,15 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from recipes.schema import ECRSpec, IAMRoleSpec, LambdaSpec, RDSSpec, RecipeSpec, S3Spec
+from recipes.schema import (
+    ECRSpec,
+    IAMRoleSpec,
+    LambdaSpec,
+    RDSSpec,
+    RecipeSpec,
+    S3Spec,
+    SecurityGroupSpec,
+)
 
 FULL_SPEC = {
     "name": "my-api",
@@ -111,6 +119,45 @@ def test_rds_discriminated_in_recipe():
 def test_unknown_field_on_rds_raises():
     with pytest.raises(ValidationError):
         RDSSpec.model_validate({"type": "rds", "name": "db", "password": "hunter2"})
+
+
+def test_security_group_defaults():
+    spec = SecurityGroupSpec.model_validate({"type": "security_group", "name": "db-sg"})
+    assert spec.vpc_id is None
+    assert spec.egress_all is True
+    # default ingress is a single Postgres rule open to anywhere
+    assert len(spec.ingress) == 1
+    assert spec.ingress[0].port == 5432
+    assert spec.ingress[0].protocol == "tcp"
+    assert spec.ingress[0].cidr_blocks == ["0.0.0.0/0"]
+
+
+def test_rds_security_groups_field():
+    spec = RDSSpec.model_validate({"type": "rds", "name": "db", "security_groups": ["db-sg"]})
+    assert spec.security_groups == ["db-sg"]
+
+
+def test_rds_security_group_reference_must_resolve():
+    with pytest.raises(ValidationError, match="does not match any security_group"):
+        RecipeSpec.model_validate(
+            {
+                "name": "r",
+                "resources": [{"type": "rds", "name": "db", "security_groups": ["missing-sg"]}],
+            }
+        )
+
+
+def test_rds_security_group_reference_resolves_in_spec():
+    spec = RecipeSpec.model_validate(
+        {
+            "name": "r",
+            "resources": [
+                {"type": "security_group", "name": "db-sg"},
+                {"type": "rds", "name": "db", "security_groups": ["db-sg"]},
+            ],
+        }
+    )
+    assert isinstance(spec.resources[0], SecurityGroupSpec)
 
 
 def test_lambda_defaults():
@@ -312,12 +359,13 @@ def test_example_mlflow_tracking_backend_yaml_validates():
     example = Path(__file__).parent.parent / "examples" / "mlflow-tracking-backend.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)
-    # RDS backend store + S3 artifact bucket.
-    assert [r.type for r in spec.resources] == ["rds", "s3"]
-    rds = spec.resources[0]
+    # Security group (reachability) + RDS backend store + S3 artifact bucket.
+    assert [r.type for r in spec.resources] == ["security_group", "rds", "s3"]
+    rds = next(r for r in spec.resources if r.type == "rds")
     assert rds.db_name == "mlflow"
     assert rds.deletion_protection is True
-    artifacts = spec.resources[1]
+    assert rds.security_groups == ["mlflow-backend-sg"]  # wired to the security_group
+    artifacts = next(r for r in spec.resources if r.type == "s3")
     assert artifacts.versioning is True
 
 
