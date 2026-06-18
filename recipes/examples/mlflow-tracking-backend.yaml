@@ -1,0 +1,35 @@
+# Example: a persistent MLflow tracking backend so registry champions survive
+# across runs (see docs/decisions/mlflow-tracking-backend.md).
+#
+# Two pieces:
+#   - rds: the Postgres BACKEND STORE (experiments, runs, registry + champion alias).
+#     The master password is created and rotated by RDS in AWS Secrets Manager — it is
+#     never written to Terraform config or state. Wire the generated
+#     `mlflow_backend_master_user_secret_arn` output into a project's `secrets:` manifest
+#     and point MLFLOW_TRACKING_URI at the `..._endpoint` output.
+#   - s3: the ARTIFACT STORE (the model files the champion points to). Set
+#     `mlflow.artifact_bucket` to this bucket so artifacts are durable too — otherwise
+#     a champion row persists but its model can't load elsewhere.
+#
+# Networking (db_subnet_group_name / vpc_security_group_ids) references existing VPC
+# resources — recipes does not generate a VPC. Omit them only for a throwaway/default-VPC
+# instance.
+#
+# Deploy:
+#   recipes apply mlflow-tracking-backend.yaml --state-bucket <your-tf-state-bucket>
+name: mlflow-tracking-backend
+region: us-east-1
+
+resources:
+  - type: rds
+    name: mlflow-backend
+    engine_version: "16"
+    instance_class: db.t4g.micro
+    allocated_storage: 20
+    db_name: mlflow
+    username: mlflow
+    deletion_protection: true
+
+  - type: s3
+    name: my-project-mlflow-artifacts
+    versioning: true
