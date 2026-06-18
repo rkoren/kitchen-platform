@@ -246,6 +246,8 @@ The default `sqlite:///mlruns.db` is **per-run** in CI: the registry starts empt
 
 **Reachability:** the example RDS is `publicly_accessible` with an open security group so GitHub-hosted runners (dynamic IPs) and your laptop can connect — gated by TLS and the RDS-managed password. For a private backend, drop public access and run an MLflow tracking server in front (the decision doc's upgrade path).
 
+**Validate it:** deploy the throwaway `recipes/examples/mlflow-backend-validation.yaml` (tiny instance, `deletion_protection: false` for clean teardown), point `MLFLOW_TRACKING_URI` at it, and run `examples/validate_persistent_backend.py` **twice** — run 2 finding run 1's champion confirms the backend persists champions across runs. Then `recipes destroy`.
+
 ### What belongs in `params.yaml`
 
 - Data source and file names
