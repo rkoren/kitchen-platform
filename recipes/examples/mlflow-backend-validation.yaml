@@ -1,0 +1,31 @@
+# Throwaway MLflow backend for validating the persistent-champion loop (VAL-008).
+#
+# Identical in shape to mlflow-tracking-backend.yaml but tuned for spin-up → validate →
+# tear-down: `deletion_protection: false` so `recipes destroy` works without first flipping
+# the flag, and a tiny instance. Use it to run examples/validate_persistent_backend.py
+# against a real RDS Postgres backend, then destroy it.
+#
+#   recipes apply mlflow-backend-validation.yaml --state-bucket <your-tf-state-bucket>
+#   # ... build the postgres URL from the endpoint + RDS-managed secret, then:
+#   export MLFLOW_TRACKING_URI=postgresql://mlflow:<pw>@<endpoint>/mlflow
+#   python examples/validate_persistent_backend.py   # run 1
+#   python examples/validate_persistent_backend.py   # run 2 -> PASS
+#   recipes destroy mlflow-backend-validation.yaml --state-bucket <your-tf-state-bucket>
+name: mlflow-backend-validation
+region: us-east-1
+
+resources:
+  - type: security_group
+    name: mlflow-validation-sg
+    description: Postgres access to the throwaway MLflow validation backend
+
+  - type: rds
+    name: mlflow-validation
+    instance_class: db.t4g.micro
+    allocated_storage: 20
+    db_name: mlflow
+    username: mlflow
+    publicly_accessible: true
+    security_groups: [mlflow-validation-sg]
+    deletion_protection: false   # throwaway — allow clean teardown
+    skip_final_snapshot: true

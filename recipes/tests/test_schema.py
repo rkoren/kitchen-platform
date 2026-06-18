@@ -369,6 +369,17 @@ def test_example_mlflow_tracking_backend_yaml_validates():
     assert artifacts.versioning is True
 
 
+def test_example_mlflow_backend_validation_yaml_validates():
+    example = Path(__file__).parent.parent / "examples" / "mlflow-backend-validation.yaml"
+    data = yaml.safe_load(example.read_text())
+    spec = RecipeSpec.model_validate(data)
+    assert [r.type for r in spec.resources] == ["security_group", "rds"]
+    rds = next(r for r in spec.resources if r.type == "rds")
+    # Throwaway: teardown must not be blocked by deletion protection.
+    assert rds.deletion_protection is False
+    assert rds.security_groups == ["mlflow-validation-sg"]
+
+
 def test_example_serving_stack_yaml_validates():
     example = Path(__file__).parent.parent / "examples" / "kaggle-serving-stack.yaml"
     data = yaml.safe_load(example.read_text())

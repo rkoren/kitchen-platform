@@ -24,10 +24,16 @@ These build their own in-memory data and only need `kitchen` installed
 |---|---|
 | [`loto_cv_example.py`](loto_cv_example.py) | `loto_cv()` leave-one-group-out CV — one metric key per group plus aggregate mean/std, and how `kitchen leaderboard --expand-metrics` surfaces each group as a sub-column. |
 | [`multi_source_features.py`](multi_source_features.py) | `FeatureBuilder.sources()` routing multiple raw CSVs into `build()` as a `dict[filename, DataFrame]`, producing the same processed parquet as a single-file builder. |
+| [`validate_persistent_backend.py`](validate_persistent_backend.py) | **VAL-008** — that a persistent MLflow backend carries champions across runs (LML-012). Point `MLFLOW_TRACKING_URI` at your RDS Postgres backend (deploy `recipes/examples/mlflow-backend-validation.yaml`) and run it **twice**: run 2 must find run 1's champion and compare against it. |
 
 ```bash
 python examples/loto_cv_example.py
 python examples/multi_source_features.py
+
+# VAL-008: run twice against your persistent backend (each run = a separate "CI run")
+export MLFLOW_TRACKING_URI=postgresql://mlflow:<pw>@<rds-endpoint>/mlflow
+python examples/validate_persistent_backend.py   # run 1: registers a champion
+python examples/validate_persistent_backend.py   # run 2: finds it -> PASS
 ```
 
 ## Require a project + data (CBB harnesses)
