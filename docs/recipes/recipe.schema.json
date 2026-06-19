@@ -363,6 +363,14 @@
           "default": null,
           "title": "Db Subnet Group Name"
         },
+        "subnet_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Subnet Ids",
+          "type": "array"
+        },
         "security_groups": {
           "default": [],
           "items": {

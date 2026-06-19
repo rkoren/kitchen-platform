@@ -59,6 +59,11 @@ serve = [
 search = [
     "optuna>=3.0",
 ]
+postgres = [
+    # DBAPI driver for a PostgreSQL MLflow backend store (the persistent-champion path,
+    # LML-012). MLflow/SQLAlchemy need this to connect to a postgresql:// tracking URI.
+    "psycopg2-binary>=2.9",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov",

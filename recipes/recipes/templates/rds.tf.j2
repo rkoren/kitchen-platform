@@ -18,13 +18,19 @@ resource "aws_db_instance" "{{ name | tf_id }}" {
   {{ "%-*s"|format(settings_width, "publicly_accessible") }} = {{ publicly_accessible | lower }}
   {{ "%-*s"|format(settings_width, "deletion_protection") }} = {{ deletion_protection | lower }}
   {{ "%-*s"|format(settings_width, "skip_final_snapshot") }} = {{ skip_final_snapshot | lower }}
-{%- if db_subnet_group_name %}
-  {{ "%-*s"|format(settings_width, "db_subnet_group_name") }} = "{{ db_subnet_group_name }}"
+{%- if db_subnet_group_value %}
+  {{ "%-*s"|format(settings_width, "db_subnet_group_name") }} = {{ db_subnet_group_value }}
 {%- endif %}
 {%- if sg_entries %}
   {{ "%-*s"|format(settings_width, "vpc_security_group_ids") }} = [{{ sg_entries | join(", ") }}]
 {%- endif %}
 }
+{% if subnet_ids %}
+resource "aws_db_subnet_group" "{{ name | tf_id }}" {
+  name       = "{{ name }}-subnets"
+  subnet_ids = [{% for s in subnet_ids %}"{{ s }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+}
+{% endif %}
 
 output "{{ name | tf_id }}_endpoint" {
   description = "Connection endpoint (host:port) for the {{ name }} database."

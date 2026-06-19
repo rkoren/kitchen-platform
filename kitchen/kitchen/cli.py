@@ -618,6 +618,96 @@ def secrets_export(
     typer.echo(f"Exported {len(exported)} secret(s) to {target}: {', '.join(exported) or '(none)'}")
 
 
+@secrets_app.command("db-url")
+def secrets_db_url(
+    from_terraform: Annotated[
+        str | None,
+        typer.Option(
+            "--from-terraform",
+            help="recipes Terraform workspace dir (e.g. ~/.recipes/tf/<spec>) — auto-reads the "
+            "RDS endpoint + secret ARN from its outputs (no manual --secret-id/--endpoint)",
+        ),
+    ] = None,
+    rds: Annotated[
+        str | None,
+        typer.Option("--rds", help="With --from-terraform: rds resource name, if the spec has several"),
+    ] = None,
+    secret_id: Annotated[
+        str | None,
+        typer.Option(
+            "--secret-id",
+            help="Secrets Manager id/ARN of the RDS-managed master-user secret (holds username/password)",
+        ),
+    ] = None,
+    endpoint: Annotated[
+        str | None,
+        typer.Option("--endpoint", help="RDS endpoint host:port — the recipes `<name>_endpoint` output"),
+    ] = None,
+    db: Annotated[
+        str, typer.Option("--db", help="Database name (matches db_name in mlflow-tracking-backend.yaml)")
+    ] = "mlflow",
+    driver: Annotated[str, typer.Option("--driver", help="SQLAlchemy driver scheme")] = "postgresql",
+    name: Annotated[
+        str, typer.Option("--name", help="Environment variable to write")
+    ] = "MLFLOW_TRACKING_URI",
+    output: Annotated[
+        str | None,
+        typer.Option("--output", "-o", help="Env file to append to (default: $GITHUB_ENV)"),
+    ] = None,
+) -> None:
+    """Assemble MLFLOW_TRACKING_URI from an RDS-managed Secrets Manager secret + endpoint.
+
+    Removes the manual jq/URL-encode dance when wiring a persistent MLflow backend (LML-012):
+    fetches the RDS-managed master-user secret (username/password), URL-encodes the credentials,
+    and writes ``postgresql://<user>:<pw>@<endpoint>/<db>`` to the env file as ``--name``. The
+    URL embeds a password, so — like ``kitchen secrets export`` — it is masked and **never printed
+    to stdout**; pass ``--output`` outside GitHub Actions.
+
+    Two ways to point at the backend:
+      * ``--from-terraform <dir>`` — read the endpoint + secret ARN straight from a recipes
+        Terraform workspace's outputs (where ``recipes apply`` ran); the seamless path.
+      * ``--secret-id <arn> --endpoint <host:port>`` — pass them explicitly.
+
+    The endpoint already carries the port (RDS emits ``host:port``); SQLAlchemy infers 5432 if it
+    doesn't. Pass ``--db`` if you changed ``db_name`` from the ``mlflow`` default.
+    """
+    from kitchen import secrets as secrets_mod
+
+    if from_terraform and (secret_id or endpoint):
+        typer.echo("error: use either --from-terraform or --secret-id/--endpoint, not both", err=True)
+        raise typer.Exit(1)
+    if not from_terraform and not (secret_id and endpoint):
+        typer.echo(
+            "error: provide --from-terraform <dir>, or both --secret-id and --endpoint", err=True
+        )
+        raise typer.Exit(1)
+
+    target = output or os.environ.get("GITHUB_ENV")
+    if not target:
+        typer.echo(
+            "error: $GITHUB_ENV is unset (not in GitHub Actions) and no --output given; "
+            "refusing to print the connection URL (it embeds a password) to stdout",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        if from_terraform:
+            url = secrets_mod.db_url_from_terraform(from_terraform, rds=rds, db=db, driver=driver)
+        else:
+            url = secrets_mod.db_url(secret_id, endpoint=endpoint, db=db, driver=driver)
+    except secrets_mod.SecretNotFound as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    secrets_mod.mask(url)
+    # The URL is always a single line (credentials are URL-encoded), so a plain NAME=value
+    # entry is valid for both $GITHUB_ENV and a sourceable/.env file — no heredoc needed.
+    with open(target, "a", encoding="utf-8") as f:
+        f.write(f"{name}={url}\n")
+    typer.echo(f"✓ wrote {name} (masked) → {target}")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1495,6 +1585,21 @@ def check(
             "MLFLOW_TRACKING_URI",
             "not set — defaulting to sqlite:///mlruns.db (add to .env to silence)",
         )
+
+    # A postgresql backend (the persistent-champion path, LML-012) needs a DBAPI driver
+    # that isn't in the base install — fail fast with the fix rather than a cryptic
+    # ModuleNotFoundError mid-run.
+    if tracking_uri.startswith("postgresql"):
+        import importlib.util
+
+        if importlib.util.find_spec("psycopg2") is None:
+            _fail(
+                "postgres driver",
+                "tracking URI is postgresql:// but psycopg2 is not installed — "
+                "run `pip install 'kitchen[postgres]'`",
+            )
+        else:
+            _ok("postgres driver", "psycopg2")
 
     # Determine whether this project actually needs AWS credentials before checking.
     # Hard-fail only when data.source=s3 or mlflow.artifact_bucket is set; skip for

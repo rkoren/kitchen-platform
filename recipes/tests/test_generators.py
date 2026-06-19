@@ -560,6 +560,28 @@ def test_rds_combines_sg_references_and_literal_ids():
     assert 'vpc_security_group_ids = [aws_security_group.my_sg.id, "sg-0123"]' in out
 
 
+def test_rds_subnet_ids_generate_db_subnet_group():
+    """R-017: subnet_ids emit an aws_db_subnet_group that the instance references."""
+    out = rds_generate(RDSSpec(type="rds", name="mlflow-db", subnet_ids=["subnet-a", "subnet-b"]))
+    assert 'resource "aws_db_subnet_group" "mlflow_db"' in out
+    assert 'name       = "mlflow-db-subnets"' in out
+    assert 'subnet_ids = ["subnet-a", "subnet-b"]' in out
+    # the instance references the generated group (a TF ref, not a quoted literal)
+    assert "db_subnet_group_name = aws_db_subnet_group.mlflow_db.name" in out
+
+
+def test_rds_existing_subnet_group_is_quoted_literal():
+    out = rds_generate(RDSSpec(type="rds", name="db", db_subnet_group_name="my-group"))
+    assert 'db_subnet_group_name = "my-group"' in out
+    assert "aws_db_subnet_group" not in out  # no group generated for an existing one
+
+
+def test_rds_no_subnet_group_by_default():
+    out = rds_generate(RDSSpec(type="rds", name="db"))
+    assert "db_subnet_group_name" not in out
+    assert "aws_db_subnet_group" not in out
+
+
 # --- Security group (R-016) ---
 
 

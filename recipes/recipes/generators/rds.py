@@ -16,6 +16,15 @@ _env.filters["tf_id"] = lambda s: s.replace("-", "_")
 def generate(spec: RDSSpec) -> str:
     """Render rds.tf.j2 for the given spec and return the Terraform HCL string."""
     ctx = spec.model_dump()
+    tf_id = spec.name.replace("-", "_")
+    # DB subnet group: a reference to a recipes-generated one (from subnet_ids), or an
+    # existing one by name (quoted literal), or none.
+    if spec.subnet_ids:
+        ctx["db_subnet_group_value"] = f"aws_db_subnet_group.{tf_id}.name"
+    elif spec.db_subnet_group_name:
+        ctx["db_subnet_group_value"] = f'"{spec.db_subnet_group_name}"'
+    else:
+        ctx["db_subnet_group_value"] = None
     # Security groups: logical names of in-spec security_group resources become TF
     # references; literal IDs are quoted. Both feed the one vpc_security_group_ids list.
     sg_entries = [f"aws_security_group.{name.replace('-', '_')}.id" for name in spec.security_groups]
@@ -25,7 +34,7 @@ def generate(spec: RDSSpec) -> str:
     # subnet/security-group keys widen the block when present, so compute the width
     # over exactly the keys that will render (same approach as the lambda generator).
     keys = ["multi_az", "publicly_accessible", "deletion_protection", "skip_final_snapshot"]
-    if spec.db_subnet_group_name:
+    if ctx["db_subnet_group_value"]:
         keys.append("db_subnet_group_name")
     if sg_entries:
         keys.append("vpc_security_group_ids")

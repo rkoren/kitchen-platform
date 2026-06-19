@@ -220,27 +220,31 @@ The default `sqlite:///mlruns.db` is **per-run** in CI: the registry starts empt
 
    Terraform outputs the connection `…_endpoint`, the `…_master_user_secret_arn`, and the bucket.
 
-2. **Store the connection URL** as a Secrets Manager secret, e.g. a plaintext secret holding `postgresql://mlflow:<password>@<endpoint>/mlflow` (build it from the endpoint + the RDS-managed credentials).
+2. **Install the PostgreSQL driver** alongside kitchen — MLflow needs it to talk to a `postgresql://` store (it is not in the base install): `pip install 'kitchen[postgres]'`. `kitchen check` fails fast with this hint if a postgresql tracking URI is set without it.
 
-3. **Declare it** in `params.yaml` `secrets:` and set the artifact bucket:
+3. **Set the artifact bucket** in `params.yaml` (the connection URL itself comes from the RDS-managed secret at run time — step 4 — so it is never written to params.yaml or a second secret):
 
    ```yaml
-   secrets:
-     MLFLOW_TRACKING_URI:
-       aws_secret: my-project/mlflow-tracking-uri   # the SM secret holding the postgres URL
-       required: true
    mlflow:
      artifact_bucket: my-project-mlflow-artifacts
    ```
 
-4. **CI** — in the scaffolded `train-evaluate.yml`, set `MLFLOW_ARTIFACT_BUCKET`, remove the SQLite `MLFLOW_TRACKING_URI` line, and uncomment the *Resolve persistent MLflow backend* step (it runs `kitchen secrets export --name MLFLOW_TRACKING_URI`, resolving the secret into the job environment for the steps that follow). The runner needs AWS credentials first — add an `aws-actions/configure-aws-credentials` step with your OIDC role (see [aws-deployment](aws-deployment.md)).
+4. **CI** — in the scaffolded `train-evaluate.yml`, set `MLFLOW_ARTIFACT_BUCKET`, remove the SQLite `MLFLOW_TRACKING_URI` line, and (after an `aws-actions/configure-aws-credentials` step with your OIDC role — see [aws-deployment](aws-deployment.md)) assemble the tracking URI from the RDS-managed secret + endpoint into the job environment:
 
-5. **Local / notebooks** — put the URL in `.env` (loaded automatically at startup), or bridge it from Secrets Manager once:
+   ```yaml
+   - name: Resolve persistent MLflow backend
+     run: kitchen secrets db-url --secret-id <…_master_user_secret_arn> --endpoint <…_endpoint>
+   ```
+
+   `kitchen secrets db-url` fetches the RDS-managed username/password, URL-encodes them, and writes `MLFLOW_TRACKING_URI=postgresql://…` to `$GITHUB_ENV` (masked, never to stdout) — no hand-built URL and no second secret. If the recipes Terraform workspace is present in the job (e.g. you `recipes apply` in the same job), drop the flags entirely and let it read the outputs: `kitchen secrets db-url --from-terraform ~/.recipes/tf/<spec>`. (For a backend you manage yourself, the general path still works: store the full URL as a secret, declare it in `params.yaml` `secrets:` as `MLFLOW_TRACKING_URI`, and use `kitchen secrets export --name MLFLOW_TRACKING_URI`.)
+
+5. **Local / notebooks** — assemble the URL straight from the recipes workspace into `.env` (loaded automatically at startup); needs AWS credentials locally:
 
    ```bash
-   echo "MLFLOW_TRACKING_URI=$(aws secretsmanager get-secret-value \
-     --secret-id my-project/mlflow-tracking-uri --query SecretString --output text)" >> .env
+   kitchen secrets db-url --from-terraform ~/.recipes/tf/<spec> --output .env
    ```
+
+   `--from-terraform` reads the `<name>_endpoint` + `<name>_master_user_secret_arn` outputs directly — no copying ARNs/endpoints by hand. (Pass `--secret-id`/`--endpoint` instead if you're not using recipes.)
 
 **Migrating from local SQLite:** champions registered against the old `mlruns.db` do not carry over — re-train against the new store (the first `--auto-promote` registers a fresh champion), or `mlflow db upgrade <uri>` if you are moving an existing DB (see [troubleshooting](troubleshooting.md) for the schema-mismatch guidance). A champion whose **artifacts** were written to a local path before the move won't load against the new store — `kitchen run evaluate` / `predictor.py` detect this and explain it (`ArtifactLocationError`), so keep `MLFLOW_ARTIFACT_BUCKET` set so artifacts land in S3 from the start.
 
