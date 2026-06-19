@@ -436,3 +436,102 @@ def test_export_env_file_heredoc_delimiter_not_in_value(tmp_path, monkeypatch):
     delim = content.split("<<", 1)[1].splitlines()[0]
     assert delim not in "line1\nKEY=val\nline3"
     assert f"\nline1\nKEY=val\nline3\n{delim}\n" in content
+
+
+# ---------------------------------------------------------------------------
+# DB-URL assembly (LML-012 follow-up)
+# ---------------------------------------------------------------------------
+
+
+def test_build_db_url_encodes_credentials():
+    from urllib.parse import unquote, urlsplit
+
+    url = sec.build_db_url(
+        {"username": "ml flow", "password": "p@ss:w/rd"}, endpoint="host:5432", db="mlflow"
+    )
+    parts = urlsplit(url)
+    assert parts.scheme == "postgresql"
+    assert parts.hostname == "host" and parts.port == 5432 and parts.path == "/mlflow"
+    # Special characters survive the URI round-trip (the correctness bug to nail).
+    assert unquote(parts.username) == "ml flow"
+    assert unquote(parts.password) == "p@ss:w/rd"
+
+
+def test_build_db_url_missing_key_raises():
+    with pytest.raises(sec.SecretNotFound, match="password"):
+        sec.build_db_url({"username": "mlflow"}, endpoint="host:5432")
+
+
+def test_db_url_fetches_and_assembles():
+    client = MagicMock()
+    client.get_secret_value.return_value = {
+        "SecretString": json.dumps({"username": "mlflow", "password": "s3cr@t"})
+    }
+    with patch("boto3.client", return_value=client):
+        url = sec.db_url("arn:rds-managed", endpoint="db.rds.amazonaws.com:5432", db="mlflow")
+    assert url.startswith("postgresql://mlflow:s3cr%40t@db.rds.amazonaws.com:5432/mlflow")
+    client.get_secret_value.assert_called_once_with(SecretId="arn:rds-managed")
+
+
+def test_db_url_non_json_secret_raises():
+    client = MagicMock()
+    client.get_secret_value.return_value = {"SecretString": "not-json"}
+    with patch("boto3.client", return_value=client):
+        with pytest.raises(sec.SecretNotFound, match="not a JSON bundle"):
+            sec.db_url("arn:bad", endpoint="host:5432")
+
+
+def test_terraform_outputs_missing_terraform_raises():
+    with patch("shutil.which", return_value=None):
+        with pytest.raises(sec.SecretNotFound, match="terraform is not installed"):
+            sec.terraform_outputs("/some/dir")
+
+
+def test_db_url_from_terraform_autodetects_single_backend():
+    outputs = {
+        "mlflow_validation_endpoint": "db.rds.amazonaws.com:5432",
+        "mlflow_validation_master_user_secret_arn": "arn:rds-managed",
+        "some_bucket": "irrelevant",
+    }
+    client = MagicMock()
+    client.get_secret_value.return_value = {
+        "SecretString": json.dumps({"username": "mlflow", "password": "p@ss"})
+    }
+    with (
+        patch.object(sec, "terraform_outputs", return_value=outputs),
+        patch("boto3.client", return_value=client),
+    ):
+        url = sec.db_url_from_terraform("/ws", db="mlflow")
+    assert url.startswith("postgresql://mlflow:p%40ss@db.rds.amazonaws.com:5432/mlflow")
+    client.get_secret_value.assert_called_once_with(SecretId="arn:rds-managed")
+
+
+def test_db_url_from_terraform_no_backend_raises():
+    with patch.object(sec, "terraform_outputs", return_value={"some_bucket": "x"}):
+        with pytest.raises(sec.SecretNotFound, match="no RDS backend outputs"):
+            sec.db_url_from_terraform("/ws")
+
+
+def test_db_url_from_terraform_multiple_requires_rds():
+    outputs = {
+        "a_endpoint": "h1:5432", "a_master_user_secret_arn": "arn:a",
+        "b_endpoint": "h2:5432", "b_master_user_secret_arn": "arn:b",
+    }
+    with patch.object(sec, "terraform_outputs", return_value=outputs):
+        with pytest.raises(sec.SecretNotFound, match="multiple RDS backends"):
+            sec.db_url_from_terraform("/ws")
+
+
+def test_db_url_from_terraform_rds_selector_picks_one():
+    outputs = {
+        "mlflow_a_endpoint": "h1:5432", "mlflow_a_master_user_secret_arn": "arn:a",
+        "mlflow_b_endpoint": "h2:5432", "mlflow_b_master_user_secret_arn": "arn:b",
+    }
+    client = MagicMock()
+    client.get_secret_value.return_value = {"SecretString": json.dumps({"username": "u", "password": "p"})}
+    with (
+        patch.object(sec, "terraform_outputs", return_value=outputs),
+        patch("boto3.client", return_value=client),
+    ):
+        sec.db_url_from_terraform("/ws", rds="mlflow-b")  # hyphen → tf_id underscore
+    client.get_secret_value.assert_called_once_with(SecretId="arn:b")

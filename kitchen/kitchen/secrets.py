@@ -421,6 +421,167 @@ def export_env_file(
 
 
 # ---------------------------------------------------------------------------
+# DB-URL assembly (LML-012 follow-up: RDS-managed secret + endpoint -> tracking URI)
+# ---------------------------------------------------------------------------
+
+
+def build_db_url(
+    creds: dict,
+    *,
+    endpoint: str,
+    db: str = "mlflow",
+    driver: str = "postgresql",
+    username_key: str = "username",
+    password_key: str = "password",
+) -> str:
+    """Assemble a SQLAlchemy DB URL from resolved credentials + a connection endpoint.
+
+    ``creds`` is the parsed JSON of an RDS-managed master-user secret — which contains only
+    ``username``/``password`` (host/port/db are *not* in it, hence the separate ``endpoint``/``db``).
+    ``endpoint`` is the RDS ``host:port`` (the recipes ``<name>_endpoint`` output). Username and
+    password are URL-encoded so special characters (``@ : / %`` …) survive the URI round-trip.
+
+    Returns e.g. ``postgresql://mlflow:enc-pw@host:5432/mlflow`` — a value to feed
+    ``MLFLOW_TRACKING_URI``. The caller must keep it out of logs/stdout (it embeds the password).
+    """
+    from urllib.parse import quote
+
+    try:
+        user = quote(str(creds[username_key]), safe="")
+        password = quote(str(creds[password_key]), safe="")
+    except KeyError as exc:
+        raise SecretNotFound(
+            f"secret bundle is missing {exc.args[0]!r}; expected an RDS-managed secret with "
+            f"{username_key!r} and {password_key!r} fields "
+            f"(override with --username-key/--password-key)."
+        ) from exc
+    return f"{driver}://{user}:{password}@{endpoint}/{db}"
+
+
+def db_url(
+    secret_id: str,
+    *,
+    endpoint: str,
+    db: str = "mlflow",
+    driver: str = "postgresql",
+    username_key: str = "username",
+    password_key: str = "password",
+) -> str:
+    """Fetch the RDS-managed secret ``secret_id`` and assemble a DB URL (see :func:`build_db_url`).
+
+    Resolves the Secrets Manager bundle directly by id/ARN (no manifest lookup) via the boto3
+    default credential chain. Raises :class:`SecretNotFound` on a fetch/parse failure.
+    """
+    import json
+
+    import boto3
+
+    client = boto3.client("secretsmanager", region_name=_region())
+    try:
+        raw = client.get_secret_value(SecretId=secret_id)["SecretString"]
+    except Exception as exc:  # botocore errors carry no secret value
+        raise SecretNotFound(
+            f"could not fetch Secrets Manager secret {secret_id!r} ({type(exc).__name__}). "
+            f"Check the id/ARN and IAM read access, and that an AWS identity is configured."
+        ) from exc
+    try:
+        creds = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SecretNotFound(
+            f"Secrets Manager secret {secret_id!r} is not a JSON bundle; expected the RDS-managed "
+            f"username/password shape."
+        ) from exc
+    return build_db_url(
+        creds,
+        endpoint=endpoint,
+        db=db,
+        driver=driver,
+        username_key=username_key,
+        password_key=password_key,
+    )
+
+
+def terraform_outputs(tf_dir: str | Path) -> dict:
+    """Read ``terraform output -json`` from an applied recipes workspace as ``{name: value}``.
+
+    The workspace is where ``recipes apply`` ran (``~/.recipes/tf/<spec-name>`` by default).
+    Raises :class:`SecretNotFound` with actionable guidance if Terraform is absent or the outputs
+    can't be read (e.g. ``recipes apply`` hasn't run, or the remote state isn't reachable).
+    """
+    import json
+    import shutil
+    import subprocess
+
+    if shutil.which("terraform") is None:
+        raise SecretNotFound(
+            f"terraform is not installed — needed to read outputs from {tf_dir}. Install it, or "
+            f"pass --secret-id/--endpoint explicitly."
+        )
+    try:
+        proc = subprocess.run(
+            ["terraform", f"-chdir={tf_dir}", "output", "-json"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or "").strip() or f"exit {exc.returncode}"
+        raise SecretNotFound(
+            f"could not read Terraform outputs from {tf_dir} ({detail}). Has `recipes apply` run, "
+            f"and is the state reachable from here?"
+        ) from exc
+    data = json.loads(proc.stdout or "{}")
+    return {key: entry.get("value") for key, entry in data.items()}
+
+
+def db_url_from_terraform(
+    tf_dir: str | Path,
+    *,
+    rds: str | None = None,
+    db: str = "mlflow",
+    driver: str = "postgresql",
+) -> str:
+    """Assemble a DB URL straight from a recipes Terraform workspace's outputs (Phase 1 bridge).
+
+    Auto-detects the backend from the ``<name>_endpoint`` + ``<name>_master_user_secret_arn`` output
+    pair recipes emits for an ``rds`` resource; pass ``rds`` (the resource name) to pick one when a
+    spec defines several. Removes the manual ``terraform output`` → ``--secret-id``/``--endpoint``
+    copy step. See :func:`build_db_url` for the assembly + encoding rules.
+    """
+    outputs = terraform_outputs(tf_dir)
+    endpoints = {k[: -len("_endpoint")] for k in outputs if k.endswith("_endpoint")}
+    arns = {
+        k[: -len("_master_user_secret_arn")]
+        for k in outputs
+        if k.endswith("_master_user_secret_arn")
+    }
+    backends = endpoints & arns  # prefixes that expose both outputs = a recipes rds backend
+    if rds is not None:
+        prefix = rds.replace("-", "_")  # outputs use the tf_id (underscored) form of the name
+        if prefix not in backends:
+            raise SecretNotFound(
+                f"no RDS backend named {rds!r} in {tf_dir} outputs; found: {sorted(backends) or 'none'}."
+            )
+    elif not backends:
+        raise SecretNotFound(
+            f"no RDS backend outputs (<name>_endpoint + <name>_master_user_secret_arn) in {tf_dir}. "
+            f"Deploy an `rds` resource with `recipes apply` first."
+        )
+    elif len(backends) > 1:
+        raise SecretNotFound(
+            f"multiple RDS backends in {tf_dir} outputs ({sorted(backends)}) — pass --rds <name> to pick one."
+        )
+    else:
+        prefix = next(iter(backends))
+    return db_url(
+        outputs[f"{prefix}_master_user_secret_arn"],
+        endpoint=outputs[f"{prefix}_endpoint"],
+        db=db,
+        driver=driver,
+    )
+
+
+# ---------------------------------------------------------------------------
 # .env.example generation (SECR-005)
 # ---------------------------------------------------------------------------
 

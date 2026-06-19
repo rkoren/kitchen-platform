@@ -4157,3 +4157,70 @@ def test_secrets_iam_policy_writes_file(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "Wrote policy.json" in result.output
     assert "secretsmanager:GetSecretValue" in (tmp_path / "policy.json").read_text()
+
+
+def test_secrets_db_url_refuses_stdout(tmp_path, monkeypatch):
+    """No $GITHUB_ENV and no --output → refuse (the URL embeds a password)."""
+    monkeypatch.delenv("GITHUB_ENV", raising=False)
+    result = runner.invoke(
+        app, ["secrets", "db-url", "--secret-id", "arn:x", "--endpoint", "h:5432"], env={}
+    )
+    assert result.exit_code == 1
+    assert "refusing to print" in result.output
+
+
+def test_secrets_db_url_writes_masked_entry(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "gh_env"
+    with patch(
+        "kitchen.secrets.db_url",
+        return_value="postgresql://mlflow:enc%40@db.rds.amazonaws.com:5432/mlflow",
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "secrets", "db-url",
+                "--secret-id", "arn:rds-managed",
+                "--endpoint", "db.rds.amazonaws.com:5432",
+                "-o", str(out),
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert "wrote MLFLOW_TRACKING_URI" in result.output
+    content = out.read_text()
+    # single-line NAME=value entry (valid for $GITHUB_ENV and sourceable as .env)
+    assert content.strip() == "MLFLOW_TRACKING_URI=postgresql://mlflow:enc%40@db.rds.amazonaws.com:5432/mlflow"
+
+
+def test_secrets_db_url_from_terraform_writes_entry(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "gh_env"
+    with patch(
+        "kitchen.secrets.db_url_from_terraform",
+        return_value="postgresql://mlflow:p%40@h:5432/mlflow",
+    ) as mocked:
+        result = runner.invoke(
+            app,
+            ["secrets", "db-url", "--from-terraform", "/ws/mlflow-backend", "-o", str(out)],
+        )
+    assert result.exit_code == 0, result.output
+    mocked.assert_called_once()
+    assert out.read_text().strip() == "MLFLOW_TRACKING_URI=postgresql://mlflow:p%40@h:5432/mlflow"
+
+
+def test_secrets_db_url_rejects_both_modes(tmp_path, monkeypatch):
+    result = runner.invoke(
+        app,
+        ["secrets", "db-url", "--from-terraform", "/ws", "--secret-id", "arn:x", "--endpoint", "h:5432"],
+        env={"GITHUB_ENV": str(tmp_path / "e")},
+    )
+    assert result.exit_code == 1
+    assert "not both" in result.output
+
+
+def test_secrets_db_url_requires_a_mode(tmp_path, monkeypatch):
+    result = runner.invoke(
+        app, ["secrets", "db-url", "--secret-id", "arn:x"], env={"GITHUB_ENV": str(tmp_path / "e")}
+    )
+    assert result.exit_code == 1
+    assert "provide --from-terraform" in result.output

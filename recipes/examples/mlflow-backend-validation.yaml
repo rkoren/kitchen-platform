@@ -6,8 +6,9 @@
 # against a real RDS Postgres backend, then destroy it.
 #
 #   recipes apply mlflow-backend-validation.yaml --state-bucket <your-tf-state-bucket>
-#   # ... build the postgres URL from the endpoint + RDS-managed secret, then:
-#   export MLFLOW_TRACKING_URI=postgresql://mlflow:<pw>@<endpoint>/mlflow
+#   pip install -e 'kitchen/[postgres]'
+#   # reads the endpoint + secret ARN straight from the recipes Terraform workspace:
+#   kitchen secrets db-url --from-terraform ~/.recipes/tf/mlflow-backend-validation --output .env
 #   python examples/validate_persistent_backend.py   # run 1
 #   python examples/validate_persistent_backend.py   # run 2 -> PASS
 #   recipes destroy mlflow-backend-validation.yaml --state-bucket <your-tf-state-bucket>

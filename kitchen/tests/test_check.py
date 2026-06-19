@@ -84,6 +84,76 @@ def test_check_tool_present_shows_version(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Postgres driver (Gap 1: postgresql backend needs psycopg2)
+# ---------------------------------------------------------------------------
+
+
+def _fake_find_spec(*, psycopg2_present: bool):
+    """find_spec stub: control psycopg2 presence, delegate everything else to the real one."""
+    import importlib.util as _ilu
+
+    real = _ilu.find_spec
+
+    def f(name, *args, **kwargs):
+        if name == "psycopg2":
+            return MagicMock() if psycopg2_present else None
+        return real(name, *args, **kwargs)
+
+    return f
+
+
+def test_check_postgres_uri_missing_driver_fails(tmp_path, monkeypatch):
+    with (
+        patch("shutil.which", return_value="/usr/bin/x"),
+        patch("subprocess.check_output", return_value="v1\n"),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("importlib.util.find_spec", side_effect=_fake_find_spec(psycopg2_present=False)),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            env={"MLFLOW_TRACKING_URI": "postgresql://u:p@host/mlflow", "KAGGLE_USERNAME": "u"},
+        )
+    assert "✗ postgres driver" in result.output
+    assert "kitchen[postgres]" in result.output
+    assert result.exit_code != 0
+
+
+def test_check_postgres_uri_with_driver_ok(tmp_path, monkeypatch):
+    with (
+        patch("shutil.which", return_value="/usr/bin/x"),
+        patch("subprocess.check_output", return_value="v1\n"),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("importlib.util.find_spec", side_effect=_fake_find_spec(psycopg2_present=True)),
+    ):
+        mock_session.return_value.get_credentials.return_value = MagicMock()
+        result = _invoke(
+            tmp_path,
+            monkeypatch,
+            env={"MLFLOW_TRACKING_URI": "postgresql://u:p@host/mlflow", "KAGGLE_USERNAME": "u"},
+        )
+    assert "✓ postgres driver" in result.output
+    assert "✗ postgres driver" not in result.output
+
+
+def test_check_sqlite_uri_skips_driver_check(tmp_path, monkeypatch):
+    with (
+        patch("shutil.which", return_value="/usr/bin/x"),
+        patch("subprocess.check_output", return_value="v1\n"),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = None
+        result = _invoke(
+            tmp_path, monkeypatch, env={"MLFLOW_TRACKING_URI": "sqlite:///x.db", "KAGGLE_USERNAME": "u"}
+        )
+    assert "postgres driver" not in result.output
+
+
+# ---------------------------------------------------------------------------
 # DVC remote placeholder section (DVC-012)
 # ---------------------------------------------------------------------------
 

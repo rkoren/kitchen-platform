@@ -7,10 +7,12 @@ cross-run comparison is a no-op. A persistent backend (RDS Postgres + S3 artifac
 ``recipes/examples/mlflow-tracking-backend.yaml``) fixes that. This is the acceptance test.
 
 Prerequisites:
-  - ``pip install -e kitchen/``
-  - Point MLflow at your persistent backend (the whole point):
-        export MLFLOW_TRACKING_URI=postgresql://mlflow:<pw>@<rds-endpoint>/mlflow
-    optionally ``export MLFLOW_ARTIFACT_BUCKET=<bucket>`` so artifacts are durable too.
+  - ``pip install -e 'kitchen/[postgres]'`` (the ``[postgres]`` extra pulls in the psycopg2
+    driver MLflow needs for a ``postgresql://`` backend)
+  - Point MLflow at your persistent backend (the whole point). Assemble the URL straight from
+    the recipes Terraform workspace into ``.env`` (loaded below), then run:
+        kitchen secrets db-url --from-terraform ~/.recipes/tf/mlflow-backend-validation --output .env
+    optionally add ``MLFLOW_ARTIFACT_BUCKET=<bucket>`` to ``.env`` so artifacts are durable too.
 
 Run it TWICE — each invocation is a separate process, mirroring two CI runs:
 
@@ -34,6 +36,7 @@ import os
 
 import numpy as np
 import pandas as pd
+from dotenv import find_dotenv, load_dotenv
 from sklearn.linear_model import LogisticRegression
 
 from kitchen.registry import (
@@ -43,6 +46,12 @@ from kitchen.registry import (
     register_model,
 )
 from kitchen.tracking import Tracker, configure_from_env, init_experiment
+
+# Load MLFLOW_TRACKING_URI / MLFLOW_ARTIFACT_BUCKET from a .env in the working directory
+# (e.g. written by `kitchen secrets db-url --output .env`). usecwd=True so find_dotenv
+# searches the CWD, not this script's own directory (the default). kitchen reads these at
+# runtime, not import, so loading here (after the imports) is correct and keeps lint happy.
+load_dotenv(find_dotenv(usecwd=True, raise_error_if_not_found=False))
 
 EXPERIMENT = "persistent-backend-validation"
 MODEL_NAME = f"{EXPERIMENT}-model"

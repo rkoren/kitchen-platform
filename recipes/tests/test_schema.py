@@ -121,6 +121,23 @@ def test_unknown_field_on_rds_raises():
         RDSSpec.model_validate({"type": "rds", "name": "db", "password": "hunter2"})
 
 
+def test_rds_subnet_ids_accepted():
+    spec = RDSSpec.model_validate({"type": "rds", "name": "db", "subnet_ids": ["a", "b"]})
+    assert spec.subnet_ids == ["a", "b"]
+
+
+def test_rds_subnet_ids_and_group_name_mutually_exclusive():
+    with pytest.raises(ValidationError, match="not both"):
+        RDSSpec.model_validate(
+            {"type": "rds", "name": "db", "subnet_ids": ["a", "b"], "db_subnet_group_name": "g"}
+        )
+
+
+def test_rds_subnet_ids_requires_two():
+    with pytest.raises(ValidationError, match="at least two subnets"):
+        RDSSpec.model_validate({"type": "rds", "name": "db", "subnet_ids": ["only-one"]})
+
+
 def test_security_group_defaults():
     spec = SecurityGroupSpec.model_validate({"type": "security_group", "name": "db-sg"})
     assert spec.vpc_id is None

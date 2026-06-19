@@ -31,7 +31,8 @@ python examples/loto_cv_example.py
 python examples/multi_source_features.py
 
 # VAL-008: run twice against your persistent backend (each run = a separate "CI run")
-export MLFLOW_TRACKING_URI=postgresql://mlflow:<pw>@<rds-endpoint>/mlflow
+pip install -e 'kitchen/[postgres]'
+kitchen secrets db-url --from-terraform ~/.recipes/tf/mlflow-backend-validation --output .env
 python examples/validate_persistent_backend.py   # run 1: registers a champion
 python examples/validate_persistent_backend.py   # run 2: finds it -> PASS
 ```
