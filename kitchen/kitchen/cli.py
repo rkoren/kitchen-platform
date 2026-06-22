@@ -2602,9 +2602,110 @@ Done. Next steps:
 """)
 
 
+menu_app = typer.Typer(help="Unified menu.yaml manifest commands.", no_args_is_help=True)
+
+
+@menu_app.command("materialize")
+def menu_materialize(
+    menu_file: Annotated[str, typer.Option("--menu", help="Path to menu.yaml")] = "menu.yaml",
+    from_terraform: Annotated[
+        str | None,
+        typer.Option(
+            "--from-terraform",
+            help="recipes Terraform workspace (default: ~/.recipes/tf/<project>)",
+        ),
+    ] = None,
+    output: Annotated[
+        str | None,
+        typer.Option("--output", "-o", help="Env file to append to (default: $GITHUB_ENV)"),
+    ] = None,
+) -> None:
+    """Resolve the menu's ``{from_role}`` MLflow settings and write them to the env file (masked).
+
+    Run once after ``recipes apply`` (provision): resolves ``MLFLOW_TRACKING_URI`` from the rds
+    recipe's Terraform outputs and ``MLFLOW_ARTIFACT_BUCKET`` from the s3 recipe, appending
+    ``NAME=value`` entries the next steps read. The tracking URI embeds a password, so values are
+    masked and **never printed to stdout** — pass ``--output`` outside GitHub Actions.
+    """
+    from pydantic import ValidationError
+
+    from kitchen import menu_resolve
+    from kitchen import secrets as secrets_mod
+    from kitchen.menu import Menu
+
+    target = output or os.environ.get("GITHUB_ENV")
+    if not target:
+        typer.echo(
+            "error: $GITHUB_ENV is unset (not in GitHub Actions) and no --output given; "
+            "refusing to print resolved values (the tracking URI embeds a password) to stdout",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        menu = Menu.from_yaml(menu_file)
+        names = menu_resolve.materialize_mlflow_env(menu, target, tf_dir=from_terraform)
+    except FileNotFoundError:
+        typer.echo(f"error: menu not found: {menu_file}", err=True)
+        raise typer.Exit(1)
+    except (secrets_mod.SecretNotFound, ValueError, ValidationError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"✓ wrote {', '.join(names) or '(nothing)'} (masked) → {target}")
+
+
+@menu_app.command("run")
+def menu_run(
+    menu_file: Annotated[str, typer.Option("--menu", help="Path to menu.yaml")] = "menu.yaml",
+    state_bucket: Annotated[
+        str | None,
+        typer.Option(
+            "--state-bucket",
+            envvar="RECIPES_STATE_BUCKET",
+            help="S3 bucket for Terraform state (needed by `provision`)",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print the pipeline plan without executing")
+    ] = False,
+) -> None:
+    """Run the menu's `pipeline` end-to-end: provision → stages → serve → monitor.
+
+    Sequences existing commands fail-fast — `recipes apply` for `provision` (then materialises
+    the resolved MLflow env in-process), `kitchen run <stage>` for each stage recipe, and
+    `kitchen run monitor`. `serve` is recognised but not yet wired (INT-006). Use `--dry-run`
+    to preview the plan.
+    """
+    import subprocess as _subprocess
+
+    from pydantic import ValidationError
+
+    from kitchen import menu_run as _menu_run
+    from kitchen.menu import Menu
+
+    try:
+        menu = Menu.from_yaml(menu_file)
+    except FileNotFoundError:
+        typer.echo(f"error: menu not found: {menu_file}", err=True)
+        raise typer.Exit(1)
+    except ValidationError as exc:
+        typer.echo(f"error: invalid menu — {exc}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        _menu_run.run_pipeline(
+            menu, menu_path=menu_file, state_bucket=state_bucket, dry_run=dry_run, echo=typer.echo
+        )
+    except (_menu_run.PipelineError, _subprocess.CalledProcessError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+
 app.add_typer(serve_app, name="serve")
 app.add_typer(dashboard_app, name="dashboard")
 app.add_typer(secrets_app, name="secrets")
+app.add_typer(menu_app, name="menu")
 
 
 def main() -> None:

@@ -11,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader
 from rich.console import Console
 
 from recipes.generators import generate_resource
+from recipes.menu import is_menu, recipe_spec_from_menu
 from recipes.schema import RecipeSpec
 
 app = typer.Typer(help="YAML spec → Terraform config generator and provisioner.")
@@ -29,6 +30,10 @@ def _load_spec(spec_path: str) -> RecipeSpec:
         console.print(f"[red]error:[/red] spec file not found: {spec_path}")
         raise typer.Exit(1)
     raw = yaml.safe_load(spec_file.read_text(encoding="utf-8"))
+    # A menu.yaml (unified manifest) carries a `recipes:` map; project its infra recipes
+    # into a RecipeSpec, keyed by `project` for state. A standalone spec has `resources:`.
+    if is_menu(raw):
+        return recipe_spec_from_menu(raw)
     return RecipeSpec.model_validate(raw)
 
 

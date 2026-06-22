@@ -4224,3 +4224,63 @@ def test_secrets_db_url_requires_a_mode(tmp_path, monkeypatch):
     )
     assert result.exit_code == 1
     assert "provide --from-terraform" in result.output
+
+
+_MENU_YAML = (
+    "project: cbb\n"
+    "recipes:\n"
+    "  mlflow-backend: { kind: rds, role: mlflow-backend }\n"
+    "  mlflow-artifacts: { kind: s3, role: mlflow-artifacts }\n"
+    "mlflow:\n"
+    "  tracking_uri: { from_role: mlflow-backend }\n"
+    "  artifact_bucket: { from_role: mlflow-artifacts }\n"
+)
+
+
+def test_menu_materialize_writes_resolved_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_MENU_YAML)
+    out = tmp_path / "env"
+    with patch(
+        "kitchen.secrets.db_url_from_terraform", return_value="postgresql://mlflow:p@h:5432/mlflow"
+    ):
+        result = runner.invoke(app, ["menu", "materialize", "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    content = out.read_text()
+    assert "MLFLOW_TRACKING_URI=postgresql://mlflow:p@h:5432/mlflow" in content
+    assert "MLFLOW_ARTIFACT_BUCKET=mlflow-artifacts" in content
+
+
+def test_menu_materialize_refuses_stdout(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GITHUB_ENV", raising=False)
+    (tmp_path / "menu.yaml").write_text(_MENU_YAML)
+    result = runner.invoke(app, ["menu", "materialize"], env={})
+    assert result.exit_code == 1
+    assert "refusing to print" in result.output
+
+
+_MENU_PIPELINE_YAML = (
+    "project: p\n"
+    "pipeline: [train, monitor]\n"
+    "recipes:\n"
+    "  train: { kind: stage, source: src/train/run.py }\n"
+)
+
+
+def test_menu_run_dry_run_prints_plan(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_MENU_PIPELINE_YAML)
+    result = runner.invoke(app, ["menu", "run", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "train: kitchen run train" in result.output
+    assert "monitor" in result.output
+
+
+def test_menu_run_provision_needs_state_bucket(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("RECIPES_STATE_BUCKET", raising=False)
+    (tmp_path / "menu.yaml").write_text("project: p\npipeline: [provision]\nrecipes: {}\n")
+    result = runner.invoke(app, ["menu", "run"], env={})
+    assert result.exit_code == 1
+    assert "state bucket" in result.output
