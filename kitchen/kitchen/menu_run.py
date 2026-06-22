@@ -69,7 +69,10 @@ def run_pipeline(
                 if not dry_run:
                     run(["kitchen", "run", step])
             elif entry.kind == "lambda":
-                echo(f"→ {step}: serve deploy not yet wired (INT-006) — skipped")
+                # The serve lambda + its KITCHEN_PREDICTOR_DIR provision via `provision`
+                # (INT-006); the image build/push that points it at the latest code is the
+                # remaining deploy step (S-008/S-010 territory), not yet wired here.
+                echo(f"→ {step}: serve — provisioned by `provision`; image build/deploy not yet wired")
             else:
                 echo(f"→ {step}: infra recipe (deployed by `provision`) — skipped")
         # Menu validation guarantees every step is a platform verb or a recipe key.

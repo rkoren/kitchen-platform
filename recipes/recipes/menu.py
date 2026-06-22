@@ -38,6 +38,8 @@ def recipe_spec_from_menu(raw: dict) -> RecipeSpec:
         kind = entry["kind"]
         resource = {"type": kind, "name": name}
         resource.update({k: v for k, v in entry.items() if k not in _MENU_ONLY_KEYS})
+        if kind == "lambda":
+            _wire_lambda(resource, entry)
         _inherit_network(resource, kind, network)
         resources.append(resource)
     return RecipeSpec.model_validate(
@@ -47,6 +49,23 @@ def recipe_spec_from_menu(raw: dict) -> RecipeSpec:
             "resources": resources,
         }
     )
+
+
+def _wire_lambda(resource: dict, entry: dict) -> None:
+    """Resolve the serve lambda's two menu-isms (INT-006, simplification S-4):
+
+    * the menu uses ``role`` for the *discovery* marker and ``iam_role`` for the lambda's
+      execution role — map ``iam_role`` onto recipes' ``LambdaSpec.role``;
+    * the menu ``source`` (where the predictor lives) is injected as the deployed function's
+      ``KITCHEN_PREDICTOR_DIR`` so serving finds it at runtime.
+    """
+    if "iam_role" in resource:
+        resource["role"] = resource.pop("iam_role")
+    source = entry.get("source")
+    if source:
+        env = dict(resource.get("environment") or {})
+        env.setdefault("KITCHEN_PREDICTOR_DIR", source)
+        resource["environment"] = env
 
 
 def _inherit_network(resource: dict, kind: str, network: dict) -> None:

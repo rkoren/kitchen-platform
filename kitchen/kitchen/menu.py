@@ -126,6 +126,11 @@ class Menu(BaseModel):
                     f"({', '.join(sorted(PLATFORM_VERBS))}) nor a recipe in `recipes:`."
                 )
 
+        # A stage recipe is pure code — the manifest must say where it lives (INT-006).
+        for name, entry in self.recipes.items():
+            if entry.kind == "stage" and not entry.source:
+                errors.append(f"stage recipe '{name}' must declare a `source` (where its code lives).")
+
         # Every `{from_role}` reference resolves to some recipe's `role`.
         roles = {r.role for r in self.recipes.values() if r.role is not None}
         for label, value in (
@@ -141,6 +146,12 @@ class Menu(BaseModel):
         if errors:
             raise ValueError("\n".join(errors))
         return self
+
+    @property
+    def source_map(self) -> dict[str, str]:
+        """Each recipe that declares where its code lives → its ``source`` path. The manifest
+        is the single place mapping a stage/deploy to its code (INT-006)."""
+        return {name: r.source for name, r in self.recipes.items() if r.source}
 
     @classmethod
     def from_yaml(cls, path: str = "menu.yaml") -> "Menu":
