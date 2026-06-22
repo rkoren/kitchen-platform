@@ -79,7 +79,11 @@ def test_provision_materializes_env_into_process(monkeypatch):
 
 def test_fail_fast_propagates_step_error():
     menu = Menu.model_validate(
-        {"project": "p", "pipeline": ["train"], "recipes": {"train": {"kind": "stage"}}}
+        {
+            "project": "p",
+            "pipeline": ["train"],
+            "recipes": {"train": {"kind": "stage", "source": "src/train/run.py"}},
+        }
     )
 
     def boom(cmd):

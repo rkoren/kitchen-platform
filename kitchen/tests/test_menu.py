@@ -110,6 +110,26 @@ def test_menu_from_role_dangling_raises():
         Menu.model_validate(_menu(mlflow={"tracking_uri": {"from_role": "nope"}}))
 
 
+def test_menu_source_map():
+    m = Menu.model_validate(VALID)
+    assert m.source_map["train"] == "src/train/run.py"
+    assert m.source_map["serve"] == "src/serve/"
+    assert "mlflow-backend" not in m.source_map  # infra recipes have no source
+
+
+def test_menu_stage_requires_source():
+    data = _menu(
+        pipeline=["train"],
+        recipes={
+            "mlflow-backend": {"kind": "rds", "role": "mlflow-backend"},
+            "mlflow-artifacts": {"kind": "s3", "role": "mlflow-artifacts"},
+            "train": {"kind": "stage"},  # no source
+        },
+    )
+    with pytest.raises(ValidationError, match="must declare a `source`"):
+        Menu.model_validate(data)
+
+
 # --- from_yaml ---
 
 

@@ -80,3 +80,24 @@ def test_empty_recipes_yields_no_resources():
     spec = recipe_spec_from_menu({"project": "p", "recipes": {}})
     assert spec.name == "p"
     assert spec.resources == []
+
+
+def test_lambda_iam_role_mapped_and_source_injected():
+    """INT-006 / S-4: a serve lambda's menu `iam_role` → recipes `role`; `source` →
+    the function's KITCHEN_PREDICTOR_DIR."""
+    menu = {
+        "project": "p",
+        "recipes": {
+            "serve": {
+                "kind": "lambda",
+                "role": "serving",  # menu discovery role — dropped
+                "iam_role": "arn:aws:iam::123:role/exec",  # → LambdaSpec.role
+                "image_uri": "123.dkr.ecr.us-east-1.amazonaws.com/serve:latest",
+                "source": "src/serve/",
+            },
+        },
+    }
+    fn = next(r for r in recipe_spec_from_menu(menu).resources if r.type == "lambda")
+    assert fn.role == "arn:aws:iam::123:role/exec"
+    assert fn.environment["KITCHEN_PREDICTOR_DIR"] == "src/serve/"
+    assert not hasattr(fn, "iam_role")  # the menu-ism is consumed
