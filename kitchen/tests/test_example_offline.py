@@ -44,7 +44,7 @@ def test_offline_quickstart_runs_end_to_end(tmp_path: Path) -> None:
     assert evaluate.returncode == 0, f"evaluate failed:\n{evaluate.stdout}\n{evaluate.stderr}"
 
     metrics = json.loads((project / "metrics.json").read_text())
-    # Real signal in the synthetic data — accuracy clears the params.yaml threshold (0.70).
+    # Real signal in the synthetic data — accuracy clears the menu.yaml threshold (0.70).
     assert metrics["accuracy"] >= 0.70, metrics
     assert 0.0 <= metrics["roc_auc"] <= 1.0, metrics
     assert metrics["run_id"], "metrics.json should carry the run_id"

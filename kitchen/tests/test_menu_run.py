@@ -38,9 +38,9 @@ def test_sequences_provision_stage_monitor_and_skips_serve():
         run_pipeline(FULL, menu_path="menu.yaml", state_bucket="b", run=rec)
     assert rec.cmds == [
         ["recipes", "apply", "menu.yaml", "--state-bucket", "b", "--yes"],
-        ["kitchen", "run", "train"],
-        ["kitchen", "run", "monitor"],
-    ]  # serve (lambda) is recognised but not run
+        ["kitchen", "run", "train", "--params", "menu.yaml"],
+        ["kitchen", "run", "monitor", "--params", "menu.yaml"],
+    ]  # serve (lambda) is recognised but not run; stages load the manifest for project sections
 
 
 def test_dry_run_executes_nothing_but_plans():
@@ -75,6 +75,21 @@ def test_provision_materializes_env_into_process(monkeypatch):
         assert os.environ["MLFLOW_TRACKING_URI"] == "postgresql://x"  # inherited by later stages
     finally:
         os.environ.pop("MLFLOW_TRACKING_URI", None)
+
+
+def test_stage_args_are_appended():
+    menu = Menu.model_validate(
+        {
+            "project": "p",
+            "pipeline": ["train"],
+            "recipes": {
+                "train": {"kind": "stage", "source": "src/train/run.py", "args": ["--auto-promote"]}
+            },
+        }
+    )
+    rec = _Recorder()
+    run_pipeline(menu, menu_path="menu.yaml", state_bucket="b", run=rec)
+    assert rec.cmds == [["kitchen", "run", "train", "--params", "menu.yaml", "--auto-promote"]]
 
 
 def test_fail_fast_propagates_step_error():

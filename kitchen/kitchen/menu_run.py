@@ -61,13 +61,17 @@ def run_pipeline(
         elif step == "monitor":
             echo("→ monitor: kitchen run monitor")
             if not dry_run:
-                run(["kitchen", "run", "monitor"])
+                run(["kitchen", "run", "monitor", "--params", menu_path])
         elif step in menu.recipes:
             entry = menu.recipes[step]
             if entry.kind == "stage":
-                echo(f"→ {step}: kitchen run {step}")
+                # A stage may carry CLI flags via `args:` (e.g. `--auto-promote` on train).
+                extra_args = list(entry.fields.get("args") or [])
+                echo(f"→ {step}: kitchen run {step} {' '.join(extra_args)}".rstrip())
                 if not dry_run:
-                    run(["kitchen", "run", step])
+                    # Pass the manifest explicitly so the stage loads the menu's project
+                    # sections (the raw-YAML `params["model"]` contract, INT-007/008).
+                    run(["kitchen", "run", step, "--params", menu_path, *extra_args])
             elif entry.kind == "lambda":
                 # The serve lambda + its KITCHEN_PREDICTOR_DIR provision via `provision`
                 # (INT-006); the image build/push that points it at the latest code is the

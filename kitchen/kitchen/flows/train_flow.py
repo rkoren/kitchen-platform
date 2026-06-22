@@ -14,7 +14,6 @@ from __future__ import annotations
 import os
 
 import mlflow
-import yaml
 from dotenv import load_dotenv
 
 from kitchen.store import DataStore
@@ -120,8 +119,9 @@ def train_pipeline(params_file: str = "params.yaml", overrides: dict | None = No
     Returns the MLflow run_id of the training run (used by ``kitchen sweep`` to
     rank runs); ``None`` only if the tracker did not expose an active run.
     """
-    with open(params_file, encoding="utf-8") as f:
-        params = yaml.safe_load(f)
+    from kitchen.menu import load_params
+
+    params = load_params(params_file)
     if overrides:
         _apply_overrides(params, overrides)
     _build(params)
