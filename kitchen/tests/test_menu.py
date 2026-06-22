@@ -9,7 +9,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from kitchen.menu import INFRA_KINDS, Menu, RecipeEntry, RoleRef
+from kitchen.config import KitchenConfig
+from kitchen.menu import INFRA_KINDS, Menu, RecipeEntry, RoleRef, is_menu, load_params
 
 VALID: dict = {
     "project": "cbb-model",
@@ -82,9 +83,11 @@ def test_menu_missing_project_raises():
         Menu.model_validate(data)
 
 
-def test_menu_unknown_top_level_key_raises():
-    with pytest.raises(ValidationError):
-        Menu.model_validate(_menu(experimnt="typo"))  # extra=forbid
+def test_menu_allows_project_sections_at_top_level():
+    """The menu is a superset of params.yaml: free-form project sections pass through to
+    model_extra (INT-007). This trades top-level typo safety for stage-config passthrough."""
+    m = Menu.model_validate(_menu(model={"target": "passed", "random_state": 42}))
+    assert m.model_extra["model"]["target"] == "passed"
 
 
 def test_recipe_entry_unknown_kind_raises():
@@ -138,6 +141,76 @@ def test_menu_from_yaml(tmp_path):
     p.write_text(yaml.safe_dump(VALID), encoding="utf-8")
     m = Menu.from_yaml(str(p))
     assert m.project == "cbb-model"
+
+
+# --- INT-007: KitchenConfig bridge + menu detection ---
+
+
+def test_is_menu_detects_menu_and_rejects_params():
+    assert is_menu(VALID) is True
+    assert is_menu({"pipeline": ["train"]}) is True  # pipeline-only is still a menu
+    assert is_menu({"experiment": "x", "model": {"eta": 0.1}}) is False  # legacy params.yaml
+    assert is_menu("not-a-dict") is False
+
+
+def test_to_kitchen_config_maps_ml_half():
+    cfg = Menu.model_validate(VALID).to_kitchen_config()
+    assert isinstance(cfg, KitchenConfig)
+    assert cfg.experiment == "cbb-model"
+    assert cfg.thresholds["val_accuracy"] == 0.8
+
+
+def test_to_kitchen_config_drops_roleref_mlflow_to_default():
+    """A `{from_role}` tracking_uri is env-resolved (INT-003), so the bridge falls back to
+    the MLflowConfig default — the materialized env overrides it at run time."""
+    cfg = Menu.model_validate(VALID).to_kitchen_config()  # tracking_uri is a RoleRef
+    assert cfg.mlflow.tracking_uri == "sqlite:///mlruns.db"
+    assert cfg.mlflow.artifact_bucket is None  # RoleRef artifact_bucket dropped too
+
+
+def test_to_kitchen_config_passes_literal_mlflow_through():
+    m = Menu.model_validate(
+        _menu(mlflow={"tracking_uri": "postgresql://db/mlflow", "artifact_bucket": "my-bucket"})
+    )
+    cfg = m.to_kitchen_config()
+    assert cfg.mlflow.tracking_uri == "postgresql://db/mlflow"
+    assert cfg.mlflow.artifact_bucket == "my-bucket"
+
+
+def test_to_kitchen_config_carries_project_sections():
+    """Project stage config (model/features/…) must survive the bridge into model_extra —
+    the raw-YAML stage code reads `params["model"]["target"]`."""
+    m = Menu.model_validate(_menu(model={"target": "passed"}, features={"processed_file": "f.parquet"}))
+    cfg = m.to_kitchen_config()
+    assert cfg.model_extra["model"]["target"] == "passed"
+    assert cfg.model_extra["features"]["processed_file"] == "f.parquet"
+
+
+def test_to_kitchen_config_carries_submission_for_kaggle():
+    m = Menu.model_validate(
+        _menu(submission={"competition": "mens-march-mania-2025", "target_col": "Pred"})
+    )
+    cfg = m.to_kitchen_config()
+    assert cfg.submission.competition == "mens-march-mania-2025"
+    assert cfg.submission.target_col == "Pred"
+
+
+def test_load_params_injects_experiment_from_project(tmp_path):
+    """The raw stage path (params["experiment"]) must match the bridge — load_params derives
+    experiment from a menu's project so train/auto-promote agree on the experiment name."""
+    p = tmp_path / "menu.yaml"
+    p.write_text(yaml.safe_dump(_menu(model={"target": "passed"})), encoding="utf-8")
+    params = load_params(str(p))
+    assert params["experiment"] == "cbb-model"  # derived from project
+    assert params["model"]["target"] == "passed"  # project section stays flat for raw stage code
+
+
+def test_load_params_leaves_params_yaml_untouched(tmp_path):
+    p = tmp_path / "params.yaml"
+    p.write_text(yaml.safe_dump({"experiment": "exp", "model": {"target": "y"}}), encoding="utf-8")
+    params = load_params(str(p))
+    assert params["experiment"] == "exp"
+    assert params["model"]["target"] == "y"
 
 
 # --- locked to recipes' discriminator ---

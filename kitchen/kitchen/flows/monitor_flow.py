@@ -26,8 +26,6 @@ from __future__ import annotations
 
 import logging
 
-import yaml
-
 from kitchen.monitoring import DriftReport
 from kitchen.store import DataStore
 
@@ -167,8 +165,9 @@ def monitor_pipeline(params_file: str = "params.yaml", local_path_override: str 
     server or risk the stale ``~/.prefect/prefect.db`` Alembic-migration crash —
     the same SCF-014 treatment applied to ``train_flow`` (CBB-009).
     """
-    with open(params_file, encoding="utf-8") as f:
-        params = yaml.safe_load(f)
+    from kitchen.menu import load_params
+
+    params = load_params(params_file)
 
     monitor_cfg = params.get("monitor", {})
     if local_path_override:

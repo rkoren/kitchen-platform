@@ -37,6 +37,21 @@ def _promote_metric_from_thresholds(params_file: str) -> tuple[str, bool] | None
     return None
 
 
+def _resolve_params_path(params_file: str) -> str:
+    """Resolve the config path to load, honoring the menu fallback (INT-007): when the
+    default ``params.yaml`` is absent, a sibling ``menu.yaml`` stands in, so a migrated
+    project runs every command with no ``--params`` flag. Exits 1 when neither exists."""
+    path = Path(params_file)
+    if not path.exists() and path.name == "params.yaml":
+        sibling = path.with_name("menu.yaml")
+        if sibling.exists():
+            return str(sibling)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+    return str(path)
+
+
 def _try_auto_promote(
     params_file: str,
     metric: str,
@@ -219,19 +234,16 @@ def run_features(
     """
     import sys
 
-    import yaml
-
+    params_file = _resolve_params_path(params_file)
     path = Path(params_file)
-    if not path.exists():
-        typer.echo(f"error: file not found: {params_file}", err=True)
-        raise typer.Exit(1)
 
     cwd = str(Path.cwd())
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
 
-    with open(path, encoding="utf-8") as f:
-        params = yaml.safe_load(f)
+    from kitchen.menu import load_params  # noqa: PLC0415
+
+    params = load_params(str(path))
 
     from kitchen.store import DataStore  # noqa: PLC0415
 
@@ -329,6 +341,8 @@ def run_train(
     """
     import sys
 
+    params_file = _resolve_params_path(params_file)
+
     if auto_promote and not promote_metric:
         detected = _promote_metric_from_thresholds(params_file)
         if detected is None:
@@ -340,10 +354,7 @@ def run_train(
             raise typer.Exit(1)
         promote_metric, lower_is_better = detected
 
-    path = Path(params_file)
-    if not path.exists():
-        typer.echo(f"error: file not found: {params_file}", err=True)
-        raise typer.Exit(1)
+    params_file = _resolve_params_path(params_file)
 
     parsed_overrides: dict | None = None
     if override:
@@ -449,10 +460,7 @@ def run_sweep(
     import sys
     import uuid
 
-    path = Path(params_file)
-    if not path.exists():
-        typer.echo(f"error: file not found: {params_file}", err=True)
-        raise typer.Exit(1)
+    params_file = _resolve_params_path(params_file)
 
     if not override:
         typer.echo(
@@ -594,19 +602,16 @@ def run_evaluate(
     """Load a model from MLflow and run the project's evaluator."""
     import sys
 
-    import yaml
-
+    params_file = _resolve_params_path(params_file)
     path = Path(params_file)
-    if not path.exists():
-        typer.echo(f"error: file not found: {params_file}", err=True)
-        raise typer.Exit(1)
 
     cwd = str(Path.cwd())
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
 
-    with open(path, encoding="utf-8") as f:
-        params = yaml.safe_load(f)
+    from kitchen.menu import load_params  # noqa: PLC0415
+
+    params = load_params(str(path))
 
     if model_uri is None:
         from kitchen.config import KitchenConfig
@@ -733,10 +738,7 @@ def run_monitor(
     """Run drift monitoring and generate an HTML drift report."""
     import sys
 
-    path = Path(params_file)
-    if not path.exists():
-        typer.echo(f"error: file not found: {params_file}", err=True)
-        raise typer.Exit(1)
+    params_file = _resolve_params_path(params_file)
 
     cwd = str(Path.cwd())
     if cwd not in sys.path:

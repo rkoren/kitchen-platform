@@ -14,12 +14,23 @@ validated per-kind by recipes at deploy time (INT-004), where they become an act
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kitchen.config import CIConfig, DataConfig, MonitorConfig, SecretSpec, ThresholdSpec
+from kitchen.config import (
+    CheckConfig,
+    CIConfig,
+    DataConfig,
+    MonitorConfig,
+    SecretSpec,
+    SubmissionConfig,
+    ThresholdSpec,
+)
+
+if TYPE_CHECKING:
+    from kitchen.config import KitchenConfig
 
 # Infra kinds must stay in lockstep with recipes' ``ResourceSpec`` discriminator (a test
 # asserts equality). ``stage`` is the runtime-only kind recipes has no equivalent for.
@@ -86,9 +97,17 @@ class MlflowSettings(BaseModel):
 
 
 class Menu(BaseModel):
-    """The unified project manifest (``menu.yaml``)."""
+    """The unified project manifest (``menu.yaml``).
 
-    model_config = ConfigDict(extra="forbid")
+    ``extra="allow"`` intentionally — the menu is a *superset* of ``params.yaml``, so a
+    project's free-form stage sections (``model:``, ``features:``, ``train:``, …) live at the
+    top level exactly as before and pass through to ``model_extra`` (INT-007). The stage code
+    reads them from the raw YAML (``params["model"]["target"]``), so they must stay here, not
+    nested. This matches ``KitchenConfig``'s posture and trades top-level-key typo safety for
+    that passthrough.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     project: str
     region: str = "us-east-1"
@@ -104,8 +123,11 @@ class Menu(BaseModel):
     data: DataConfig | None = None
     monitor: MonitorConfig | None = None
     ci: CIConfig | None = None
+    submission: SubmissionConfig | None = None  # Kaggle submit config (CBB and other comps)
+    check: CheckConfig | None = None  # deprecated `required_env` legacy guard (superseded by `secrets`)
     secrets: dict[str, SecretSpec] = Field(default_factory=dict)
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
+    metrics_file: str = "metrics.json"
     run_name: str | None = None
 
     @model_validator(mode="after")
@@ -153,9 +175,76 @@ class Menu(BaseModel):
         is the single place mapping a stage/deploy to its code (INT-006)."""
         return {name: r.source for name, r in self.recipes.items() if r.source}
 
+    def to_kitchen_config(self) -> "KitchenConfig":
+        """Project the ML half of the menu onto a :class:`KitchenConfig` (INT-007).
+
+        This is the back-compat bridge: every ``kitchen`` command loads a
+        ``KitchenConfig``, so a project can switch its ``params.yaml`` for a
+        ``menu.yaml`` without touching the commands. The infra half (``recipes``,
+        ``network``, ``pipeline``) is read separately by recipes (INT-004) and the
+        runner (INT-005) and has no place in a ``KitchenConfig``.
+
+        ``mlflow`` ``{from_role}`` references are intentionally **dropped** here: INT-003
+        (``kitchen menu materialize``) resolves them to ``MLFLOW_TRACKING_URI`` /
+        ``MLFLOW_ARTIFACT_BUCKET`` in the environment, and the env value takes precedence
+        over the config (see ``experiment.py``). A ``RoleRef`` therefore falls back to the
+        ``MLflowConfig`` default (``sqlite:///mlruns.db``) here, which the materialized env
+        overrides at run time.
+        """
+        from kitchen.config import KitchenConfig, MLflowConfig
+
+        # Literal mlflow values only; spread the allowed extras first, then the typed three.
+        mlflow_kwargs: dict[str, Any] = dict(self.mlflow.model_extra or {})
+        mlflow_kwargs["model_artifact_path"] = self.mlflow.model_artifact_path
+        if isinstance(self.mlflow.tracking_uri, str):
+            mlflow_kwargs["tracking_uri"] = self.mlflow.tracking_uri
+        if isinstance(self.mlflow.artifact_bucket, str):
+            mlflow_kwargs["artifact_bucket"] = self.mlflow.artifact_bucket
+
+        # Project-defined sections (model/features/train/…) ride in model_extra; spread them
+        # first so the typed platform fields below always win on any name overlap.
+        return KitchenConfig(
+            **(self.model_extra or {}),
+            experiment=self.experiment,
+            data=self.data,
+            mlflow=MLflowConfig(**mlflow_kwargs),
+            monitor=self.monitor,
+            submission=self.submission,
+            check=self.check,
+            ci=self.ci,
+            secrets=self.secrets,
+            thresholds=self.thresholds,
+            metrics_file=self.metrics_file,
+            run_name=self.run_name,
+        )
+
     @classmethod
     def from_yaml(cls, path: str = "menu.yaml") -> "Menu":
         """Load and validate a ``menu.yaml`` manifest."""
         with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         return cls.model_validate(raw)
+
+
+def is_menu(raw: Any) -> bool:
+    """True when a parsed YAML mapping is a unified ``menu.yaml`` rather than a legacy
+    ``params.yaml``. Neither ``recipes`` nor ``pipeline`` is a meaningful top-level key in a
+    params file, so their presence identifies a menu (INT-007)."""
+    return isinstance(raw, dict) and ("recipes" in raw or "pipeline" in raw)
+
+
+def load_params(path: str) -> dict[str, Any]:
+    """Load a ``params.yaml`` *or* ``menu.yaml`` as a flat params-shaped dict for the raw
+    stage code (``params["model"]["target"]``, ``params["experiment"]``).
+
+    A menu is a superset of params.yaml (INT-007), so its project sections are already flat;
+    the one *derived* value raw consumers expect is ``experiment``, which the menu expresses
+    as ``project``. This injects it so the raw stage path matches the bridged
+    :class:`KitchenConfig` (whose ``experiment`` also defaults to ``project``) — without it a
+    menu-run trains under the wrong experiment and auto-promote can't find the run.
+    """
+    with open(path, encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    if is_menu(raw):
+        raw.setdefault("experiment", raw.get("project"))
+    return raw

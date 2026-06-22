@@ -37,6 +37,39 @@ def test_from_yaml(tmp_path):
     assert cfg.mlflow.tracking_uri == "sqlite:///test.db"
 
 
+# --- INT-007: from_yaml transparently loads a menu.yaml ---
+
+
+def test_from_yaml_loads_menu_by_content(tmp_path):
+    """A file whose content is a menu is bridged even when passed via the params path."""
+    menu = {
+        "project": "cbb-model",
+        "pipeline": ["train"],
+        "recipes": {"train": {"kind": "stage", "source": "src/train/run.py"}},
+        "thresholds": {"val_accuracy": 0.8},
+    }
+    p = tmp_path / "menu.yaml"
+    p.write_text(yaml.dump(menu))
+    cfg = KitchenConfig.from_yaml(str(p))
+    assert cfg.experiment == "cbb-model"  # menu's project defaults the experiment
+    assert cfg.thresholds["val_accuracy"] == 0.8
+
+
+def test_from_yaml_falls_back_to_sibling_menu(tmp_path):
+    """A missing params.yaml resolves to a sibling menu.yaml with no --params flag."""
+    menu = {"project": "p", "recipes": {}}
+    (tmp_path / "menu.yaml").write_text(yaml.dump(menu))
+    cfg = KitchenConfig.from_yaml(str(tmp_path / "params.yaml"))
+    assert cfg.experiment == "p"
+
+
+def test_from_yaml_prefers_params_when_both_present(tmp_path):
+    (tmp_path / "params.yaml").write_text(yaml.dump({"experiment": "from-params"}))
+    (tmp_path / "menu.yaml").write_text(yaml.dump({"project": "from-menu", "recipes": {}}))
+    cfg = KitchenConfig.from_yaml(str(tmp_path / "params.yaml"))
+    assert cfg.experiment == "from-params"  # no auto-prefer surprise
+
+
 # --- DataConfig ---
 
 

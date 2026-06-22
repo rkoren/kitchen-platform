@@ -239,9 +239,30 @@ class KitchenConfig(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: str = "params.yaml") -> "KitchenConfig":
-        """Load and validate a params.yaml file."""
+        """Load and validate a params.yaml *or* a menu.yaml file (INT-007).
+
+        A unified ``menu.yaml`` is detected by content and bridged via
+        ``Menu.to_kitchen_config()`` so every command transparently accepts either. When the
+        default ``params.yaml`` is absent, a sibling ``menu.yaml`` is used instead — so a
+        migrated project needs no ``--params`` flag.
+        """
+        from pathlib import Path
+
         import yaml
 
-        with open(path, encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
+        # Path discovery: fall back to a sibling menu.yaml only when the default
+        # params.yaml was requested and is missing (never auto-prefer when both exist).
+        target = Path(path)
+        if not target.exists() and target.name == "params.yaml":
+            sibling = target.with_name("menu.yaml")
+            if sibling.exists():
+                target = sibling
+
+        with open(target, encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+
+        from kitchen.menu import Menu, is_menu
+
+        if is_menu(raw):
+            return Menu.model_validate(raw).to_kitchen_config()
         return cls(**raw)

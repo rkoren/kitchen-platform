@@ -16,6 +16,15 @@ toy: four numeric features (`study_hours`, `prior_score`, `attendance`, `sleep_h
 and a binary `passed` target. It's generated data committed as a fixture, not raw
 competition data, so it lives in the repo by design.
 
+## The manifest
+
+Config lives in a single **`menu.yaml`** — the unified platform manifest (INT-007). It
+declares the run `pipeline` (`[train, evaluate]`), each stage's `source`, and the ML
+settings (data, model, mlflow, thresholds) that used to live in `params.yaml`. There are no
+infra `recipes` here — the backend is a local SQLite file, so there's no `provision` step.
+Because the menu is a superset of `params.yaml`, every `kitchen` command reads it directly;
+no `--params` flag is needed.
+
 ## Run it
 
 From this directory, with `kitchen` installed (`pip install -e kitchen/` from the repo
@@ -24,6 +33,12 @@ root):
 ```bash
 cd examples/offline-quickstart
 
+kitchen menu run                   # run the whole pipeline: train (+features, +promote) → evaluate
+```
+
+Or drive the stages individually (each reads `menu.yaml` automatically):
+
+```bash
 kitchen run train --auto-promote   # features → train → log to MLflow → promote champion
 kitchen run evaluate               # load champion, score on the held-out split
 kitchen leaderboard                # rank runs; [C] marks the promoted champion
@@ -62,7 +77,7 @@ And the leaderboard flags the champion row:
 
 ## What's committed vs. generated
 
-Committed: `params.yaml`, `src/`, and `data/raw/train.csv`. Everything the pipeline
+Committed: `menu.yaml`, `src/`, and `data/raw/train.csv`. Everything the pipeline
 produces — `mlruns.db`, the `mlruns/` artifact store, `data/processed/features.parquet`,
 `metrics.json`, `calibration.json` — is regenerated on each run and gitignored. Delete
 those any time to start clean.
