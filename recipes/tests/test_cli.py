@@ -97,6 +97,24 @@ def test_generate_creates_resource_tf_files(tmp_path):
     assert (out / "iam-role-test-role.tf").exists()
 
 
+def test_generate_routes_menu_yaml(tmp_path):
+    """INT-004: a menu.yaml (recipes: map) is projected to infra TF, keyed by project."""
+    menu = tmp_path / "menu.yaml"
+    menu.write_text(
+        "project: cbb-model\n"
+        "region: us-east-1\n"
+        "pipeline: [provision, train]\n"
+        "recipes:\n"
+        "  mlflow-artifacts: { kind: s3, role: mlflow-artifacts, versioning: true }\n"
+        "  train: { kind: stage, source: src/train/run.py }\n"  # runtime kind: skipped
+    )
+    out = tmp_path / "tf"
+    result = runner.invoke(app, ["generate", str(menu), "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    assert (out / "s3-mlflow-artifacts.tf").exists()  # infra recipe rendered
+    assert not (out / "stage-train.tf").exists()  # the stage recipe is kitchen's, not infra
+
+
 def test_generate_creates_output_dir(tmp_path):
     spec = tmp_path / "infra.yaml"
     spec.write_text(VALID_SPEC)
