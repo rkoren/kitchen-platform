@@ -1,0 +1,11 @@
+# Runtime outputs produced by running the pipeline — regenerated on every run.
+mlruns.db
+mlruns/
+mlartifacts/
+metrics.json
+calibration.json
+data/processed/*
+!data/processed/.gitkeep
+
+# AWS validation: assembled secrets / env
+.env
