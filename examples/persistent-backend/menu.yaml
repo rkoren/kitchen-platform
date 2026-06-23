@@ -1,0 +1,90 @@
+# AWS gate (INT-008b) — the same tiny train→evaluate loop as offline-quickstart, but on a
+# REAL persistent MLflow backend: RDS Postgres registry + S3 artifacts, provisioned by
+# recipes from this one file. This is the throwaway acceptance test for cross-run champion
+# persistence (extends VAL-008 to the unified `kitchen menu run` flow).
+#
+# Drive the whole thing (provision → train×2 → evaluate) with:
+#     cd examples/persistent-backend
+#     kitchen menu run --state-bucket <your-tf-state-bucket>     # run 1
+#     kitchen menu run --state-bucket <your-tf-state-bucket>     # run 2 → champion persists
+# Tear down when done:
+#     recipes destroy menu.yaml --state-bucket <your-tf-state-bucket>
+#
+# Throwaway-tuned: deletion_protection off + skip_final_snapshot so `recipes destroy` is
+# clean, a db.t4g.micro, and the security group narrowed to the validating machine's IP.
+
+project: persistent-backend-validation   # → TF workspace ~/.recipes/tf/<project> + state key
+region: us-east-1
+
+# Provision the infra first; the runner then materializes MLFLOW_TRACKING_URI /
+# MLFLOW_ARTIFACT_BUCKET from the deployed outputs before the stages run.
+pipeline: [provision, train, evaluate]
+
+recipes:
+  # Inbound Postgres, narrowed to the validating machine (not 0.0.0.0/0).
+  mlflow-sg:
+    kind: security_group
+    description: Postgres access to the throwaway MLflow validation backend
+    ingress:
+      - port: 5432
+        cidr_blocks: ["68.129.225.61/32"]
+        description: PostgreSQL from the validation machine
+
+  # The BACKEND STORE — experiments, runs, registry + champion alias. Master password is
+  # created/rotated by RDS in Secrets Manager (never in TF state); the runner assembles the
+  # URL from the Terraform outputs (LML-015) and exports MLFLOW_TRACKING_URI.
+  mlflow-backend:
+    kind: rds
+    role: mlflow-backend          # ← mlflow.tracking_uri resolves from this role
+    instance_class: db.t4g.micro
+    allocated_storage: 20
+    db_name: mlflow
+    username: mlflow
+    publicly_accessible: true
+    security_groups: [mlflow-sg]
+    deletion_protection: false    # throwaway — allow clean teardown
+    skip_final_snapshot: true
+
+  # The ARTIFACT STORE — the model files the champion points at. The recipe *key* is the
+  # bucket name (globally unique; account-suffixed), and the resolver exports it as
+  # MLFLOW_ARTIFACT_BUCKET so artifacts are durable too.
+  kitchen-pbv-artifacts-674325521451:
+    kind: s3
+    role: mlflow-artifacts        # ← mlflow.artifact_bucket resolves from this role
+    versioning: true
+
+  # The project's stages (same code as offline-quickstart).
+  train:
+    kind: stage
+    source: src/train/run.py
+    args: ["--auto-promote"]      # register/compare a champion each run
+  evaluate:
+    kind: stage
+    source: src/evaluate/run.py
+
+# Infra-coupled — resolved by role from the deployed recipes (INT-003), not re-typed.
+mlflow:
+  tracking_uri: {from_role: mlflow-backend}
+  artifact_bucket: {from_role: mlflow-artifacts}
+
+# --- ML settings (identical to offline-quickstart) ---
+
+data:
+  source: local
+  path: data/raw
+  raw_file: train.csv
+
+features:
+  raw_file: train.csv
+  processed_file: features.parquet
+
+model:
+  target: passed
+  test_size: 0.2
+  random_state: 42
+
+run_name: baseline
+metrics_file: metrics.json
+
+thresholds:
+  val_accuracy: 0.70
