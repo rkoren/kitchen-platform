@@ -357,6 +357,112 @@ def test_apply_aborts_on_terraform_failure(tmp_path):
     assert result.exit_code != 0
 
 
+# ── INT-010: destructive state-collision guard ──────────────────────────────────
+
+
+def _plan(changes: list[tuple[str, list[str]]]) -> dict:
+    """Build a minimal terraform-plan JSON from (address, actions) pairs."""
+    return {
+        "resource_changes": [
+            {"address": addr, "change": {"actions": actions}} for addr, actions in changes
+        ]
+    }
+
+
+def test_classify_plan_splits_created_deleted_kept():
+    from recipes.cli import _classify_plan
+
+    created, deleted, kept = _classify_plan(
+        _plan(
+            [
+                ("aws_db_instance.x", ["create"]),
+                ("aws_ecr_repository.y", ["delete"]),
+                ("aws_s3_bucket.z", ["no-op"]),
+                ("aws_iam_role.w", ["update"]),
+                ("aws_security_group.v", ["create", "delete"]),  # replace = kept
+            ]
+        )
+    )
+    assert created == ["aws_db_instance.x"]
+    assert deleted == ["aws_ecr_repository.y"]
+    assert set(kept) == {"aws_iam_role.w", "aws_security_group.v"}  # no-op excluded, replace kept
+
+
+def test_apply_refuses_destructive_collision(tmp_path):
+    """The incident: a plan that destroys foreign resources and keeps none must be refused."""
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+
+    collision = _plan(
+        [
+            ("aws_s3_bucket.test_bucket", ["create"]),
+            ("aws_ecr_repository.other", ["delete"]),
+            ("aws_iam_role.other", ["delete"]),
+        ]
+    )
+    mock_proc = MagicMock(stdout=iter(["init\n"]), returncode=0)
+    mock_proc.wait.return_value = None
+    with (
+        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("shutil.which", return_value="/usr/bin/terraform"),
+        patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+        patch("recipes.cli._plan_resource_changes", return_value=collision),
+    ):
+        result = runner.invoke(app, ["apply", str(spec), "--state-bucket", "b", "--yes"])
+
+    assert result.exit_code == 1
+    assert "destructive state collision" in result.output
+    # apply never ran — only init reached Popen
+    assert not any("apply" in c.args[0] for c in mock_popen.call_args_list)
+
+
+def test_apply_allow_destroy_overrides_guard(tmp_path):
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+
+    collision = _plan([("aws_ecr_repository.other", ["delete"])])
+    mock_proc = MagicMock(stdout=iter(["ok\n"]), returncode=0)
+    mock_proc.wait.return_value = None
+    with (
+        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("shutil.which", return_value="/usr/bin/terraform"),
+        patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+        patch("recipes.cli._plan_resource_changes", return_value=collision),
+    ):
+        result = runner.invoke(
+            app, ["apply", str(spec), "--state-bucket", "b", "--yes", "--allow-destroy"]
+        )
+
+    assert result.exit_code == 0
+    assert any("apply" in c.args[0] for c in mock_popen.call_args_list)  # apply proceeded
+
+
+def test_apply_allows_normal_removal(tmp_path):
+    """Deleting one resource while keeping others is a legit apply — not a collision."""
+    spec = tmp_path / "infra.yaml"
+    spec.write_text(VALID_SPEC)
+
+    normal = _plan(
+        [
+            ("aws_s3_bucket.test_bucket", ["no-op"]),
+            ("aws_iam_role.test_role", ["update"]),
+            ("aws_ecr_repository.dropped", ["delete"]),  # one removal, others kept
+        ]
+    )
+    mock_proc = MagicMock(stdout=iter(["ok\n"]), returncode=0)
+    mock_proc.wait.return_value = None
+    with (
+        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("shutil.which", return_value="/usr/bin/terraform"),
+        patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+        patch("recipes.cli._plan_resource_changes", return_value=normal),
+    ):
+        result = runner.invoke(app, ["apply", str(spec), "--state-bucket", "b", "--yes"])
+
+    assert result.exit_code == 0
+    assert any("apply" in c.args[0] for c in mock_popen.call_args_list)
+
+
 # ── destroy ───────────────────────────────────────────────────────────────────
 
 

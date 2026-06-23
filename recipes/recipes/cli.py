@@ -143,6 +143,95 @@ def _tf_init(spec: RecipeSpec, workspace: Path, state_bucket: str) -> bool:
     return rc == 0
 
 
+def _plan_resource_changes(workspace: Path) -> dict | None:
+    """Run ``terraform plan`` to a file and return the parsed plan JSON (via ``show -json``).
+
+    Best-effort: returns ``None`` if terraform is missing or planning fails, so the caller
+    falls back to the normal apply (which surfaces any planning error itself).
+    """
+    tf = shutil.which("terraform")
+    if not tf:
+        return None
+    plan_file = workspace / ".recipes-guard.tfplan"
+    try:
+        planned = subprocess.run(
+            [tf, "plan", "-input=false", "-no-color", f"-out={plan_file}"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+        )
+        if planned.returncode != 0:
+            return None
+        shown = subprocess.run(
+            [tf, "show", "-json", str(plan_file)], cwd=workspace, capture_output=True, text=True
+        )
+        if shown.returncode != 0:
+            return None
+        return json.loads(shown.stdout)
+    except Exception:  # best-effort guard — never let the pre-check itself break apply
+        return None
+    finally:
+        plan_file.unlink(missing_ok=True)
+
+
+def _classify_plan(plan_json: dict) -> tuple[list[str], list[str], list[str]]:
+    """Split a plan's ``resource_changes`` into (created, deleted, kept) addresses.
+
+    ``kept`` = resources already in state that the spec still recognises (no-op / update /
+    read / replace). A populated state with deletes but **zero** kept means the new spec
+    shares nothing with what is there — a *different* spec owns this state (INT-010).
+    """
+    created: list[str] = []
+    deleted: list[str] = []
+    kept: list[str] = []
+    for change in plan_json.get("resource_changes", []):
+        actions = change.get("change", {}).get("actions", [])
+        addr = change.get("address", "")
+        if actions == ["create"]:
+            created.append(addr)
+        elif actions == ["delete"]:
+            deleted.append(addr)
+        elif actions == ["no-op"]:
+            continue  # unchanged-and-not-in-prior-state never happens; no-op = kept
+        else:
+            # update / read / create+delete (replace) — the resource stays in the spec
+            kept.append(addr)
+    return created, deleted, kept
+
+
+def _guard_destructive_collision(
+    workspace: Path, *, spec_name: str, state_bucket: str, allow_destroy: bool
+) -> None:
+    """Refuse an apply that would wipe a state owned by a different spec (INT-010).
+
+    If the plan deletes resources and keeps **none** from the existing state, the state at
+    this key belongs to another spec — applying would destroy its resources (as happened when
+    a menu's ``project`` collided with a standalone infra spec). Exits 1 unless
+    ``--allow-destroy`` is set. Best-effort: a missing/failed plan skips the check.
+    """
+    plan_json = _plan_resource_changes(workspace)
+    if plan_json is None:
+        return
+    _created, deleted, kept = _classify_plan(plan_json)
+    if not deleted or kept or allow_destroy:
+        return
+    console.print("[red]error: refusing to apply — destructive state collision[/red]")
+    console.print(
+        f"  This plan destroys {len(deleted)} resource(s) and keeps none from the existing state:"
+    )
+    for addr in deleted:
+        console.print(f"    [red]- {addr}[/red]")
+    console.print(
+        f"  The Terraform state at [cyan]s3://{state_bucket}/{spec_name}/terraform.tfstate[/cyan] "
+        "is owned by a different spec;\n  applying this one would delete its resources."
+    )
+    console.print(
+        "  Give this spec a distinct name/`project` so it gets its own state, or re-run with "
+        "[bold]--allow-destroy[/bold] if this wipe is intentional."
+    )
+    raise typer.Exit(1)
+
+
 # ── Commands ───────────────────────────────────────────────────────────────────
 
 
@@ -352,6 +441,12 @@ def apply(
         help="S3 bucket for Terraform state (or set RECIPES_STATE_BUCKET)",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    allow_destroy: bool = typer.Option(
+        False,
+        "--allow-destroy",
+        help="Permit an apply that destroys resources from a state owned by a different spec "
+        "(INT-010 guard override). Use only when intentionally replacing a stack.",
+    ),
 ):
     """Provision AWS resources defined in a YAML spec.
 
@@ -379,6 +474,11 @@ def apply(
 
     if not _tf_init(spec, workspace, state_bucket):
         raise typer.Exit(1)
+
+    # INT-010: refuse a plan that would wipe a state owned by a different spec.
+    _guard_destructive_collision(
+        workspace, spec_name=spec.name, state_bucket=state_bucket, allow_destroy=allow_destroy
+    )
 
     console.print("\n[bold]→ terraform apply[/bold]\n")
     rc = _run_tf(["apply", "-auto-approve"], workspace)
