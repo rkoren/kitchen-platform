@@ -61,7 +61,7 @@ kitchen check
 kitchen ingest
 ```
 
-Data is downloaded to `data/raw/` as configured in `params.yaml`.
+Data is downloaded to `data/raw/` as configured in `menu.yaml`.
 
 ## Implement the three required files
 

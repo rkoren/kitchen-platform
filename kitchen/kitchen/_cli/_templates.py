@@ -34,7 +34,7 @@ cp .env.example .env
 | `src/train/run.py` | `${class_name}Trainer(Trainer)` | `fit(df, params) -> model` |
 | `src/evaluate/run.py` | `${class_name}Evaluator(Evaluator)` | `evaluate(model, df) -> dict` |
 
-All config lives in `params.yaml`. File paths resolve from `params["features"].*`;
+All config lives in `menu.yaml`. File paths resolve from `params["features"].*`;
 model hyperparams from `params["model"].*`.
 
 ## Running experiments
@@ -110,45 +110,6 @@ submissions/
 
 # infra (generated)
 infra/tf/
-"""
-
-_PARAMS_YAML = """\
-experiment: $name
-
-data:
-  source: local          # switch to "kaggle" once data is downloaded
-  competition: $name
-  raw_file: train.csv
-
-features:
-  raw_file: train.csv
-  processed_file: features.parquet
-  test_file: test.csv
-
-model:
-  target: label          # TODO: set to your actual target column name
-  test_size: 0.2
-  random_state: 42
-$model_section
-
-mlflow:
-  tracking_uri: sqlite:///mlruns.db
-
-run_name: baseline
-metrics_file: metrics.json
-
-# dashboard_url: https://<owner>.github.io/<repo>/  # set to open via `kitchen open`
-
-# thresholds:               # optional: fail CI if a metric violates its constraint
-#   val_accuracy: 0.80      # plain float = lower bound (>= 0.80)
-#   val_logloss:
-#     max: 0.45             # upper bound for lower-is-better metrics (<= 0.45)
-
-# ci:                       # optional: CI behavior knobs (read by the scaffolded workflow)
-#   fail_on_threshold: true # whether a threshold breach fails the CI job
-#   notifications:
-#     slack_webhook_secret: SLACK_WEBHOOK_URL  # GH secret holding the incoming-webhook URL
-#     when: failure         # failure | success | always
 """
 
 _PYPROJECT_TOML = """\
@@ -239,8 +200,137 @@ _MODEL_SECTION_GENERIC = """\
   #   min_samples_leaf: 1"""
 
 
-_PARAMS_YAML_KAGGLE = """\
+_MENU_YAML = """\
+# Unified project manifest (menu.yaml) — the single source of truth the platform reads.
+# It carries the run `pipeline`, each `recipe` (a stage's code or an infra resource), and the
+# ML config. Drive the whole pipeline with `kitchen menu run`; every `kitchen` command also
+# reads this file directly (no --params flag needed).
+
+project: $name
+region: us-east-1
 experiment: $name
+
+# The ordered run sequence. `train` runs features internally and promotes a champion;
+# `evaluate` scores that champion. Add `provision` first (and switch mlflow below to a
+# {from_role} reference) to stand up + wire AWS infra on the same run.
+pipeline: [train, evaluate]
+
+recipes:
+  # --- stages (project code) ---
+  features:
+    kind: stage
+    source: src/features/run.py
+  train:
+    kind: stage
+    source: src/train/run.py
+    args: ["--auto-promote"]   # register/compare a champion each run
+  evaluate:
+    kind: stage
+    source: src/evaluate/run.py
+
+  # --- infra (deploy on demand with `recipes apply menu.yaml`; not in the default pipeline) ---
+  $name-data:
+    kind: s3
+    versioning: true
+  $name-serve:
+    kind: ecr
+    lambda_access: true
+  $name-lambda-role:
+    kind: iam_role
+    service: lambda.amazonaws.com
+    policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+  # Serving lambda — uncomment after pushing your first image to the ECR repo above:
+  # $name-fn:
+  #   kind: lambda
+  #   iam_role: $name-lambda-role   # menu `role` is a discovery marker; the IAM role is `iam_role`
+  #   ecr_repo: $name-serve
+  #   source: src/serve/            # injected as the function's KITCHEN_PREDICTOR_DIR
+  #   memory: 1024
+  #   timeout: 30
+
+data:
+  source: local          # switch to "kaggle" once data is downloaded
+  path: data/raw         # where raw CSVs live (relative to project root)
+  raw_file: train.csv
+
+features:
+  raw_file: train.csv
+  processed_file: features.parquet
+  test_file: test.csv
+
+model:
+  target: label          # TODO: set to your actual target column name
+  test_size: 0.2
+  random_state: 42
+$model_section
+
+mlflow:
+  tracking_uri: sqlite:///mlruns.db
+  # For a persistent backend, define an `rds` recipe above and reference it by role:
+  #   tracking_uri: {from_role: mlflow-backend}
+
+run_name: baseline
+metrics_file: metrics.json
+
+thresholds:
+  val_accuracy: 0.0       # TODO: set your primary metric + bound (drives leaderboard + --auto-promote)
+
+# dashboard_url: https://<owner>.github.io/<repo>/  # set to open via `kitchen open`
+
+# ci:                       # optional: CI behavior knobs (read by the scaffolded workflow)
+#   fail_on_threshold: true # whether a threshold breach fails the CI job
+#   notifications:
+#     slack_webhook_secret: SLACK_WEBHOOK_URL  # GH secret holding the incoming-webhook URL
+#     when: failure         # failure | success | always
+"""
+
+
+_MENU_YAML_KAGGLE = """\
+# Unified project manifest (menu.yaml) — the single source of truth the platform reads.
+# Drive the whole pipeline with `kitchen menu run`; every `kitchen` command also reads it.
+
+project: $name
+region: us-east-1
+experiment: $name
+
+pipeline: [train, evaluate]
+
+recipes:
+  # --- stages (project code) ---
+  features:
+    kind: stage
+    source: src/features/run.py
+  train:
+    kind: stage
+    source: src/train/run.py
+    args: ["--auto-promote"]   # register/compare a champion each run
+  evaluate:
+    kind: stage
+    source: src/evaluate/run.py
+
+  # --- infra (deploy on demand with `recipes apply menu.yaml`; not in the default pipeline) ---
+  $name-data:
+    kind: s3
+    versioning: true
+  $name-serve:
+    kind: ecr
+    lambda_access: true
+  $name-lambda-role:
+    kind: iam_role
+    service: lambda.amazonaws.com
+    policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+  # Serving lambda — uncomment after pushing your first image to the ECR repo above:
+  # $name-fn:
+  #   kind: lambda
+  #   iam_role: $name-lambda-role
+  #   ecr_repo: $name-serve
+  #   source: src/serve/
+  #   memory: 1024
+  #   timeout: 30
 
 data:
   source: kaggle
@@ -269,10 +359,8 @@ mlflow:
 run_name: baseline
 metrics_file: metrics.json
 
-# thresholds:               # optional: fail CI if a metric violates its constraint
-#   val_accuracy: 0.80      # plain float = lower bound (>= 0.80)
-#   val_logloss:
-#     max: 0.45             # upper bound for lower-is-better metrics (<= 0.45)
+thresholds:
+  val_accuracy: 0.0       # TODO: set your primary metric + bound (drives leaderboard + --auto-promote)
 
 # ci:                       # optional: CI behavior knobs (read by the scaffolded workflow)
 #   auto_submit: false      # submit to Kaggle after evaluate on a main-branch push
@@ -282,32 +370,6 @@ metrics_file: metrics.json
 #     when: failure         # failure | success | always
 """
 
-_INFRA_YAML = """\
-name: $name
-region: us-east-1
-resources:
-  - type: s3
-    name: $name-data
-    versioning: true
-
-  - type: ecr
-    name: $name-serve
-    lambda_access: true
-
-  - type: iam_role
-    name: $name-lambda-role
-    service: lambda.amazonaws.com
-    policies:
-      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
-
-  - type: lambda
-    name: $name-serve
-    role: $name-lambda-role
-    ecr_repo: $name-serve
-    memory: 1024
-    timeout: 30
-"""
 
 _FEATURES_RUN = """\
 \"\"\"Feature engineering for $name.
@@ -920,12 +982,12 @@ Defaults to LGBMRegressor (forecasting / demand / energy competitions).
 For classification: swap LGBMRegressor → LGBMClassifier and replace
 regression_metrics with classification_metrics.
 
-Params read from params.yaml under model:
+Params read from menu.yaml under model:
   target       — target column name (required)
   date_col     — column to sort by before splitting (omit if data is pre-sorted)
   val_frac     — fraction of rows reserved for validation, default 0.2
   random_state — random seed, default 42
-  lgbm:        — LightGBM hyperparams (see commented section in params.yaml)
+  lgbm:        — LightGBM hyperparams (see commented section in menu.yaml)
 \"\"\"
 from __future__ import annotations
 
@@ -1195,7 +1257,7 @@ def run_variant(params: dict, variant: str) -> None:
 
 
 if __name__ == "__main__":
-    with open("params.yaml") as f:
+    with open("menu.yaml") as f:
         params = yaml.safe_load(f)
     run_variant(params, VARIANT)
 """
@@ -1221,7 +1283,7 @@ from experiments.baseline import run_variant
 VARIANT = "challenger"
 
 
-def challenger(params_file: str = "params.yaml") -> None:
+def challenger(params_file: str = "menu.yaml") -> None:
     with open(params_file) as f:
         params = yaml.safe_load(f)
 
@@ -1396,7 +1458,7 @@ TARGET_COL = "target"  # TODO: change to the submission target column name
 MODEL_NAME = os.environ.get("MLFLOW_MODEL_NAME", "$name-model")
 
 
-def generate(params_file: str = "params.yaml") -> None:
+def generate(params_file: str = "menu.yaml") -> None:
     with open(params_file) as f:
         params = yaml.safe_load(f)
 
@@ -1480,7 +1542,7 @@ jobs:
       # do NOT persist across runs (`--auto-promote` always sees no champion and promotes
       # unconditionally). For champions that carry across runs, deploy a persistent backend
       # (`recipes apply mlflow-tracking-backend.yaml` — RDS + S3), store the Postgres URL in
-      # Secrets Manager, declare it in params.yaml `secrets:` as MLFLOW_TRACKING_URI, then:
+      # Secrets Manager, declare it in menu.yaml `secrets:` as MLFLOW_TRACKING_URI, then:
       # delete the line below, set MLFLOW_ARTIFACT_BUCKET, and uncomment the "Resolve
       # persistent MLflow backend" step. See docs/kitchen/configuration.md.
       MLFLOW_TRACKING_URI: sqlite:///mlruns.db
@@ -1585,7 +1647,7 @@ jobs:
 
       # Notifications (ci.notifications): uncomment to alert on job failure (e.g. a
       # threshold breach). Add the webhook URL as a repo secret and keep the name below
-      # in sync with ci.notifications.slack_webhook_secret in params.yaml.
+      # in sync with ci.notifications.slack_webhook_secret in menu.yaml.
       # - name: Notify on failure
       #   if: failure()
       #   env:
@@ -1673,7 +1735,7 @@ jobs:
       # do NOT persist across runs (`--auto-promote` always sees no champion and promotes
       # unconditionally). For champions that carry across runs, deploy a persistent backend
       # (`recipes apply mlflow-tracking-backend.yaml` — RDS + S3), store the Postgres URL in
-      # Secrets Manager, declare it in params.yaml `secrets:` as MLFLOW_TRACKING_URI, then:
+      # Secrets Manager, declare it in menu.yaml `secrets:` as MLFLOW_TRACKING_URI, then:
       # delete the line below, set MLFLOW_ARTIFACT_BUCKET, and uncomment the "Resolve
       # persistent MLflow backend" step. See docs/kitchen/configuration.md.
       MLFLOW_TRACKING_URI: sqlite:///mlruns.db
@@ -1721,12 +1783,12 @@ jobs:
       - name: Evaluate
         run: kitchen run evaluate
 
-      # Reads ci.auto_submit from params.yaml so a main-branch push can submit
+      # Reads ci.auto_submit from menu.yaml so a main-branch push can submit
       # automatically, in addition to the manual workflow_dispatch toggle.
       - name: Read CI config
         id: ci
         run: |
-          AUTO=$$(python -c "import yaml; print(str(yaml.safe_load(open('params.yaml')).get('ci', {}).get('auto_submit', False)).lower())")
+          AUTO=$$(python -c "import yaml; print(str(yaml.safe_load(open('menu.yaml')).get('ci', {}).get('auto_submit', False)).lower())")
           echo "auto_submit=$$AUTO" >> $$GITHUB_OUTPUT
 
       - name: Submit to Kaggle
@@ -1799,7 +1861,7 @@ jobs:
 
       # Notifications (ci.notifications): uncomment to alert on job failure (e.g. a
       # threshold breach). Add the webhook URL as a repo secret and keep the name below
-      # in sync with ci.notifications.slack_webhook_secret in params.yaml.
+      # in sync with ci.notifications.slack_webhook_secret in menu.yaml.
       # - name: Notify on failure
       #   if: failure()
       #   env:
@@ -2637,7 +2699,7 @@ from sklearn.model_selection import train_test_split
 import kitchen
 from kitchen.store import DataStore
 
-with open("params.yaml") as f:
+with open("menu.yaml") as f:
     params = yaml.safe_load(f)
 
 EXPERIMENT = params.get("experiment", "__NAME__")
@@ -2670,7 +2732,7 @@ df = store.load_parquet(PROCESSED_FILE)
 if TARGET not in df.columns:
     raise ValueError(
         f"target column {TARGET!r} is not in the features ({list(df.columns)}). "
-        "Set model.target in params.yaml (or change TARGET in the setup cell)."
+        "Set model.target in menu.yaml (or change TARGET in the setup cell)."
     )
 
 X = df.drop(columns=[TARGET])

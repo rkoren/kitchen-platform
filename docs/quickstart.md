@@ -64,7 +64,7 @@ Check what was created:
 
 ```bash
 ls
-# CLAUDE.md  data/  experiments/  flows/  infra/  params.yaml  pyproject.toml  src/
+# CLAUDE.md  data/  experiments/  flows/  menu.yaml  notebooks/  pyproject.toml  src/
 ```
 
 Install the project alongside `kitchen`:
