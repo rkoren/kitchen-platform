@@ -18,7 +18,9 @@ def _debug_enabled(flag: bool) -> bool:
 
 def _promote_metric_from_thresholds(params_file: str) -> tuple[str, bool] | None:
     """Return (metric, lower_is_better) from first thresholds entry, or None if absent."""
-    p = Path(params_file)
+    from kitchen.config import resolve_params_path
+
+    p = Path(resolve_params_path(params_file))
     if not p.exists():
         return None
     try:
@@ -38,18 +40,15 @@ def _promote_metric_from_thresholds(params_file: str) -> tuple[str, bool] | None
 
 
 def _resolve_params_path(params_file: str) -> str:
-    """Resolve the config path to load, honoring the menu fallback (INT-007): when the
-    default ``params.yaml`` is absent, a sibling ``menu.yaml`` stands in, so a migrated
-    project runs every command with no ``--params`` flag. Exits 1 when neither exists."""
-    path = Path(params_file)
-    if not path.exists() and path.name == "params.yaml":
-        sibling = path.with_name("menu.yaml")
-        if sibling.exists():
-            return str(sibling)
-    if not path.exists():
+    """Menu-aware resolution (shared :func:`kitchen.config.resolve_params_path`) plus the
+    run-command guard: exit 1 when neither ``params.yaml`` nor a sibling ``menu.yaml`` exists."""
+    from kitchen.config import resolve_params_path
+
+    resolved = resolve_params_path(params_file)
+    if not Path(resolved).exists():
         typer.echo(f"error: file not found: {params_file}", err=True)
         raise typer.Exit(1)
-    return str(path)
+    return resolved
 
 
 def _try_auto_promote(

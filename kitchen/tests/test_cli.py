@@ -253,6 +253,20 @@ def test_init_overwrite_flag(tmp_path, monkeypatch):
     assert sentinel.read_text() != "# modified", "--overwrite should replace existing files"
 
 
+def test_top_level_command_works_menu_only(tmp_path, monkeypatch):
+    """INT-007: a top-level command (validate) falls back to menu.yaml when params.yaml is
+    absent — no --params flag — and labels the resolved file as menu.yaml, not params.yaml."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(
+        "project: demo\npipeline: [train]\n"
+        "recipes:\n  train: {kind: stage, source: src/train/run.py}\n"
+        "mlflow:\n  tracking_uri: sqlite:///mlruns.db\n"
+    )
+    result = runner.invoke(app, ["validate"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert "menu.yaml" in result.output and "params.yaml" not in result.output
+
+
 # ---------------------------------------------------------------------------
 # kitchen open (LML-008)
 # ---------------------------------------------------------------------------

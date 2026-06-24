@@ -104,7 +104,9 @@ def dvc_init(
     # Resolve project name and source from params.yaml, or fall back to cwd name.
     project_name = Path.cwd().name
     is_kaggle = kaggle
-    p = Path(params_file)
+    from kitchen.config import resolve_params_path
+
+    p = Path(resolve_params_path(params_file))
     if p.exists():
         import yaml as _yaml
 

@@ -95,6 +95,7 @@ from kitchen._cli.dvc import (
 from kitchen._cli.experiments import _autodetect_metric, experiments_app
 from kitchen._cli.run import _coerce_override_value, run_app, run_sweep  # noqa: F401
 from kitchen._cli.serve import _serve_local_dashboard, dashboard_app, serve_app
+from kitchen.config import resolve_params_path  # menu-aware path fallback (INT-007)
 
 # Load .env from the project root (CWD) so MLFLOW_TRACKING_URI and other
 # credentials are available to all commands without the user needing to
@@ -182,6 +183,7 @@ def open_dashboard(
     import yaml
 
     url: str | None = None
+    params_file = resolve_params_path(params_file)
     params_path = Path(params_file)
     if params_path.exists():
         raw = yaml.safe_load(params_path.read_text(encoding="utf-8")) or {}
@@ -232,6 +234,7 @@ def status(
     cfg = None
     thresholds: dict = {}
     exp_name: str | None = experiment
+    params_file = resolve_params_path(params_file)
     params_path = Path(params_file)
     if params_path.exists():
         try:
@@ -388,6 +391,7 @@ def validate(
 
     from kitchen.config import KitchenConfig
 
+    params_file = resolve_params_path(params_file)
     path = Path(params_file)
     if not path.exists():
         typer.echo(f"error: file not found: {params_file}", err=True)
@@ -463,6 +467,7 @@ def secrets_template(
     from kitchen import secrets as secrets_mod
     from kitchen.config import KitchenConfig
 
+    params_file = resolve_params_path(params_file)
     path = Path(params_file)
     if not path.exists():
         typer.echo(f"error: file not found: {params_file}", err=True)
@@ -526,6 +531,7 @@ def secrets_iam_policy(
     from kitchen import secrets as secrets_mod
     from kitchen.config import KitchenConfig
 
+    params_file = resolve_params_path(params_file)
     path = Path(params_file)
     if not path.exists():
         typer.echo(f"error: file not found: {params_file}", err=True)
@@ -595,6 +601,7 @@ def secrets_export(
         raise typer.Exit(1)
 
     cfg: KitchenConfig | None = None
+    params_file = resolve_params_path(params_file)
     path = Path(params_file)
     if path.exists():
         try:
@@ -780,23 +787,23 @@ def _validate_name(name: str) -> str | None:
 def _resolve_experiment(experiment: str | None, params_file: str) -> str:
     if experiment:
         return experiment
-    from kitchen.config import KitchenConfig
+    from kitchen.config import KitchenConfig, resolve_params_path
 
-    p = Path(params_file)
+    p = Path(resolve_params_path(params_file))
     if p.exists():
         cfg = KitchenConfig.from_yaml(str(p))
         return cfg.experiment
     raise typer.BadParameter(
-        f"No experiment name given and {params_file!r} not found. "
+        f"No experiment name given and {params_file!r} (nor a sibling menu.yaml) found. "
         "Pass --experiment or run from a project directory."
     )
 
 
 def _resolve_model_artifact_path(params_file: str) -> str:
     """The name the project logs its model under (mlflow.model_artifact_path), default 'model'."""
-    from kitchen.config import KitchenConfig
+    from kitchen.config import KitchenConfig, resolve_params_path
 
-    p = Path(params_file)
+    p = Path(resolve_params_path(params_file))
     if p.exists():
         try:
             return KitchenConfig.from_yaml(str(p)).mlflow.model_artifact_path
@@ -1322,6 +1329,7 @@ def ingest(
     from kitchen.ingest import source_from_params
     from kitchen.store import DataStore
 
+    params_file = resolve_params_path(params_file)
     path = Path(params_file)
     if not path.exists():
         typer.echo(f"error: file not found: {params_file}", err=True)
@@ -1407,6 +1415,7 @@ def submit(
     from kitchen.store import DataStore
     from kitchen.submit import upload, validate_submission
 
+    params_file = resolve_params_path(params_file)
     path = Path(params_file)
     if not path.exists():
         typer.echo(f"error: file not found: {params_file}", err=True)
@@ -1604,7 +1613,7 @@ def check(
     # Hard-fail only when data.source=s3 or mlflow.artifact_bucket is set; skip for
     # pure Kaggle+SQLite projects that have no AWS dependency.
     _needs_aws: bool | None = None  # None = unknown (no params.yaml)
-    _params_path_early = Path(params_file)
+    _params_path_early = Path(resolve_params_path(params_file))
     if _params_path_early.exists():
         try:
             import yaml as _yaml_aws
@@ -1648,6 +1657,7 @@ def check(
             "Kaggle credentials", "create ~/.kaggle/kaggle.json or set KAGGLE_USERNAME + KAGGLE_KEY"
         )
 
+    params_file = resolve_params_path(params_file)
     params_path = Path(params_file)
     if params_path.exists():
         try:
@@ -1888,6 +1898,7 @@ def report(
 
     experiment = "unknown"
     cfg = None
+    params_file = resolve_params_path(params_file)
     params_path = Path(params_file)
     if params_path.exists():
         try:
@@ -2231,6 +2242,7 @@ def push(
 
     # --- Resolve experiment and model ---
     exp_name: str | None = None
+    params_file = resolve_params_path(params_file)
     params_path = Path(params_file)
     if params_path.exists():
         try:
