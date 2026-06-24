@@ -289,6 +289,9 @@ def dashboard_generate(
     results.sort(key=lambda r: r.get("timestamp", ""))
 
     project = "project"
+    from kitchen.config import resolve_params_path
+
+    params_file = resolve_params_path(params_file)
     if Path(params_file).exists():
         try:
             from kitchen.config import KitchenConfig

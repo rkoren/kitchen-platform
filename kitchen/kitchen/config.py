@@ -197,6 +197,23 @@ class SecretSpec(BaseModel):
         return "env"
 
 
+def resolve_params_path(params_file: str = "params.yaml") -> str:
+    """Resolve the config path, honoring the menu fallback (INT-007). When the default
+    ``params.yaml`` is requested but absent, a sibling ``menu.yaml`` stands in — so every
+    command works in a menu-only project with no ``--params`` flag. Resolve-only: returns the
+    path string (caller decides how to handle a still-missing file); an explicit non-default
+    path is returned unchanged.
+    """
+    from pathlib import Path
+
+    p = Path(params_file)
+    if not p.exists() and p.name == "params.yaml":
+        sibling = p.with_name("menu.yaml")
+        if sibling.exists():
+            return str(sibling)
+    return str(p)
+
+
 _LEGACY_PARAMS_WARNED = False
 
 

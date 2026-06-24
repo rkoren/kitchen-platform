@@ -5,13 +5,15 @@ from typing import Annotated
 
 import typer
 
+from kitchen.config import resolve_params_path  # menu-aware path fallback (INT-007)
+
 
 def _resolve_experiment(experiment: str | None, params_file: str) -> str:
     if experiment:
         return experiment
     from kitchen.config import KitchenConfig
 
-    p = Path(params_file)
+    p = Path(resolve_params_path(params_file))
     if p.exists():
         cfg = KitchenConfig.from_yaml(str(p))
         return cfg.experiment
@@ -173,11 +175,11 @@ def _autodetect_metric(
     """Return (metric_name, higher_is_better).
 
     Priority:
-    1. First key in params.yaml thresholds — direction inferred from spec type.
+    1. First key in params.yaml/menu.yaml thresholds — direction inferred from spec type.
     2. First val_* key logged in the most recent run — assumed higher-is-better.
     3. Hard fallback: "val_accuracy", higher-is-better.
     """
-    p = Path(params_file)
+    p = Path(resolve_params_path(params_file))
     if p.exists():
         try:
             from kitchen.config import KitchenConfig, ThresholdSpec

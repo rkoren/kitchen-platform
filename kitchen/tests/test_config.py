@@ -70,6 +70,29 @@ def test_from_yaml_prefers_params_when_both_present(tmp_path):
     assert cfg.experiment == "from-params"  # no auto-prefer surprise
 
 
+# --- INT-007: shared menu-aware path resolver (used by every top-level command) ---
+
+
+def test_resolve_params_path_falls_back_to_menu(tmp_path, monkeypatch):
+    from kitchen.config import resolve_params_path
+
+    monkeypatch.chdir(tmp_path)
+    assert resolve_params_path("params.yaml") == "params.yaml"  # neither exists → unchanged
+    (tmp_path / "menu.yaml").write_text("project: p\nrecipes: {}\n")
+    assert resolve_params_path("params.yaml") == "menu.yaml"  # default absent → sibling menu
+    (tmp_path / "params.yaml").write_text("experiment: p\n")
+    assert resolve_params_path("params.yaml") == "params.yaml"  # present → respected
+
+
+def test_resolve_params_path_respects_explicit_nondefault(tmp_path, monkeypatch):
+    from kitchen.config import resolve_params_path
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text("project: p\nrecipes: {}\n")
+    # an explicit non-"params.yaml" path is never rewritten to menu.yaml
+    assert resolve_params_path("custom.yaml") == "custom.yaml"
+
+
 # --- DataConfig ---
 
 
