@@ -33,9 +33,8 @@ EXPECTED_FILES = [
     "CLAUDE.md",
     ".env.example",
     ".gitignore",
-    "params.yaml",
+    "menu.yaml",
     "pyproject.toml",
-    "infra/my-competition.yaml",
     "src/__init__.py",
     "src/features/__init__.py",
     "src/features/run.py",
@@ -82,29 +81,35 @@ def test_all_expected_files_created(scaffold):
         assert (scaffold / rel).exists(), f"Missing scaffolded file: {rel}"
 
 
-def test_params_yaml_parses(scaffold):
-    content = yaml.safe_load((scaffold / "params.yaml").read_text())
+def test_menu_yaml_parses(scaffold):
+    content = yaml.safe_load((scaffold / "menu.yaml").read_text())
+    assert content["project"] == "my-competition"
     assert content["experiment"] == "my-competition"
+    assert content["pipeline"] == ["train", "evaluate"]
     assert "features" in content
     assert "model" in content
 
 
-def test_infra_yaml_parses(scaffold):
-    content = yaml.safe_load((scaffold / "infra/my-competition.yaml").read_text())
-    assert content["name"] == "my-competition"
-    assert isinstance(content["resources"], list)
+def test_menu_yaml_carries_infra_recipes(scaffold):
+    """Infra lives in the unified menu (INT-007b) — no separate infra/<name>.yaml that would
+    share Terraform state with the menu (the INT-010 collision)."""
+    assert not (scaffold / "infra" / "my-competition.yaml").exists()
+    content = yaml.safe_load((scaffold / "menu.yaml").read_text())
+    recipes = content["recipes"]
+    kinds = {r.get("kind") for r in recipes.values()}
+    assert {"stage", "s3", "ecr", "iam_role"} <= kinds  # stages + deployable infra
 
 
-def test_infra_yaml_uses_correct_lambda_field_names(scaffold):
-    raw = (scaffold / "infra/my-competition.yaml").read_text()
+def test_menu_yaml_uses_correct_lambda_field_names(scaffold):
+    raw = (scaffold / "menu.yaml").read_text()
     assert "memory_mb" not in raw, "Scaffold emits deprecated memory_mb"
     assert "timeout_s" not in raw, "Scaffold emits deprecated timeout_s"
-    assert "memory:" in raw
+    assert "memory:" in raw  # in the commented serving-lambda example
     assert "timeout:" in raw
 
 
-def test_infra_yaml_has_no_maintainer_names(scaffold):
-    raw = (scaffold / "infra/my-competition.yaml").read_text()
+def test_menu_yaml_has_no_maintainer_names(scaffold):
+    raw = (scaffold / "menu.yaml").read_text()
     assert "reilly" not in raw.lower(), "Scaffold contains maintainer-specific name"
 
 
@@ -224,14 +229,14 @@ def test_init_here_flag(tmp_path, monkeypatch):
     result = runner.invoke(app, ["init", "my-competition", "--here"], catch_exceptions=False)
     assert result.exit_code == 0
     # Files land in cwd, not a subdirectory
-    assert (tmp_path / "params.yaml").exists()
-    assert not (tmp_path / "my-competition" / "params.yaml").exists()
+    assert (tmp_path / "menu.yaml").exists()
+    assert not (tmp_path / "my-competition" / "menu.yaml").exists()
 
 
 def test_init_skips_existing_files(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)
-    sentinel = tmp_path / "my-competition" / "params.yaml"
+    sentinel = tmp_path / "my-competition" / "menu.yaml"
     sentinel.write_text("# modified")
     runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)
     assert sentinel.read_text() == "# modified", (
@@ -242,7 +247,7 @@ def test_init_skips_existing_files(tmp_path, monkeypatch):
 def test_init_overwrite_flag(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)
-    sentinel = tmp_path / "my-competition" / "params.yaml"
+    sentinel = tmp_path / "my-competition" / "menu.yaml"
     sentinel.write_text("# modified")
     runner.invoke(app, ["init", "my-competition", "--overwrite"], catch_exceptions=False)
     assert sentinel.read_text() != "# modified", "--overwrite should replace existing files"
@@ -1280,7 +1285,7 @@ def test_init_kaggle_source_params_yaml(tmp_path, monkeypatch):
         catch_exceptions=False,
     )
     assert result.exit_code == 0
-    params = yaml.safe_load((tmp_path / "march-mania" / "params.yaml").read_text())
+    params = yaml.safe_load((tmp_path / "march-mania" / "menu.yaml").read_text())
     assert params["data"]["source"] == "kaggle"
     assert params["data"]["competition"] == "march-ml-mania-2026"
     assert "submission" in params
@@ -1396,7 +1401,7 @@ def test_init_baseline_lgbm_params_hint(tmp_path, monkeypatch):
         ["init", "my-comp", "--template", "baseline-lgbm"],
         catch_exceptions=False,
     )
-    params_src = (tmp_path / "my-comp" / "params.yaml").read_text()
+    params_src = (tmp_path / "my-comp" / "menu.yaml").read_text()
     assert "lgbm:" in params_src
     assert "num_leaves" in params_src
 
@@ -1425,7 +1430,7 @@ def test_init_baseline_xgb_params_yaml(tmp_path, monkeypatch):
     """params.yaml for baseline-xgb should have xgb: section uncommented."""
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-comp", "--template", "baseline-xgb"], catch_exceptions=False)
-    params = yaml.safe_load((tmp_path / "my-comp" / "params.yaml").read_text())
+    params = yaml.safe_load((tmp_path / "my-comp" / "menu.yaml").read_text())
     assert "xgb" in params["model"], "xgb: section should be uncommented for baseline-xgb"
     assert params["model"]["xgb"]["n_estimators"] == 300
 
@@ -1434,7 +1439,7 @@ def test_init_baseline_lgbm_params_yaml(tmp_path, monkeypatch):
     """params.yaml for baseline-lgbm should have lgbm: section uncommented."""
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-comp", "--template", "baseline-lgbm"], catch_exceptions=False)
-    params = yaml.safe_load((tmp_path / "my-comp" / "params.yaml").read_text())
+    params = yaml.safe_load((tmp_path / "my-comp" / "menu.yaml").read_text())
     assert "lgbm" in params["model"], "lgbm: section should be uncommented for baseline-lgbm"
     assert params["model"]["lgbm"]["num_leaves"] == 31
 
@@ -1443,7 +1448,7 @@ def test_init_baseline_lr_params_yaml(tmp_path, monkeypatch):
     """params.yaml for baseline-lr should have lr: section uncommented."""
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-comp", "--template", "baseline-lr"], catch_exceptions=False)
-    params = yaml.safe_load((tmp_path / "my-comp" / "params.yaml").read_text())
+    params = yaml.safe_load((tmp_path / "my-comp" / "menu.yaml").read_text())
     assert "lr" in params["model"], "lr: section should be uncommented for baseline-lr"
     assert params["model"]["lr"]["C"] == 1.0
 
@@ -1452,7 +1457,7 @@ def test_init_baseline_rf_params_yaml(tmp_path, monkeypatch):
     """params.yaml for baseline-rf should have rf: section uncommented."""
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-comp", "--template", "baseline-rf"], catch_exceptions=False)
-    params = yaml.safe_load((tmp_path / "my-comp" / "params.yaml").read_text())
+    params = yaml.safe_load((tmp_path / "my-comp" / "menu.yaml").read_text())
     assert "rf" in params["model"], "rf: section should be uncommented for baseline-rf"
     assert params["model"]["rf"]["n_estimators"] == 300
 
@@ -1638,7 +1643,7 @@ def test_init_tabular_ts_params_hint(tmp_path, monkeypatch):
         ["init", "my-comp", "--template", "tabular-ts"],
         catch_exceptions=False,
     )
-    params_src = (tmp_path / "my-comp" / "params.yaml").read_text()
+    params_src = (tmp_path / "my-comp" / "menu.yaml").read_text()
     assert "date_col" in params_src
     assert "val_frac" in params_src
     assert "  date_col:" in params_src  # uncommented, not a hint comment
@@ -1657,7 +1662,7 @@ def test_init_tabular_ts_kaggle_params_hint(tmp_path, monkeypatch):
         ],
         catch_exceptions=False,
     )
-    params_src = (tmp_path / "my-comp" / "params.yaml").read_text()
+    params_src = (tmp_path / "my-comp" / "menu.yaml").read_text()
     assert "date_col" in params_src
     assert "val_frac" in params_src
 
@@ -1748,7 +1753,7 @@ def test_init_kaggle_with_template(tmp_path, monkeypatch):
         catch_exceptions=False,
     )
     assert result.exit_code == 0
-    params = yaml.safe_load((tmp_path / "mania" / "params.yaml").read_text())
+    params = yaml.safe_load((tmp_path / "mania" / "menu.yaml").read_text())
     assert params["data"]["source"] == "kaggle"
     train_src = (tmp_path / "mania" / "src" / "train" / "run.py").read_text()
     assert "XGBClassifier" in train_src

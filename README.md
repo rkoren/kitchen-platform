@@ -92,8 +92,7 @@ my-kaggle-project/
 │   ├── evaluate/run.py    # def evaluate(model, params, store) -> dict
 │   └── submit/run.py      # def generate(model, params, store) -> (df, path)
 ├── predictor.py           # def predict(payload: dict) -> dict
-├── params.yaml
-├── infra.yaml
+├── menu.yaml               # unified manifest: pipeline + recipes (infra & stages) + ML config
 └── dvc.yaml
 ```
 
@@ -115,7 +114,7 @@ if __name__ == "__main__":
     from kitchen.tracking import Tracker
     import yaml
 
-    with open("params.yaml") as f:
+    with open("menu.yaml") as f:
         params = yaml.safe_load(f)
 
     XGBTrainer().run(DataStore(), Tracker(params["experiment"]), params)
@@ -133,10 +132,25 @@ def predict(payload: dict) -> dict:
     return {"prediction": int(_model.predict([features])[0])}
 ```
 
-#### `params.yaml` schema
+#### `menu.yaml` — the unified manifest
+
+`kitchen init` scaffolds a single **`menu.yaml`**: the one source of truth the platform reads.
+It wraps the ML config below in a `project`, an ordered `pipeline`, and a `recipes:` map (each
+entry is a stage's code or an infra resource — `kind: stage | s3 | ecr | iam_role | rds | …`).
+Drive everything with `kitchen menu run`; every `kitchen` command also reads this file directly.
+A legacy `params.yaml` (the ML fields only) still loads transparently during the deprecation
+window.
 
 ```yaml
-experiment: my-project          # MLflow experiment name (required)
+project: my-project             # Terraform state key + default experiment name
+pipeline: [train, evaluate]     # ordered run sequence (add `provision` to deploy infra first)
+recipes:
+  train: { kind: stage, source: src/train/run.py, args: ["--auto-promote"] }
+  evaluate: { kind: stage, source: src/evaluate/run.py }
+  my-project-data: { kind: s3, versioning: true }   # infra: deploy with `recipes apply menu.yaml`
+
+# --- ML config (shared with the legacy params.yaml; project sections pass through) ---
+experiment: my-project          # MLflow experiment name (defaults to `project`)
 run_name: baseline-xgb          # optional label for each MLflow run
 
 data:
@@ -184,7 +198,7 @@ ci:                             # optional: CI behavior knobs (read by the scaff
     when: failure               # failure | success | always  (not `on:` — YAML reads it as true)
 ```
 
-**Framework-owned fields** (`experiment`, `data`, `mlflow`, `monitor`, `submission`, `run_name`, `metrics_file`, `thresholds`, `ci`) are validated by `KitchenConfig` when `kitchen validate` or `kitchen run *` commands load `params.yaml`. All other top-level keys (`train`, `features`, `model`, `evaluate`, etc.) are project-defined and passed through without validation.
+**Framework-owned fields** (`experiment`, `data`, `mlflow`, `monitor`, `submission`, `run_name`, `metrics_file`, `thresholds`, `ci`) are validated by `KitchenConfig` when `kitchen validate` or `kitchen run *` commands load `menu.yaml` (or a legacy `params.yaml`). All other top-level keys (`train`, `features`, `model`, `evaluate`, etc.) are project-defined and passed through without validation.
 
 The scaffolded `train-evaluate.yml` runs main-branch pushes under the `production` GitHub Environment and all other runs (PRs) under `staging`, so you can attach branch rules, required reviewers, and scoped secrets per environment (see [`docs/kitchen/ci-cd.md`](docs/kitchen/ci-cd.md)). `ci.auto_submit` lets a main-branch push submit to Kaggle without the manual `workflow_dispatch` toggle.
 

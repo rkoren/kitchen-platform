@@ -197,6 +197,29 @@ class SecretSpec(BaseModel):
         return "env"
 
 
+_LEGACY_PARAMS_WARNED = False
+
+
+def _warn_legacy_params(path: "object") -> None:
+    """Warn once per process that a legacy ``params.yaml`` was read (INT-007b).
+
+    ``kitchen init`` now scaffolds a unified ``menu.yaml``; ``params.yaml`` still loads
+    transparently during the deprecation window. Fired only on the legacy branch, so a
+    ``menu.yaml`` project never sees it."""
+    global _LEGACY_PARAMS_WARNED
+    if _LEGACY_PARAMS_WARNED:
+        return
+    _LEGACY_PARAMS_WARNED = True
+    import warnings
+
+    warnings.warn(
+        f"{path}: loading a legacy params.yaml. The platform now uses a unified menu.yaml "
+        "(run `kitchen init` to see the new layout); params.yaml still works for now.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
 class KitchenConfig(BaseModel):
     """Top-level model for params.yaml.
 
@@ -265,4 +288,5 @@ class KitchenConfig(BaseModel):
 
         if is_menu(raw):
             return Menu.model_validate(raw).to_kitchen_config()
+        _warn_legacy_params(target)
         return cls(**raw)

@@ -61,15 +61,14 @@ from kitchen._cli._templates import (
     _FEATURES_RUN,
     _GENERATE_SUBMISSION_PY,
     _GITIGNORE,
-    _INFRA_YAML,
+    _MENU_YAML,
+    _MENU_YAML_KAGGLE,
     _MODEL_SECTION_GENERIC,
     _MODEL_SECTION_LGBM,
     _MODEL_SECTION_LR,
     _MODEL_SECTION_RF,
     _MODEL_SECTION_TS,
     _MODEL_SECTION_XGB,
-    _PARAMS_YAML,
-    _PARAMS_YAML_KAGGLE,
     _PREDICTOR_PY,
     _PROMOTE_PY,
     _PYPROJECT_TOML,
@@ -2465,7 +2464,7 @@ def init(
 
     r = _render  # shorthand
 
-    params_tmpl = _PARAMS_YAML_KAGGLE if source == "kaggle" else _PARAMS_YAML
+    menu_tmpl = _MENU_YAML_KAGGLE if source == "kaggle" else _MENU_YAML
     params_extra = {"competition": competition} if source == "kaggle" else {}
 
     params_extra["model_section"] = {
@@ -2514,9 +2513,8 @@ def init(
         (root / "CLAUDE.md", r(_CLAUDE_MD, name, class_name)),
         (root / ".env.example", r(_ENV_EXAMPLE, name, class_name)),
         (root / ".gitignore", r(_GITIGNORE, name, class_name)),
-        (root / "params.yaml", r(params_tmpl, name, class_name, **params_extra)),
+        (root / "menu.yaml", r(menu_tmpl, name, class_name, **params_extra)),
         (root / "pyproject.toml", r(_PYPROJECT_TOML, name, class_name, model_deps=model_deps)),
-        (root / "infra" / f"{name}.yaml", r(_INFRA_YAML, name, class_name)),
         (root / "src" / "__init__.py", ""),
         (root / "src" / "features" / "__init__.py", ""),
         (root / "src" / "features" / "run.py", r(_FEATURES_RUN, name, class_name)),
