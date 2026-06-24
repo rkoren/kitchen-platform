@@ -1,0 +1,1707 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="IaC CLI (recipes) and reusable MLOps framework (kitchen) for Kaggle and modeling projects">
+      
+      
+      
+        <link rel="canonical" href="https://rkoren.github.io/kitchen-platform/kitchen/troubleshooting/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Troubleshooting - kitchen-platform</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#troubleshooting" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="kitchen-platform" class="md-header__button md-logo" aria-label="kitchen-platform" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            kitchen-platform
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Troubleshooting
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/rkoren/kitchen-platform" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    rkoren/kitchen-platform
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../quickstart/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Quickstart
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../recipes/" class="md-tabs__link">
+          
+  
+  
+  recipes
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  kitchen
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../notebooks/exploration/" class="md-tabs__link">
+          
+  
+  
+  Notebooks
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="kitchen-platform" class="md-nav__button md-logo" aria-label="kitchen-platform" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    kitchen-platform
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/rkoren/kitchen-platform" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    rkoren/kitchen-platform
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    recipes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    recipes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/yaml-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YAML Spec Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/ci-cd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    kitchen
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    kitchen
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kaggle-quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kaggle Competition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-versioning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Versioning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../experiment-tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../model-serving/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Serving
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modeling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modeling Helpers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ci-cd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notebooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Notebooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../notebooks/exploration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notebook-First Exploration with kitchen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#pipeline-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pipeline steps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pipeline steps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-kitchen-run-step-fails-with-a-one-line-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A kitchen run step fails with a one-line error
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kaggle-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Kaggle credentials
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Kaggle credentials">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#401-unauthorized-from-kitchen-ingest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        401 Unauthorized from kitchen ingest
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kitchen-check-says-kaggle-credentials-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kitchen check says Kaggle credentials missing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#403-forbidden-competition-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        403 Forbidden — competition access
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mlflow-local-sqlite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MLflow — local SQLite
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MLflow — local SQLite">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-mlflow-tracking-store-schema-is-out-of-date" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        error: MLflow tracking store schema is out of date
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mlflowexception-could-not-find-experiment-with-id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MlflowException: Could not find experiment with ID
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mlflow-ui-shows-no-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MLflow UI shows no runs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sqlite3operationalerror-database-is-locked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sqlite3.OperationalError: database is locked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runs-logged-but-model-not-in-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runs logged but model not in registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mlflow-s3-artifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MLflow — S3 artifacts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MLflow — S3 artifacts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#botocoreexceptionsnocredentialserror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        botocore.exceptions.NoCredentialsError
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clienterror-access-denied-on-s3-artifact-upload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ClientError: Access Denied on S3 artifact upload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#artifact-uri-shows-mlartifacts-instead-of-s3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Artifact URI shows ./mlartifacts instead of s3://...
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-the-champions-stored-artifact-location-is-not-reachable-from-this-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        error: the champion's stored artifact location is not reachable from this environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#terraform-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terraform state
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Terraform state">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-no-valid-credential-sources-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: No valid credential sources found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-acquiring-the-state-lock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error acquiring the state lock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-s3-bucket-does-not-exist-remote-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: S3 bucket does not exist (remote state)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-resource-already-exists-after-importing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: Resource already exists after importing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ecr-and-lambda-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ECR and Lambda deployment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ECR and Lambda deployment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#denied-your-authorization-token-has-expired" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        denied: Your authorization token has expired
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-imagenotfoundexception-on-lambda-invoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: ImageNotFoundException on Lambda invoke
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-timed-out-on-first-lambda-invoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task timed out on first Lambda invoke
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-predict-returns-501-not-implemented" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /predict returns 501 Not Implemented
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lambda-logs-show-predictorloaderror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lambda logs show PredictorLoadError
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h1>
+<p>Common issues and how to fix them.</p>
+<hr />
+<h2 id="pipeline-steps">Pipeline steps<a class="headerlink" href="#pipeline-steps" title="Permanent link">&para;</a></h2>
+<h3 id="a-kitchen-run-step-fails-with-a-one-line-error">A <code>kitchen run</code> step fails with a one-line error<a class="headerlink" href="#a-kitchen-run-step-fails-with-a-one-line-error" title="Permanent link">&para;</a></h3>
+<p><code>kitchen run features</code>, <code>kitchen run train</code>, and <code>kitchen run evaluate</code> execute your
+project's own <code>build</code> / <code>train</code> / <code>evaluate</code> code. When that code raises, the command
+prints a clean one-line summary so the failure isn't buried in a stack trace:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>error during evaluation: &#39;is_tourn&#39;
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)
+</code></pre></div>
+<p>To debug your own step, re-run with the full traceback (file and line):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kitchen<span class="w"> </span>run<span class="w"> </span>evaluate<span class="w"> </span>--debug<span class="w">      </span><span class="c1"># or: KITCHEN_DEBUG=1 kitchen run evaluate</span>
+</code></pre></div>
+<p><code>KITCHEN_DEBUG=1</code> applies to every <code>kitchen run</code> step, which is handy in CI logs.</p>
+<hr />
+<h2 id="kaggle-credentials">Kaggle credentials<a class="headerlink" href="#kaggle-credentials" title="Permanent link">&para;</a></h2>
+<h3 id="401-unauthorized-from-kitchen-ingest"><code>401 Unauthorized</code> from <code>kitchen ingest</code><a class="headerlink" href="#401-unauthorized-from-kitchen-ingest" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kaggle.rest.ApiException: (401) Unauthorized
+</code></pre></div>
+<p><strong>Cause:</strong> Kaggle API credentials are missing or wrong.</p>
+<p><strong>Fix:</strong></p>
+<ol>
+<li>Go to <a href="https://www.kaggle.com/settings">kaggle.com/settings</a> → <strong>Account</strong> → <strong>API</strong> → <strong>Create New Token</strong>. This downloads <code>kaggle.json</code>.</li>
+<li>
+<p>Copy the values into your project <code>.env</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">KAGGLE_USERNAME</span><span class="o">=</span>your-username
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">KAGGLE_KEY</span><span class="o">=</span>your-api-key
+</code></pre></div>
+</li>
+<li>
+<p>Run <code>kitchen check</code> to confirm the credentials are picked up.</p>
+</li>
+</ol>
+<hr />
+<h3 id="kitchen-check-says-kaggle-credentials-missing"><code>kitchen check</code> says Kaggle credentials missing<a class="headerlink" href="#kitchen-check-says-kaggle-credentials-missing" title="Permanent link">&para;</a></h3>
+<p><code>kitchen check</code> looks for <code>KAGGLE_USERNAME</code> and <code>KAGGLE_KEY</code> in the environment (loaded from <code>.env</code> via python-dotenv).</p>
+<ul>
+<li>Confirm <code>.env</code> exists (not <code>.env.example</code>) in the project root.</li>
+<li>Confirm the values are not blank.</li>
+<li>If you moved the project directory, re-run <code>cp .env.example .env</code> and re-fill it.</li>
+</ul>
+<hr />
+<h3 id="403-forbidden-competition-access"><code>403 Forbidden</code> — competition access<a class="headerlink" href="#403-forbidden-competition-access" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>404 - Not Found (competition not found or you have not accepted the rules)
+</code></pre></div>
+<p><strong>Fix:</strong> Go to the competition page on Kaggle and click <strong>Join Competition</strong> / <strong>Accept Rules</strong>. You must accept the rules before the API can download data.</p>
+<hr />
+<h2 id="mlflow-local-sqlite">MLflow — local SQLite<a class="headerlink" href="#mlflow-local-sqlite" title="Permanent link">&para;</a></h2>
+<h3 id="error-mlflow-tracking-store-schema-is-out-of-date"><code>error: MLflow tracking store schema is out of date</code><a class="headerlink" href="#error-mlflow-tracking-store-schema-is-out-of-date" title="Permanent link">&para;</a></h3>
+<p>After upgrading kitchen (which may bump MLflow), an <code>mlruns.db</code> created by an older MLflow
+can no longer be read. Kitchen detects this and prints remediation instead of a raw MLflow
+traceback:</p>
+<p><strong>Fix:</strong> Upgrade the schema in place (preserves run history):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>mlflow<span class="w"> </span>db<span class="w"> </span>upgrade<span class="w"> </span>sqlite:///mlruns.db
+</code></pre></div>
+<p>If that fails with <code>Can't locate revision …</code>, the database predates the current MLflow's
+migration history — archive it and start fresh (local run history is lost):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>mv<span class="w"> </span>mlruns.db<span class="w"> </span>mlruns.db.bak
+</code></pre></div>
+<p>To keep run history across MLflow upgrades, use a remote/S3-backed tracking server instead
+of local SQLite.</p>
+<hr />
+<h3 id="mlflowexception-could-not-find-experiment-with-id"><code>MlflowException: Could not find experiment with ID</code><a class="headerlink" href="#mlflowexception-could-not-find-experiment-with-id" title="Permanent link">&para;</a></h3>
+<p>Usually happens when <code>mlruns.db</code> exists from a different project or was moved.</p>
+<p><strong>Fix:</strong> Either delete <code>mlruns.db</code> and start fresh, or point <code>MLFLOW_TRACKING_URI</code> to the correct path:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">MLFLOW_TRACKING_URI</span><span class="o">=</span>sqlite:///<span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/mlruns.db
+</code></pre></div>
+<hr />
+<h3 id="mlflow-ui-shows-no-runs">MLflow UI shows no runs<a class="headerlink" href="#mlflow-ui-shows-no-runs" title="Permanent link">&para;</a></h3>
+<p><code>kitchen ui</code> opens the UI for the tracking URI in <code>params.yaml</code>. If runs were logged with a different URI (e.g. a previous absolute path), they won't appear.</p>
+<p><strong>Fix:</strong> Check the URI used during training:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import mlflow; print(mlflow.get_tracking_uri())&quot;</span>
+</code></pre></div>
+<p>Then run <code>kitchen ui</code> with that URI or update <code>params.yaml → mlflow → tracking_uri</code>.</p>
+<hr />
+<h3 id="sqlite3operationalerror-database-is-locked"><code>sqlite3.OperationalError: database is locked</code><a class="headerlink" href="#sqlite3operationalerror-database-is-locked" title="Permanent link">&para;</a></h3>
+<p>Two processes are writing to the same <code>mlruns.db</code> simultaneously.</p>
+<p><strong>Fix:</strong> Stop all running <code>kitchen run train</code> processes before starting another, or switch to a PostgreSQL backend for parallel runs.</p>
+<hr />
+<h3 id="runs-logged-but-model-not-in-registry">Runs logged but model not in registry<a class="headerlink" href="#runs-logged-but-model-not-in-registry" title="Permanent link">&para;</a></h3>
+<p><code>kitchen promote</code> registers the model. If you only ran <code>kitchen run train</code> without <code>--auto-promote</code>, or if promote was run against a different tracking URI, the registry will be empty.</p>
+<p><strong>Fix:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kitchen<span class="w"> </span>leaderboard<span class="w">           </span><span class="c1"># confirm runs are visible</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kitchen<span class="w"> </span>promote<span class="w"> </span>val_accuracy<span class="w">  </span><span class="c1"># register the best run</span>
+</code></pre></div>
+<hr />
+<h2 id="mlflow-s3-artifacts">MLflow — S3 artifacts<a class="headerlink" href="#mlflow-s3-artifacts" title="Permanent link">&para;</a></h2>
+<h3 id="botocoreexceptionsnocredentialserror"><code>botocore.exceptions.NoCredentialsError</code><a class="headerlink" href="#botocoreexceptionsnocredentialserror" title="Permanent link">&para;</a></h3>
+<p>MLflow is trying to upload artifacts to S3 but AWS credentials are not configured.</p>
+<p><strong>Fix (local):</strong> Set credentials in <code>.env</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nv">AWS_PROFILE</span><span class="o">=</span>default
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="c1"># or</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nv">AWS_ACCESS_KEY_ID</span><span class="o">=</span>...
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="nv">AWS_SECRET_ACCESS_KEY</span><span class="o">=</span>...
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="nv">AWS_DEFAULT_REGION</span><span class="o">=</span>us-east-1
+</code></pre></div>
+<p><strong>Fix (CI):</strong> Add <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code> as GitHub Actions secrets, or configure OIDC federation (recommended).</p>
+<hr />
+<h3 id="clienterror-access-denied-on-s3-artifact-upload"><code>ClientError: Access Denied</code> on S3 artifact upload<a class="headerlink" href="#clienterror-access-denied-on-s3-artifact-upload" title="Permanent link">&para;</a></h3>
+<p>The IAM identity doesn't have <code>s3:PutObject</code> on the artifact bucket.</p>
+<p><strong>Fix:</strong> Add <code>AmazonS3FullAccess</code> or a scoped policy to the IAM role/user. If using <code>recipes</code>, add <code>arn:aws:iam::aws:policy/AmazonS3FullAccess</code> to the <code>iam_role.policies</code> list (or scope it to the specific bucket ARN).</p>
+<hr />
+<h3 id="artifact-uri-shows-mlartifacts-instead-of-s3">Artifact URI shows <code>./mlartifacts</code> instead of <code>s3://...</code><a class="headerlink" href="#artifact-uri-shows-mlartifacts-instead-of-s3" title="Permanent link">&para;</a></h3>
+<p><code>mlflow.artifact_bucket</code> in <code>params.yaml</code> is not set, and <code>MLFLOW_ARTIFACT_ROOT</code> is not in the environment.</p>
+<p><strong>Fix:</strong> Set <code>mlflow.artifact_bucket</code> in <code>params.yaml</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">mlflow</span><span class="p">:</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">tracking_uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sqlite:///mlruns.db</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">artifact_bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-project-data</span>
+</code></pre></div>
+<hr />
+<h3 id="error-the-champions-stored-artifact-location-is-not-reachable-from-this-environment"><code>error: the champion's stored artifact location is not reachable from this environment</code><a class="headerlink" href="#error-the-champions-stored-artifact-location-is-not-reachable-from-this-environment" title="Permanent link">&para;</a></h3>
+<p><code>kitchen run evaluate</code> (or a <code>predictor.py</code> loading the champion via
+<code>kitchen.serve.load_champion</code>) detected that the registered model version's stored
+artifact <code>source</code> points at a location this machine can't reach. The usual cause is
+<strong>migrating the tracking store</strong> — e.g. from a local <code>sqlite:///mlruns.db</code> to a remote
+MLflow server — or moving the project: the model version still records its original,
+local artifact path, which no longer exists here. A model version's <code>source</code> is
+immutable, so it can't be edited in place.</p>
+<p><strong>Fix:</strong> pick one:</p>
+<ol>
+<li>Re-train and re-promote against the current store:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kitchen<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--auto-promote<span class="w"> </span>--promote-metric<span class="w"> </span>&lt;metric&gt;
+</code></pre></div>
+<ol>
+<li>
+<p>Re-register a run whose artifacts already live in the current store, then re-point
+   the alias: <code>kitchen promote &lt;metric&gt;</code> (or <code>kitchen promote --run-id &lt;id&gt;</code>).</p>
+</li>
+<li>
+<p>If you still have the original artifacts, copy them to the location named in the
+   error so the recorded <code>source</code> resolves again.</p>
+</li>
+</ol>
+<p>Re-run with <code>--debug</code> (or <code>KITCHEN_DEBUG=1</code>) to see the underlying MLflow traceback.</p>
+<hr />
+<h2 id="terraform-state">Terraform state<a class="headerlink" href="#terraform-state" title="Permanent link">&para;</a></h2>
+<p>The generated S3 backend encrypts state at rest (<code>encrypt = true</code>) and locks it using
+the S3-native lockfile (<code>use_lockfile = true</code>) — no DynamoDB table is required. The
+<code>bootstrap-aws.sh</code> state bucket also enables default SSE (AES256) and versioning.
+S3-native locking needs <strong>Terraform &gt;= 1.10</strong>; the backend declares
+<code>required_version = "&gt;= 1.10"</code>, so older Terraform fails <code>init</code> with a clear version
+error rather than running unlocked.</p>
+<h3 id="error-no-valid-credential-sources-found"><code>Error: No valid credential sources found</code><a class="headerlink" href="#error-no-valid-credential-sources-found" title="Permanent link">&para;</a></h3>
+<p>Terraform cannot authenticate to AWS when running <code>terraform apply</code>.</p>
+<p><strong>Fix:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>aws<span class="w"> </span>configure<span class="w">          </span><span class="c1"># set up default profile</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="c1"># or</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AWS_PROFILE</span><span class="o">=</span>my-profile
+</code></pre></div>
+<p>In CI, set <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code> as secrets, or configure the <code>aws-actions/configure-aws-credentials</code> action with OIDC.</p>
+<hr />
+<h3 id="error-acquiring-the-state-lock"><code>Error acquiring the state lock</code><a class="headerlink" href="#error-acquiring-the-state-lock" title="Permanent link">&para;</a></h3>
+<p>Another <code>terraform apply</code> is running (or a previous run crashed without releasing the lock).</p>
+<p><strong>Fix:</strong> Check for other running applies. If none, force-unlock:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Get the lock ID from the error message</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>terraform<span class="w"> </span>force-unlock<span class="w"> </span>&lt;LOCK-ID&gt;
+</code></pre></div>
+<hr />
+<h3 id="error-s3-bucket-does-not-exist-remote-state"><code>Error: S3 bucket does not exist</code> (remote state)<a class="headerlink" href="#error-s3-bucket-does-not-exist-remote-state" title="Permanent link">&para;</a></h3>
+<p>The S3 bucket configured as the Terraform state backend doesn't exist yet.</p>
+<p><strong>Fix:</strong> Create the state bucket manually before running <code>terraform init</code>. The state bucket itself cannot be managed by the same Terraform config that uses it as a backend.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>aws<span class="w"> </span>s3<span class="w"> </span>mb<span class="w"> </span>s3://my-project-tf-state<span class="w"> </span>--region<span class="w"> </span>us-east-1
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>aws<span class="w"> </span>s3api<span class="w"> </span>put-bucket-versioning<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">  </span>--bucket<span class="w"> </span>my-project-tf-state<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span>--versioning-configuration<span class="w"> </span><span class="nv">Status</span><span class="o">=</span>Enabled
+</code></pre></div>
+<hr />
+<h3 id="error-resource-already-exists-after-importing"><code>Error: Resource already exists</code> after importing<a class="headerlink" href="#error-resource-already-exists-after-importing" title="Permanent link">&para;</a></h3>
+<p>If a resource was created outside Terraform (e.g. via the console), import it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>terraform<span class="w"> </span>import<span class="w"> </span>aws_s3_bucket.my_bucket<span class="w"> </span>my-bucket-name
+</code></pre></div>
+<hr />
+<h2 id="ecr-and-lambda-deployment">ECR and Lambda deployment<a class="headerlink" href="#ecr-and-lambda-deployment" title="Permanent link">&para;</a></h2>
+<h3 id="denied-your-authorization-token-has-expired"><code>denied: Your authorization token has expired</code><a class="headerlink" href="#denied-your-authorization-token-has-expired" title="Permanent link">&para;</a></h3>
+<p>The ECR login token is only valid for 12 hours.</p>
+<p><strong>Fix:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>aws<span class="w"> </span>ecr<span class="w"> </span>get-login-password<span class="w"> </span>--region<span class="w"> </span>us-east-1<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>docker<span class="w"> </span>login<span class="w"> </span>--username<span class="w"> </span>AWS<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">    </span>--password-stdin<span class="w"> </span><span class="m">123456789</span>.dkr.ecr.us-east-1.amazonaws.com
+</code></pre></div>
+<hr />
+<h3 id="error-imagenotfoundexception-on-lambda-invoke"><code>Error: ImageNotFoundException</code> on Lambda invoke<a class="headerlink" href="#error-imagenotfoundexception-on-lambda-invoke" title="Permanent link">&para;</a></h3>
+<p>The Lambda is pointing to an image tag that doesn't exist in ECR (e.g. <code>latest</code> was overwritten without updating the function, or the wrong repo was pushed to).</p>
+<p><strong>Fix:</strong> Confirm the image exists, then update the function:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>aws<span class="w"> </span>ecr<span class="w"> </span>describe-images<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span>--repository-name<span class="w"> </span>my-project-serve<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">  </span>--image-ids<span class="w"> </span><span class="nv">imageTag</span><span class="o">=</span>latest
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>aws<span class="w"> </span>lambda<span class="w"> </span>update-function-code<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">  </span>--function-name<span class="w"> </span>my-project-serve<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">  </span>--image-uri<span class="w"> </span><span class="m">123456789</span>.dkr.ecr.us-east-1.amazonaws.com/my-project-serve:latest
+</code></pre></div>
+<hr />
+<h3 id="task-timed-out-on-first-lambda-invoke"><code>Task timed out</code> on first Lambda invoke<a class="headerlink" href="#task-timed-out-on-first-lambda-invoke" title="Permanent link">&para;</a></h3>
+<p>The Lambda is cold-starting and loading a large model (e.g. from MLflow S3 artifacts) within the configured timeout.</p>
+<p><strong>Fix:</strong> Increase <code>timeout</code> in your <code>recipes</code> spec (max 900 seconds for Lambda):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lambda</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-project-serve</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span><span class="w">    </span><span class="c1"># was 3</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="w">  </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1024</span><span class="w">   </span><span class="c1"># more memory → more CPU → faster model load</span>
+</code></pre></div>
+<p>Re-generate Terraform and apply.</p>
+<hr />
+<h3 id="get-predict-returns-501-not-implemented"><code>GET /predict</code> returns 501 Not Implemented<a class="headerlink" href="#get-predict-returns-501-not-implemented" title="Permanent link">&para;</a></h3>
+<p><code>predictor.py</code> was not found or <code>KITCHEN_PREDICTOR_DIR</code> is not set.</p>
+<p><strong>Fix:</strong> Confirm the Lambda environment has:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>KITCHEN_PREDICTOR_DIR=/var/task/src/serve
+</code></pre></div>
+<p>And that <code>src/serve/predictor.py</code> is present in the Docker image at that path.</p>
+<hr />
+<h3 id="lambda-logs-show-predictorloaderror">Lambda logs show <code>PredictorLoadError</code><a class="headerlink" href="#lambda-logs-show-predictorloaderror" title="Permanent link">&para;</a></h3>
+<p><code>predictor.py</code> was found but raised on import or is missing <code>predict()</code>.</p>
+<p><strong>Fix:</strong> Run <code>kitchen serve local</code> first — it surfaces the same error locally with a full traceback. Fix the predictor, rebuild the image, and redeploy.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.instant", "search.highlight", "search.suggest", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
