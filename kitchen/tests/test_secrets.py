@@ -54,6 +54,51 @@ def test_undeclared_name_is_env_only(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Manifest discovery — menu-aware default (CBB-013)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_manifest_path_prefers_menu(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: p\n")
+    assert sec._resolve_manifest_path(None) == "params.yaml"  # no menu → legacy
+    (tmp_path / "menu.yaml").write_text("project: p\nrecipes: {}\n")
+    assert sec._resolve_manifest_path(None) == "menu.yaml"  # canonical menu preferred
+    assert sec._resolve_manifest_path("explicit.yaml") == "explicit.yaml"  # explicit respected
+
+
+def test_secrets_manifest_read_from_menu_when_both_exist(tmp_path, monkeypatch):
+    """CBB-013: get()/`_spec_for` with no path read menu.yaml's `secrets:` block (not the
+    legacy params.yaml) when both exist — and no deprecation warning fires."""
+    import warnings
+
+    import kitchen.config as cfgmod
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: p\n")  # legacy, no secrets:
+    (tmp_path / "menu.yaml").write_text(
+        "project: p\nrecipes: {}\nsecrets:\n  K:\n    aws_secret: bundle\n    key: K\n"
+    )
+    cfgmod._LEGACY_PARAMS_WARNED = False  # reset the once-per-process guard for the assertion
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        spec = sec._spec_for("K", None, None)
+    assert spec.aws_secret == "bundle" and spec.key == "K"  # read from menu, not env-only
+    assert not any("legacy params.yaml" in str(w.message) for w in caught)
+
+
+def test_menu_only_project_secrets_manifest_is_visible(tmp_path, monkeypatch):
+    """Before CBB-013 the params.yaml default made a menu-only project's `secrets:` invisible
+    (no file → env-only); now the manifest is read."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(
+        "project: p\nrecipes: {}\nsecrets:\n  K:\n    ssm: /path/to/k\n"
+    )
+    spec = sec._spec_for("K", None, None)
+    assert spec.ssm == "/path/to/k"
+
+
+# ---------------------------------------------------------------------------
 # Cloud sources (mocked boto3)
 # ---------------------------------------------------------------------------
 

@@ -165,10 +165,23 @@ def _aws_identity_available() -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _spec_for(name: str, params_file: str, cfg: KitchenConfig | None) -> SecretSpec:
+def _resolve_manifest_path(params_file: str | None) -> str:
+    """Which manifest the secrets API reads (CBB-013). An explicit path is respected as-is;
+    the default (``None``) prefers the canonical ``menu.yaml`` and falls back to ``params.yaml``.
+
+    Post-INT-007b ``menu.yaml`` is the project manifest, so a library ``secrets.get("X")`` call
+    (no path) must read it — otherwise a menu-only project's ``secrets:`` block is invisible
+    (the old ``"params.yaml"`` default found no file → env-only) and a both-files project reads
+    the legacy ``params.yaml`` (emitting the deprecation warning mid-run)."""
+    if params_file is not None:
+        return params_file
+    return "menu.yaml" if Path("menu.yaml").exists() else "params.yaml"
+
+
+def _spec_for(name: str, params_file: str | None, cfg: KitchenConfig | None) -> SecretSpec:
     """The declared spec for ``name``, or an env-only default when undeclared."""
     if cfg is None:
-        p = Path(params_file)
+        p = Path(_resolve_manifest_path(params_file))
         if p.exists():
             try:
                 cfg = KitchenConfig.from_yaml(str(p))
@@ -257,7 +270,7 @@ def clear_cache() -> None:
 def get(
     name: str,
     *,
-    params_file: str = "params.yaml",
+    params_file: str | None = None,  # None → menu.yaml if present, else params.yaml (CBB-013)
     cfg: KitchenConfig | None = None,
     ttl: float | None = None,
     use_cache: bool = True,
@@ -282,7 +295,7 @@ def get(
 def try_get(
     name: str,
     *,
-    params_file: str = "params.yaml",
+    params_file: str | None = None,  # None → menu.yaml if present, else params.yaml (CBB-013)
     cfg: KitchenConfig | None = None,
     ttl: float | None = None,
     use_cache: bool = True,
@@ -323,7 +336,7 @@ def resolve_into_env(
     names: list[str],
     *,
     base: dict[str, str] | None = None,
-    params_file: str = "params.yaml",
+    params_file: str | None = None,  # None → menu.yaml if present, else params.yaml (CBB-013)
     cfg: KitchenConfig | None = None,
 ) -> dict[str, str]:
     """Resolve each secret and return an environment mapping with the values injected + masked.
@@ -346,9 +359,9 @@ def resolve_into_env(
 # ---------------------------------------------------------------------------
 
 
-def _load_cfg(params_file: str) -> KitchenConfig | None:
+def _load_cfg(params_file: str | None) -> KitchenConfig | None:
     """Best-effort load of the project config; ``None`` when absent or unparseable."""
-    p = Path(params_file)
+    p = Path(_resolve_manifest_path(params_file))
     if not p.exists():
         return None
     try:
@@ -375,7 +388,7 @@ def export_env_file(
     target: str | Path,
     names: list[str] | None = None,
     *,
-    params_file: str = "params.yaml",
+    params_file: str | None = None,  # None → menu.yaml if present, else params.yaml (CBB-013)
     cfg: KitchenConfig | None = None,
 ) -> list[str]:
     """Resolve declared secrets and append them to a GitHub Actions env file (masked) — SECR-007.
