@@ -170,12 +170,12 @@ def ui(
 @app.command(name="open")
 def open_dashboard(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
 ) -> None:
     """Open the GitHub Pages dashboard in your browser.
 
-    Reads dashboard_url from params.yaml, then falls back to the DASHBOARD_URL
+    Reads dashboard_url from menu.yaml, then falls back to the DASHBOARD_URL
     environment variable. If neither is set, opens the MLflow UI instead.
     """
     import webbrowser
@@ -201,7 +201,7 @@ def open_dashboard(
             _serve_local_dashboard(local_dash)
         else:
             typer.echo(
-                "No dashboard_url found in params.yaml or DASHBOARD_URL env var. "
+                "No dashboard_url found in menu.yaml or DASHBOARD_URL env var. "
                 "Falling back to MLflow UI."
             )
             ui()
@@ -210,7 +210,7 @@ def open_dashboard(
 @app.command()
 def status(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     experiment: Annotated[
         str | None, typer.Option("--experiment", "-e", help="Experiment name")
@@ -384,9 +384,9 @@ def status(
 
 @app.command()
 def validate(
-    params_file: Annotated[str, typer.Argument(help="Path to params.yaml")] = "params.yaml",
+    params_file: Annotated[str, typer.Argument(help="Path to menu.yaml (or legacy params.yaml)")] = "params.yaml",
 ) -> None:
-    """Validate a params.yaml file against the KitchenConfig schema."""
+    """Validate a menu.yaml (or legacy params.yaml) against the KitchenConfig schema."""
     from pydantic import ValidationError
 
     from kitchen.config import KitchenConfig
@@ -445,7 +445,7 @@ secrets_app = typer.Typer(help="Secrets manifest helpers.", no_args_is_help=True
 @secrets_app.command("template")
 def secrets_template(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     output: Annotated[
         str, typer.Option("--output", "-o", help="File to write (use --stdout to print instead)")
@@ -457,7 +457,7 @@ def secrets_template(
         bool, typer.Option("--force", help="Overwrite the output file if it already exists")
     ] = False,
 ) -> None:
-    """Generate a `.env.example` from the params.yaml `secrets:` manifest.
+    """Generate a `.env.example` from the menu.yaml `secrets:` manifest.
 
     One annotated `NAME=` line per declared secret (required/optional + source) so a fresh
     clone self-documents what to set. Values are never written.
@@ -499,7 +499,7 @@ def secrets_template(
 @secrets_app.command("iam-policy")
 def secrets_iam_policy(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     account: Annotated[
         str | None,
@@ -563,7 +563,7 @@ def secrets_iam_policy(
 @secrets_app.command("export")
 def secrets_export(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     names: Annotated[
         list[str] | None,
@@ -979,7 +979,7 @@ def leaderboard(
         str | None, typer.Option("--experiment", "-e", help="Experiment name")
     ] = None,
     params_file: Annotated[
-        str, typer.Option("--params", help="params.yaml to read experiment from")
+        str, typer.Option("--params", help="menu.yaml (or legacy params.yaml) to read experiment from")
     ] = "params.yaml",
     higher_is_better: Annotated[
         bool, typer.Option("--higher-is-better", help="Rank highest first (default: lowest first)")
@@ -1021,7 +1021,7 @@ def leaderboard(
     """Rank runs by a metric; shows full run_id and lb_score for easy replay.
 
     When --metric is omitted, the primary metric is auto-detected: first from
-    the thresholds section in params.yaml (direction inferred from spec type),
+    the thresholds section in menu.yaml (direction inferred from spec type),
     then from the first val_* key logged in recent runs.
 
     [C] marks the promoted champion from the model registry. ★ marks the
@@ -1319,11 +1319,11 @@ def diff(
 @app.command()
 def ingest(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     out_dir: Annotated[str | None, typer.Option("--out", help="Override output directory")] = None,
 ) -> None:
-    """Download raw competition data as configured in params.yaml."""
+    """Download raw competition data as configured in menu.yaml (or legacy params.yaml)."""
 
     from kitchen.config import KitchenConfig
     from kitchen.ingest import source_from_params
@@ -1343,7 +1343,7 @@ def ingest(
 
     if cfg.data is None:
         typer.echo(
-            "error: no 'data' section in params.yaml — add source, competition/bucket/path",
+            "error: no 'data' section in menu.yaml — add source, competition/bucket/path",
             err=True,
         )
         raise typer.Exit(1)
@@ -1394,7 +1394,7 @@ def _write_kaggle_score(score: float, metrics_file: str = "metrics.json") -> Non
 @app.command()
 def submit(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     file: Annotated[
         str, typer.Option("--file", help="Submission CSV to upload")
@@ -1439,7 +1439,7 @@ def submit(
     )
     if not competition:
         typer.echo(
-            "error: no competition specified — add 'submission.competition' or 'data.competition' to params.yaml",
+            "error: no competition specified — add 'submission.competition' or 'data.competition' to menu.yaml",
             err=True,
         )
         raise typer.Exit(1)
@@ -1512,7 +1512,7 @@ app.command(name="sweep")(run_sweep)
 @app.command()
 def check(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
 ) -> None:
     """Check that all tools, credentials, and project files are ready."""
@@ -1862,7 +1862,7 @@ def report(
         str, typer.Option("--metrics", help="Path to metrics.json")
     ] = "metrics.json",
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     output_format: Annotated[
         str, typer.Option("--format", help="Output format: github, plain")
@@ -2073,7 +2073,7 @@ def promote(
         str | None, typer.Option("--experiment", "-e", help="Experiment name")
     ] = None,
     params_file: Annotated[
-        str, typer.Option("--params", help="params.yaml to read experiment from")
+        str, typer.Option("--params", help="menu.yaml (or legacy params.yaml) to read experiment from")
     ] = "params.yaml",
     model_name: Annotated[
         str | None, typer.Option("--model-name", help="Registered model name")
@@ -2177,7 +2177,7 @@ def promote(
 @app.command()
 def push(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     metrics_file: Annotated[
         str, typer.Option("--metrics", help="Path to metrics.json")

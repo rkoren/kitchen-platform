@@ -267,6 +267,15 @@ def test_top_level_command_works_menu_only(tmp_path, monkeypatch):
     assert "menu.yaml" in result.output and "params.yaml" not in result.output
 
 
+def test_help_text_names_menu_yaml(monkeypatch):
+    """CBB-015: user-facing CLI text (the validate docstring + the --params help) names
+    menu.yaml, so --help on a menu-only project doesn't point at a nonexistent params.yaml."""
+    out = runner.invoke(app, ["validate", "--help"], catch_exceptions=False).output
+    assert "menu.yaml" in out  # docstring + the PARAMS_FILE arg help
+    train = runner.invoke(app, ["run", "train", "--help"], catch_exceptions=False).output
+    assert "menu.yaml" in train  # --params help + body text retexted
+
+
 # ---------------------------------------------------------------------------
 # kitchen open (LML-008)
 # ---------------------------------------------------------------------------

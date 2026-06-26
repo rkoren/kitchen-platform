@@ -218,7 +218,7 @@ run_app = typer.Typer(help="Run pipeline stages.", no_args_is_help=True)
 @run_app.command("features")
 def run_features(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
@@ -278,7 +278,7 @@ def run_features(
 @run_app.command("train")
 def run_train(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     auto_promote: Annotated[
         bool,
@@ -288,7 +288,7 @@ def run_train(
         str | None,
         typer.Option(
             "--promote-metric",
-            help="Metric to compare for auto-promote. Auto-detected from params.yaml thresholds when omitted.",
+            help="Metric to compare for auto-promote. Auto-detected from menu.yaml thresholds when omitted.",
         ),
     ] = None,
     lower_is_better: Annotated[
@@ -308,7 +308,7 @@ def run_train(
         list[str] | None,
         typer.Option(
             "--override",
-            help="Shadow a params.yaml value for this run only: key=value (repeatable). "
+            help="Shadow a menu.yaml value for this run only: key=value (repeatable). "
             "Example: --override model.max_depth=6 --override model.eta=0.05",
         ),
     ] = None,
@@ -326,15 +326,15 @@ def run_train(
 
     With --auto-promote, compares the new run against the current champion on
     --promote-metric and promotes automatically if it wins. When --promote-metric
-    is omitted, the metric is auto-detected from the first key in params.yaml
+    is omitted, the metric is auto-detected from the first key in menu.yaml
     thresholds (direction inferred from spec type).
 
-    With --override, one or more params.yaml values are shadowed for this run
+    With --override, one or more menu.yaml values are shadowed for this run
     only without modifying the file. Overrides are logged as MLflow run tags
     (override.<key>) so they appear in kitchen leaderboard and kitchen diff.
 
     With --from-run <run_id>, the target run's logged params are loaded from
-    MLflow and used as the base params (layered onto the current params.yaml so
+    MLflow and used as the base params (layered onto the current menu.yaml so
     non-logged structure is preserved); any --override still applies on top. The
     new run is tagged kitchen.from_run=<run_id> for provenance.
     """
@@ -347,7 +347,7 @@ def run_train(
         if detected is None:
             typer.echo(
                 "error: --promote-metric is required when using --auto-promote "
-                "(or add a 'thresholds:' section to params.yaml for auto-detection)",
+                "(or add a 'thresholds:' section to menu.yaml for auto-detection)",
                 err=True,
             )
             raise typer.Exit(1)
@@ -415,13 +415,13 @@ def run_train(
 
 def run_sweep(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     override: Annotated[
         list[str] | None,
         typer.Option(
             "--override",
-            help="Sweep a params.yaml value over multiple values: key=v1,v2,... (repeatable). "
+            help="Sweep a menu.yaml value over multiple values: key=v1,v2,... (repeatable). "
             "Multiple keys form a Cartesian product. Example: "
             "--override model.max_depth=4,6,8 --override model.eta=0.05,0.1",
         ),
@@ -430,7 +430,7 @@ def run_sweep(
         str | None,
         typer.Option(
             "--metric",
-            help="Metric to rank runs by. Auto-detected from params.yaml thresholds when omitted.",
+            help="Metric to rank runs by. Auto-detected from menu.yaml thresholds when omitted.",
         ),
     ] = None,
     lower_is_better: Annotated[
@@ -501,7 +501,7 @@ def run_sweep(
         detected = _promote_metric_from_thresholds(params_file)
         if detected is None:
             typer.echo(
-                "error: --metric is required when params.yaml has no 'thresholds:' section "
+                "error: --metric is required when menu.yaml has no 'thresholds:' section "
                 "to auto-detect from.",
                 err=True,
             )
@@ -584,7 +584,7 @@ def run_sweep(
 @run_app.command("evaluate")
 def run_evaluate(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     model_uri: Annotated[
         str | None,
@@ -725,12 +725,12 @@ def run_evaluate(
 @run_app.command("monitor")
 def run_monitor(
     params_file: Annotated[
-        str, typer.Option("--params", help="Path to params.yaml")
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     local: Annotated[
         str | None,
         typer.Option(
-            "--local", help="Write report to this local path (overrides params.yaml monitor config)"
+            "--local", help="Write report to this local path (overrides menu.yaml monitor config)"
         ),
     ] = None,
 ) -> None:
