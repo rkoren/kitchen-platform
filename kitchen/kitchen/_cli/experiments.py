@@ -54,7 +54,7 @@ def experiments_list(
         str | None, typer.Option("--experiment", "-e", help="Experiment name")
     ] = None,
     params_file: Annotated[
-        str, typer.Option("--params", help="params.yaml to read experiment from")
+        str, typer.Option("--params", help="menu.yaml (or legacy params.yaml) to read experiment from")
     ] = "params.yaml",
     limit: Annotated[int, typer.Option("--limit", "-n", help="Max runs to show")] = 10,
 ) -> None:
@@ -120,7 +120,7 @@ def experiments_compare(
         str | None, typer.Option("--experiment", "-e", help="Experiment name")
     ] = None,
     params_file: Annotated[
-        str, typer.Option("--params", help="params.yaml to read experiment from")
+        str, typer.Option("--params", help="menu.yaml (or legacy params.yaml) to read experiment from")
     ] = "params.yaml",
     lower_is_better: Annotated[bool, typer.Option("--lower-is-better/--higher-is-better")] = False,
     limit: Annotated[int, typer.Option("--limit", "-n", help="Max runs to show")] = 20,
