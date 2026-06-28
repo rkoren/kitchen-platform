@@ -22,9 +22,10 @@ Environment variables:
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import re
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -391,6 +392,71 @@ def configure_from_env() -> None:
     tracking_uri = os.environ.get(_TRACKING_URI_ENV, "sqlite:///mlruns.db")
     artifact_bucket = os.environ.get(_ARTIFACT_BUCKET_ENV)
     configure(tracking_uri=tracking_uri, artifact_bucket=artifact_bucket)
+
+
+def _values_close(a: float, b: float, rel_tol: float) -> bool:
+    return math.isclose(a, b, rel_tol=rel_tol, abs_tol=1e-12)
+
+
+def detect_metric_collisions(
+    run_id: str,
+    keys: Iterable[str] | None = None,
+    client: mlflow.tracking.MlflowClient | None = None,
+    rel_tol: float = 1e-6,
+) -> dict[str, list[float]]:
+    """Find metrics re-logged at the *same step* with materially different values (CBB-019).
+
+    MLflow keeps only the last value per metric key in ``run.data.metrics``, so when two
+    pipeline stages log the same metric name into one run the later write silently
+    overwrites the earlier one — poisoning the threshold gate and the leaderboard with no
+    warning (cbb hit this: ``train``'s leak-aware ``loto_brier`` was overwritten by
+    ``evaluate``'s optimistic in-sample number). This reads each key's full history and
+    flags any key with >=2 materially different values **at one step**. The same-step
+    condition is deliberate: a legitimate training *curve* logs one key across distinct
+    steps, so it is never false-positived.
+
+    Args:
+        run_id: the run to inspect.
+        keys: metric keys to check; ``None`` checks every metric on the run. Pass the gate's
+            threshold keys to keep this cheap and focused on what actually gates.
+        client: an existing ``MlflowClient`` (callers that already have one pass it in).
+        rel_tol: two values within this relative tolerance count as "the same number".
+
+    Returns:
+        ``{key: [v1, v2, ...]}`` (distinct values in chronological order; the last is the
+        one ``run.data.metrics`` exposes) for each colliding key, or ``{}`` when there is no
+        collision. A key colliding at several steps reports only its first colliding step —
+        one sequence per key is enough to warn. Never raises — a backend that can't return
+        history yields ``{}``.
+    """
+    if client is None:
+        client = mlflow.tracking.MlflowClient()
+    try:
+        run = client.get_run(run_id)
+    except Exception:
+        return {}
+    candidate_keys = list(keys) if keys is not None else list(run.data.metrics)
+    collisions: dict[str, list[float]] = {}
+    for key in candidate_keys:
+        try:
+            history = client.get_metric_history(run_id, key)
+            if len(history) < 2:
+                continue
+            # Group values by step, preserving chronological (timestamp) order within a step.
+            by_step: dict[int, list[float]] = {}
+            for m in sorted(history, key=lambda h: (h.step, h.timestamp)):
+                by_step.setdefault(m.step, []).append(float(m.value))
+            for step in sorted(by_step):
+                distinct: list[float] = []
+                for v in by_step[step]:
+                    if not any(_values_close(v, d, rel_tol) for d in distinct):
+                        distinct.append(v)
+                if len(distinct) >= 2:
+                    collisions[key] = distinct
+                    break  # one collision per key is enough to warn
+        except Exception:
+            continue
+    return collisions
 
 
 def init_experiment(name: str) -> str:
