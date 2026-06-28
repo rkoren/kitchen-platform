@@ -56,36 +56,44 @@ class ExperimentRun:
         mlflow.set_tag(key, value)
 
 
-def _find_params_yaml(start: Path) -> Path | None:
-    """Search start and its parents for params.yaml, return the first found."""
+def _find_project_config(start: Path) -> Path | None:
+    """Search ``start`` and its parents for the project manifest — ``menu.yaml`` (canonical)
+    or a legacy ``params.yaml`` — returning the first found. Menu-aware so a notebook in a
+    menu-only project still discovers its MLflow config (INT-009)."""
     for directory in [start, *start.parents]:
-        candidate = directory / "params.yaml"
-        if candidate.exists():
-            return candidate
+        for name in ("menu.yaml", "params.yaml"):
+            candidate = directory / name
+            if candidate.exists():
+                return candidate
     return None
 
 
-def _seed_env_from_params_yaml(params_yaml: Path) -> None:
-    """Set MLFLOW_TRACKING_URI / MLFLOW_ARTIFACT_BUCKET from params.yaml if not already set.
+def _seed_env_from_config(config_path: Path) -> None:
+    """Set MLFLOW_TRACKING_URI / MLFLOW_ARTIFACT_BUCKET from the manifest's ``mlflow:`` section
+    if not already set.
 
-    Only reads the top-level ``mlflow:`` section; uses raw yaml.safe_load so a
-    partial or project-specific params.yaml never triggers KitchenConfig validation.
+    Reads only **literal string** values: a menu's ``{from_role}`` reference (a dict) is
+    resolved to the environment by INT-003 (``kitchen menu materialize``), so it's skipped
+    here. Uses raw yaml.safe_load so a partial/menu manifest never triggers KitchenConfig
+    validation.
     """
     try:
         import yaml
 
-        with open(params_yaml, encoding="utf-8") as f:
+        with open(config_path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         mlflow_cfg = raw.get("mlflow", {}) or {}
         tracking_uri = mlflow_cfg.get("tracking_uri")
         artifact_bucket = mlflow_cfg.get("artifact_bucket")
-        if tracking_uri and not os.environ.get("MLFLOW_TRACKING_URI"):
+        if isinstance(tracking_uri, str) and tracking_uri and not os.environ.get("MLFLOW_TRACKING_URI"):
             if tracking_uri.startswith("sqlite:///") and not tracking_uri.startswith("sqlite:////"):
                 db_name = tracking_uri[len("sqlite:///"):]
-                abs_path = (params_yaml.parent / db_name).resolve()
+                abs_path = (config_path.parent / db_name).resolve()
                 tracking_uri = f"sqlite:///{abs_path}"
             os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
-        if artifact_bucket and not os.environ.get("MLFLOW_ARTIFACT_BUCKET"):
+        if isinstance(artifact_bucket, str) and artifact_bucket and not os.environ.get(
+            "MLFLOW_ARTIFACT_BUCKET"
+        ):
             os.environ["MLFLOW_ARTIFACT_BUCKET"] = artifact_bucket
     except Exception:
         pass
@@ -101,8 +109,8 @@ def experiment(
 ) -> Generator[ExperimentRun, None, None]:
     """Zero-ceremony MLflow experiment context manager.
 
-    Precedence for tracking URI: env var > params.yaml > sqlite:///mlruns.db.
-    Auto-discovers params.yaml by searching the current directory and its parents.
+    Precedence for tracking URI: env var > menu.yaml/params.yaml > sqlite:///mlruns.db.
+    Auto-discovers the project manifest (menu.yaml or params.yaml) by searching cwd + parents.
     Falls back to the local SQLite store if the configured MLflow server is
     unreachable — never raises so notebook cells continue to run.
 
@@ -124,9 +132,9 @@ def experiment(
     Yields:
         ExperimentRun with .log(), .log_params(), and .set_tag() helpers.
     """
-    params_yaml = _find_params_yaml(Path.cwd())
-    if params_yaml is not None:
-        _seed_env_from_params_yaml(params_yaml)
+    config_path = _find_project_config(Path.cwd())
+    if config_path is not None:
+        _seed_env_from_config(config_path)
 
     try:
         configure_from_env()
@@ -160,7 +168,7 @@ def init_run(
 
     Designed for notebook use with project-defined Trainer subclasses:
 
-        params = yaml.safe_load(open("params.yaml"))
+        params = kitchen.load_params("menu.yaml")   # or params.yaml
         store = DataStore()
         with kitchen.init_run(params) as tracker:
             MyTrainer().run(store, tracker, params)
@@ -168,14 +176,14 @@ def init_run(
     The yielded Tracker holds an active MLflow run, so Trainer.run() detects
     it and logs into the existing run rather than opening a nested one.
 
-    When params is None, auto-discovers and loads params.yaml by searching the
+    When params is None, auto-discovers and loads the manifest (menu.yaml or params.yaml) by searching the
     current directory and its parents. Falls back to sqlite:///mlruns.db if
     MLflow is unreachable — never raises in a notebook context.
 
     Precedence for tracking URI: env var > params mlflow section > sqlite:///mlruns.db.
 
     Args:
-        params: project params dict; auto-discovers and loads params.yaml when None.
+        params: project params dict; auto-discovers + loads menu.yaml/params.yaml when None.
         run_name: optional display name for this MLflow run.
         exploratory: When True, tags the run ``run_type=exploratory`` (see
             :func:`experiment`) so notebook runs can be filtered in
@@ -189,14 +197,15 @@ def init_run(
         Tracker configured for the project's MLflow experiment.
     """
     if params is None:
-        params_yaml = _find_params_yaml(Path.cwd())
-        if params_yaml is not None:
-            _seed_env_from_params_yaml(params_yaml)
+        config_path = _find_project_config(Path.cwd())
+        if config_path is not None:
+            _seed_env_from_config(config_path)
             try:
-                import yaml
+                from kitchen.menu import load_params
 
-                with open(params_yaml, encoding="utf-8") as f:
-                    params = yaml.safe_load(f) or {}
+                # load_params normalizes a menu (injects experiment from project) so the
+                # experiment name below resolves for menu-only notebook projects (INT-009).
+                params = load_params(str(config_path))
             except Exception:
                 params = {}
         else:
@@ -205,9 +214,9 @@ def init_run(
         mlflow_cfg = params.get("mlflow", {}) or {}
         uri = mlflow_cfg.get("tracking_uri")
         bucket = mlflow_cfg.get("artifact_bucket")
-        if uri and not os.environ.get("MLFLOW_TRACKING_URI"):
+        if isinstance(uri, str) and uri and not os.environ.get("MLFLOW_TRACKING_URI"):
             os.environ["MLFLOW_TRACKING_URI"] = uri
-        if bucket and not os.environ.get("MLFLOW_ARTIFACT_BUCKET"):
+        if isinstance(bucket, str) and bucket and not os.environ.get("MLFLOW_ARTIFACT_BUCKET"):
             os.environ["MLFLOW_ARTIFACT_BUCKET"] = bucket
 
     experiment_name = params.get("experiment", "default")
