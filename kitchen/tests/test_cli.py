@@ -276,6 +276,19 @@ def test_help_text_names_menu_yaml(monkeypatch):
     assert "menu.yaml" in train  # --params help + body text retexted
 
 
+def test_run_train_unknown_variant_errors(tmp_path, monkeypatch):
+    """CBB-016: `--variant <name>` not in the menu fails fast, listing the available names."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(
+        "project: p\npipeline: [train]\n"
+        "recipes:\n  train: {kind: stage, source: src/train/run.py}\n"
+        "variants:\n  rich: {model: {max_depth: 5}}\n"
+    )
+    result = runner.invoke(app, ["run", "train", "--variant", "nope"], catch_exceptions=False)
+    assert result.exit_code == 1
+    assert "no variant 'nope'" in result.output and "rich" in result.output
+
+
 # ---------------------------------------------------------------------------
 # kitchen open (LML-008)
 # ---------------------------------------------------------------------------
@@ -472,7 +485,7 @@ def test_run_train_invokes_pipeline(tmp_path, monkeypatch):
 
     calls = []
 
-    def fake_pipeline(params_file="params.yaml", overrides=None):
+    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None):
         calls.append(params_file)
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -488,7 +501,7 @@ def test_run_train_custom_params(tmp_path, monkeypatch):
 
     calls = []
 
-    def fake_pipeline(params_file="params.yaml", overrides=None):
+    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None):
         calls.append(params_file)
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -501,7 +514,7 @@ def test_run_train_missing_src_module(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text("experiment: test\n")
 
-    def fake_pipeline(params_file="params.yaml", overrides=None):
+    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None):
         raise ModuleNotFoundError("No module named 'src.features.run'")
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -522,7 +535,7 @@ def _captured_overrides(tmp_path, monkeypatch):
     (tmp_path / "params.yaml").write_text("experiment: test\n")
     captured = {}
 
-    def fake_pipeline(params_file="params.yaml", overrides=None):
+    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None):
         captured["overrides"] = overrides
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -666,7 +679,7 @@ def test_reproduced_params_errors_on_unknown_run(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _fake_pipeline_noop(params_file="params.yaml", overrides=None):  # pylint: disable=unused-argument
+def _fake_pipeline_noop(params_file="params.yaml", overrides=None, variant=None):  # pylint: disable=unused-argument
     pass
 
 

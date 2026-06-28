@@ -213,6 +213,50 @@ def test_train_propagates_train_exception(monkeypatch, train_env):
 
 
 # ---------------------------------------------------------------------------
+# CBB-016: variant tagging + composition
+# ---------------------------------------------------------------------------
+
+
+def test_train_tags_model_variant(monkeypatch, train_env):
+    """_train tags the run with model_variant=<name> so leaderboard/diff group it."""
+    _inject_train_mod(monkeypatch)
+    with patch("kitchen.flows.train_flow.mlflow") as mock_mlflow:
+        _train(PARAMS, variant="kenpom_rich")
+    mock_mlflow.set_tag.assert_any_call("model_variant", "kenpom_rich")
+
+
+def test_train_no_variant_sets_no_variant_tag(monkeypatch, train_env):
+    """Existing projects (no --variant) get no model_variant tag — behavior unchanged."""
+    _inject_train_mod(monkeypatch)
+    with patch("kitchen.flows.train_flow.mlflow") as mock_mlflow:
+        _train(PARAMS)
+    tagged = [c.args[0] for c in mock_mlflow.set_tag.call_args_list if c.args]
+    assert "model_variant" not in tagged
+
+
+def test_pipeline_applies_variant_before_overrides(tmp_path, monkeypatch):
+    """base → variant → override: the variant adds a feature + bumps max_depth, then the
+    override wins on max_depth; the `variants:` definition is dropped from the run params."""
+    monkeypatch.chdir(tmp_path)
+    menu = tmp_path / "menu.yaml"
+    menu.write_text(
+        "project: p\npipeline: [train]\n"
+        "recipes:\n  train: {kind: stage, source: src/train/run.py}\n"
+        "model: {max_depth: 4}\nfeature_candidates: [a, b]\n"
+        "variants:\n  rich:\n    model: {max_depth: 5}\n    feature_candidates: {add: [c]}\n"
+    )
+    seen: dict = {}
+    with (
+        patch("kitchen.flows.train_flow._build", side_effect=lambda p: seen.update(p)),
+        patch("kitchen.flows.train_flow._train", side_effect=lambda p, **kw: seen.update(p)),
+    ):
+        train_pipeline(params_file=str(menu), variant="rich", overrides={"model.max_depth": 9})
+    assert seen["feature_candidates"] == ["a", "b", "c"]  # variant add applied
+    assert seen["model"]["max_depth"] == 9  # override wins over the variant's 5
+    assert "variants" not in seen  # the definition isn't logged as a run param
+
+
+# ---------------------------------------------------------------------------
 # train_pipeline (wiring)
 # ---------------------------------------------------------------------------
 
@@ -370,7 +414,7 @@ def test_pipeline_passes_overrides_to_train_task(tmp_path, monkeypatch):
         patch("kitchen.flows.train_flow._build"),
         patch(
             "kitchen.flows.train_flow._train",
-            side_effect=lambda p, overrides=None: captured.update({"overrides": overrides}),
+            side_effect=lambda p, overrides=None, variant=None: captured.update({"overrides": overrides}),
         ),
     ):
         train_pipeline(params_file=params_file, overrides={"model.max_depth": 6})
@@ -385,7 +429,7 @@ def test_pipeline_no_overrides_passes_none_to_train(tmp_path, monkeypatch):
         patch("kitchen.flows.train_flow._build"),
         patch(
             "kitchen.flows.train_flow._train",
-            side_effect=lambda p, overrides=None: captured.update({"overrides": overrides}),
+            side_effect=lambda p, overrides=None, variant=None: captured.update({"overrides": overrides}),
         ),
     ):
         train_pipeline(params_file=params_file)
