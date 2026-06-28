@@ -67,4 +67,5 @@ indent-style = "space"
 [dependency-groups]
 dev = [
     "pylint>=4.0.5",
+    "pytest-randomly>=4.1.0",
 ]
