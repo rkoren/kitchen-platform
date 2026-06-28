@@ -169,6 +169,26 @@ def test_to_kitchen_config_maps_ml_half():
     assert cfg.thresholds["val_accuracy"] == 0.8
 
 
+def test_to_kitchen_config_carries_holdout():
+    """CBB-017: a typed `holdout:` block survives the menu→KitchenConfig bridge."""
+    m = Menu.model_validate(
+        _menu(holdout={"path": "data/holdout/h.parquet", "label": "Outcome", "metric": "brier"})
+    )
+    cfg = m.to_kitchen_config()
+    assert cfg.holdout is not None
+    assert cfg.holdout.path == "data/holdout/h.parquet"
+    assert cfg.holdout.label == "Outcome"
+    assert cfg.holdout.metric == "brier"
+    assert cfg.holdout.optional is True  # default
+
+
+def test_menu_rejects_unknown_holdout_key():
+    import pytest
+
+    with pytest.raises(Exception, match="typo"):
+        Menu.model_validate(_menu(holdout={"path": "h.parquet", "label": "y", "typo": 1}))
+
+
 def test_to_kitchen_config_drops_roleref_mlflow_to_default():
     """A `{from_role}` tracking_uri is env-resolved (INT-003), so the bridge falls back to
     the MLflowConfig default — the materialized env overrides it at run time."""
