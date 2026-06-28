@@ -105,6 +105,7 @@ dev = [
     "pylint>=4.0.5",
     # Monorepo dev only (a uv dependency-group — pip-based CI ignores it, so no CI impact):
     # lets test_menu lock the menu's infra kinds to recipes' ResourceSpec discriminator.
+    "pytest-randomly>=4.1.0",
     "rkoren-recipes",
 ]
 
