@@ -561,3 +561,37 @@ def test_report_compare_champion_no_champion_is_graceful(tmp_path, monkeypatch):
     # Falls back to the single-column report — no delta table.
     assert "| Metric | Base | PR | Delta |" not in result.output
     assert "| Metric | Value |" in result.output
+
+
+# ---------------------------------------------------------------------------
+# CBB-019: metric-collision warning at the gate
+# ---------------------------------------------------------------------------
+
+
+def test_report_warns_on_metric_collision(tmp_path, monkeypatch):
+    # A gated metric logged twice with different values in the run → loud warning at the gate.
+    _write_metrics(
+        tmp_path / "metrics.json",
+        {"val_accuracy": 0.90, "_run": {"run_id": "r" * 32}},
+    )
+    (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch(
+            "kitchen.tracking.detect_metric_collisions",
+            return_value={"val_accuracy": [0.80, 0.90]},
+        ),
+    ):
+        result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0  # passes threshold; warning does not change exit code
+    assert "metric collision" in result.output.lower()
+    assert "val_accuracy" in result.output
+
+
+def test_report_no_collision_check_without_run_id(tmp_path, monkeypatch):
+    _write_metrics(tmp_path / "metrics.json", {"val_accuracy": 0.90})
+    (tmp_path / "params.yaml").write_text(PARAMS_WITH_THRESHOLD)
+    with patch("kitchen.tracking.detect_metric_collisions") as mock_detect:
+        result = _invoke(tmp_path, monkeypatch)
+    assert result.exit_code == 0
+    mock_detect.assert_not_called()  # no run id → no tracking-store probe
