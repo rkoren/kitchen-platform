@@ -111,7 +111,7 @@ export MLFLOW_TRACKING_URI=sqlite:///$(pwd)/mlruns.db
 
 ### MLflow UI shows no runs
 
-`kitchen ui` opens the UI for the tracking URI in `params.yaml`. If runs were logged with a different URI (e.g. a previous absolute path), they won't appear.
+`kitchen ui` opens the UI for the tracking URI in `menu.yaml`. If runs were logged with a different URI (e.g. a previous absolute path), they won't appear.
 
 **Fix:** Check the URI used during training:
 
@@ -119,7 +119,7 @@ export MLFLOW_TRACKING_URI=sqlite:///$(pwd)/mlruns.db
 python -c "import mlflow; print(mlflow.get_tracking_uri())"
 ```
 
-Then run `kitchen ui` with that URI or update `params.yaml → mlflow → tracking_uri`.
+Then run `kitchen ui` with that URI or update `menu.yaml → mlflow → tracking_uri`.
 
 ---
 
@@ -174,9 +174,9 @@ The IAM identity doesn't have `s3:PutObject` on the artifact bucket.
 
 ### Artifact URI shows `./mlartifacts` instead of `s3://...`
 
-`mlflow.artifact_bucket` in `params.yaml` is not set, and `MLFLOW_ARTIFACT_ROOT` is not in the environment.
+`mlflow.artifact_bucket` in `menu.yaml` is not set, and `MLFLOW_ARTIFACT_ROOT` is not in the environment.
 
-**Fix:** Set `mlflow.artifact_bucket` in `params.yaml`:
+**Fix:** Set `mlflow.artifact_bucket` in `menu.yaml`:
 
 ```yaml
 mlflow:

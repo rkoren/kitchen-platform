@@ -1,19 +1,19 @@
 # Configuration Reference
 
-`kitchen` pulls configuration from four places. The rule of thumb: if it controls training behavior, put it in `params.yaml`. If it's a credential or a local override, put it in `.env`. If it's needed only in CI, put it in GitHub secrets or variables.
+`kitchen` pulls configuration from four places. The rule of thumb: if it controls training behavior, put it in `menu.yaml`. If it's a credential or a local override, put it in `.env`. If it's needed only in CI, put it in GitHub secrets or variables.
 
 ## Decision guide
 
 | Question | Answer | Where it goes |
 |---|---|---|
-| Does it affect model training or evaluation? | Yes | `params.yaml` |
+| Does it affect model training or evaluation? | Yes | `menu.yaml` |
 | Is it a credential or API key? | Yes | `.env` locally; GitHub secret in CI |
 | Is it non-sensitive CI-only config (e.g. a bucket name)? | Yes | GitHub Actions variable |
 | Is it a one-off override for a single manual run? | Yes | `workflow_dispatch` input |
 
 ---
 
-## `params.yaml`
+## `menu.yaml`
 
 Version-controlled. Lives in the project root and is committed to git. Controls all training and evaluation behavior.
 
@@ -222,7 +222,7 @@ The default `sqlite:///mlruns.db` is **per-run** in CI: the registry starts empt
 
 2. **Install the PostgreSQL driver** alongside kitchen — MLflow needs it to talk to a `postgresql://` store (it is not in the base install): `pip install 'kitchen[postgres]'`. `kitchen check` fails fast with this hint if a postgresql tracking URI is set without it.
 
-3. **Set the artifact bucket** in `params.yaml` (the connection URL itself comes from the RDS-managed secret at run time — step 4 — so it is never written to params.yaml or a second secret):
+3. **Set the artifact bucket** in `menu.yaml` (the connection URL itself comes from the RDS-managed secret at run time — step 4 — so it is never written to menu.yaml or a second secret):
 
    ```yaml
    mlflow:
@@ -236,7 +236,7 @@ The default `sqlite:///mlruns.db` is **per-run** in CI: the registry starts empt
      run: kitchen secrets db-url --secret-id <…_master_user_secret_arn> --endpoint <…_endpoint>
    ```
 
-   `kitchen secrets db-url` fetches the RDS-managed username/password, URL-encodes them, and writes `MLFLOW_TRACKING_URI=postgresql://…` to `$GITHUB_ENV` (masked, never to stdout) — no hand-built URL and no second secret. If the recipes Terraform workspace is present in the job (e.g. you `recipes apply` in the same job), drop the flags entirely and let it read the outputs: `kitchen secrets db-url --from-terraform ~/.recipes/tf/<spec>`. (For a backend you manage yourself, the general path still works: store the full URL as a secret, declare it in `params.yaml` `secrets:` as `MLFLOW_TRACKING_URI`, and use `kitchen secrets export --name MLFLOW_TRACKING_URI`.)
+   `kitchen secrets db-url` fetches the RDS-managed username/password, URL-encodes them, and writes `MLFLOW_TRACKING_URI=postgresql://…` to `$GITHUB_ENV` (masked, never to stdout) — no hand-built URL and no second secret. If the recipes Terraform workspace is present in the job (e.g. you `recipes apply` in the same job), drop the flags entirely and let it read the outputs: `kitchen secrets db-url --from-terraform ~/.recipes/tf/<spec>`. (For a backend you manage yourself, the general path still works: store the full URL as a secret, declare it in `menu.yaml` `secrets:` as `MLFLOW_TRACKING_URI`, and use `kitchen secrets export --name MLFLOW_TRACKING_URI`.)
 
 5. **Local / notebooks** — assemble the URL straight from the recipes workspace into `.env` (loaded automatically at startup); needs AWS credentials locally:
 
@@ -252,7 +252,7 @@ The default `sqlite:///mlruns.db` is **per-run** in CI: the registry starts empt
 
 **Validate it:** deploy the throwaway `recipes/examples/mlflow-backend-validation.yaml` (tiny instance, `deletion_protection: false` for clean teardown), point `MLFLOW_TRACKING_URI` at it, and run `examples/validate_persistent_backend.py` **twice** — run 2 finding run 1's champion confirms the backend persists champions across runs. Then `recipes destroy`.
 
-### What belongs in `params.yaml`
+### What belongs in `menu.yaml`
 
 - Data source and file names
 - Model hyperparameters
@@ -261,7 +261,7 @@ The default `sqlite:///mlruns.db` is **per-run** in CI: the registry starts empt
 - Metric thresholds for CI gating
 - Any value that should be reproducible and reviewable in a PR
 
-### What does NOT belong in `params.yaml`
+### What does NOT belong in `menu.yaml`
 
 - Credentials (`KAGGLE_KEY`, `AWS_SECRET_ACCESS_KEY`) — use `.env` or GitHub secrets
 - Account IDs, ARNs, or bucket names tied to a specific AWS account — use environment variables or GitHub variables
@@ -277,7 +277,7 @@ Never committed — `.gitignore` excludes it. Sourced automatically by `kitchen`
 KAGGLE_USERNAME=your-username
 KAGGLE_KEY=your-api-key
 
-# MLflow — these override params.yaml.mlflow.tracking_uri
+# MLflow — these override menu.yaml.mlflow.tracking_uri
 MLFLOW_TRACKING_URI=sqlite:///mlruns.db
 MLFLOW_EXPERIMENT=spaceship-titanic
 MLFLOW_MODEL_NAME=spaceship-titanic-model
@@ -286,7 +286,7 @@ MLFLOW_MODEL_NAME=spaceship-titanic-model
 AWS_PROFILE=default
 ```
 
-Environment variables take precedence over `params.yaml` for any key they share (e.g. `MLFLOW_TRACKING_URI` overrides `params.yaml → mlflow → tracking_uri`).
+Environment variables take precedence over `menu.yaml` for any key they share (e.g. `MLFLOW_TRACKING_URI` overrides `menu.yaml → mlflow → tracking_uri`).
 
 ---
 
@@ -327,7 +327,7 @@ One-off overrides for manually triggered runs. Defined in the scaffolded `.githu
 |---|---|---|---|
 | `submit` | boolean | `false` | Submit to Kaggle leaderboard after evaluate |
 
-Workflow inputs are intentionally minimal — if you find yourself adding many inputs, the value probably belongs in `params.yaml` (where it's version-controlled and reviewable) rather than as a runtime override.
+Workflow inputs are intentionally minimal — if you find yourself adding many inputs, the value probably belongs in `menu.yaml` (where it's version-controlled and reviewable) rather than as a runtime override.
 
 ---
 
@@ -336,8 +336,8 @@ Workflow inputs are intentionally minimal — if you find yourself adding many i
 When the same setting can come from multiple places, later entries win:
 
 ```
-params.yaml  →  .env / environment variable  →  workflow_dispatch input
+menu.yaml  →  .env / environment variable  →  workflow_dispatch input
 (committed)       (local or CI secret)            (one-off manual override)
 ```
 
-The `mlflow.tracking_uri` in `params.yaml` is the most common example: it defaults to `sqlite:///mlruns.db` for local runs, and a CI job that sets `MLFLOW_TRACKING_URI` in its `env:` block overrides it without touching `params.yaml`.
+The `mlflow.tracking_uri` in `menu.yaml` is the most common example: it defaults to `sqlite:///mlruns.db` for local runs, and a CI job that sets `MLFLOW_TRACKING_URI` in its `env:` block overrides it without touching `menu.yaml`.
