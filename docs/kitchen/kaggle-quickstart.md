@@ -44,7 +44,7 @@ Confirm everything is wired up:
 kitchen check
 # ✓ tools: python, kaggle
 # ✓ credentials: KAGGLE_USERNAME, KAGGLE_KEY
-# ✓ params.yaml found
+# ✓ menu.yaml found
 ```
 
 ## 3. Download competition data
@@ -159,7 +159,7 @@ Every push to `main` and every PR will now train, evaluate, and post a metrics c
 
 ## Metric thresholds
 
-Gate CI on minimum acceptable performance by adding a `thresholds` block to `params.yaml`:
+Gate CI on minimum acceptable performance by adding a `thresholds` block to `menu.yaml`:
 
 ```yaml
 thresholds:
@@ -172,7 +172,7 @@ The CI evaluate step exits non-zero when any threshold is violated, which blocks
 
 ## Params reference
 
-Key sections in `params.yaml` and what they control:
+Key sections in `menu.yaml` and what they control:
 
 | Section | Key | Description |
 |---|---|---|

@@ -107,7 +107,7 @@ Gate PR merges on the evaluation job passing so that no change lands without a r
 
 ## Metric thresholds
 
-You can fail the CI step when a metric drops below a threshold. Add a `thresholds` block to `params.yaml`:
+You can fail the CI step when a metric drops below a threshold. Add a `thresholds` block to `menu.yaml`:
 
 ```yaml
 thresholds:
@@ -120,7 +120,7 @@ The `Report` step exits non-zero when any threshold is violated, which fails the
 
 ## CI behavior knobs (`ci:`)
 
-A single `ci:` block in `params.yaml` holds CI-specific behavior, read by `kitchen report` and the scaffolded workflow:
+A single `ci:` block in `menu.yaml` holds CI-specific behavior, read by `kitchen report` and the scaffolded workflow:
 
 ```yaml
 ci:
@@ -145,6 +145,6 @@ The submit step runs when **either** trigger fires:
     2. Click **Run workflow**.
     3. Check **Submit to Kaggle leaderboard after evaluate**.
     4. Run.
-- **Automatic** — set `ci.auto_submit: true` and every push to `main` submits after evaluate (no manual toggle). A `Read CI config` step reads the flag from `params.yaml` and feeds the submit step's condition.
+- **Automatic** — set `ci.auto_submit: true` and every push to `main` submits after evaluate (no manual toggle). A `Read CI config` step reads the flag from `menu.yaml` and feeds the submit step's condition.
 
 The leaderboard score is written to `metrics.json` and appears in the PR comment when `kitchen report` next runs.
