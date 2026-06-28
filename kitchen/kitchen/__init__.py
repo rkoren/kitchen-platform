@@ -1,6 +1,7 @@
 from kitchen import evaluate, registry, search, tracking
 from kitchen.config import KitchenConfig
 from kitchen.experiment import experiment, init_run
+from kitchen.menu import load_params
 from kitchen.modeling import (
     blend_predictions,
     calibrate_model,
@@ -54,6 +55,7 @@ __all__ = [
     "evaluate",
     "experiment",
     "init_run",
+    "load_params",
     "registry",
     "search",
 ]

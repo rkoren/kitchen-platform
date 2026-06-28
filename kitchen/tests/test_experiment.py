@@ -10,61 +10,98 @@ import pytest
 import kitchen
 from kitchen.experiment import (
     ExperimentRun,
-    _find_params_yaml,
-    _seed_env_from_params_yaml,
+    _find_project_config,
+    _seed_env_from_config,
     experiment,
     init_run,
 )
 
-# ── _find_params_yaml ─────────────────────────────────────────────────────────
+# ── _find_project_config ─────────────────────────────────────────────────────────
 
 
-def test_find_params_yaml_finds_in_cwd(tmp_path):
+def test_find_project_config_finds_in_cwd(tmp_path):
     (tmp_path / "params.yaml").write_text("experiment: test\n")
-    result = _find_params_yaml(tmp_path)
+    result = _find_project_config(tmp_path)
     assert result == tmp_path / "params.yaml"
 
 
-def test_find_params_yaml_finds_in_parent(tmp_path):
+def test_find_project_config_finds_in_parent(tmp_path):
     (tmp_path / "params.yaml").write_text("experiment: test\n")
     child = tmp_path / "subdir"
     child.mkdir()
-    result = _find_params_yaml(child)
+    result = _find_project_config(child)
     assert result == tmp_path / "params.yaml"
 
 
-def test_find_params_yaml_returns_none_when_absent(tmp_path):
-    assert _find_params_yaml(tmp_path) is None
+def test_find_project_config_returns_none_when_absent(tmp_path):
+    assert _find_project_config(tmp_path) is None
 
 
-# ── _seed_env_from_params_yaml ────────────────────────────────────────────────
+def test_find_project_config_finds_menu_yaml(tmp_path):
+    """INT-009: a menu-only project is discovered (was params.yaml-only before)."""
+    (tmp_path / "menu.yaml").write_text("project: p\nrecipes: {}\n")
+    assert _find_project_config(tmp_path) == tmp_path / "menu.yaml"
+
+
+def test_find_project_config_prefers_menu_over_params(tmp_path):
+    (tmp_path / "params.yaml").write_text("experiment: p\n")
+    (tmp_path / "menu.yaml").write_text("project: p\nrecipes: {}\n")
+    assert _find_project_config(tmp_path) == tmp_path / "menu.yaml"  # menu is canonical
+
+
+# ── _seed_env_from_config ────────────────────────────────────────────────
+
+
+def test_seed_env_from_menu_literal_mlflow(tmp_path, monkeypatch):
+    """INT-009: a menu's literal mlflow values seed the env (menu-only notebook)."""
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_ARTIFACT_BUCKET", raising=False)
+    (tmp_path / "menu.yaml").write_text(
+        "project: p\nrecipes: {}\n"
+        "mlflow:\n  tracking_uri: http://mlflow:5000\n  artifact_bucket: my-bucket\n"
+    )
+    _seed_env_from_config(tmp_path / "menu.yaml")
+    assert os.environ["MLFLOW_TRACKING_URI"] == "http://mlflow:5000"
+    assert os.environ["MLFLOW_ARTIFACT_BUCKET"] == "my-bucket"
+
+
+def test_seed_env_skips_from_role_reference(tmp_path, monkeypatch):
+    """INT-009: a menu's {from_role} mlflow value is env-resolved by INT-003 — the seeder must
+    skip it (not crash on the dict, not set a bogus env var)."""
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    (tmp_path / "menu.yaml").write_text(
+        "project: p\nrecipes:\n  db: {kind: rds, role: backend}\n"
+        "mlflow:\n  tracking_uri: {from_role: backend}\n"
+    )
+    _seed_env_from_config(tmp_path / "menu.yaml")  # must not raise
+    assert "MLFLOW_TRACKING_URI" not in os.environ
 
 
 def test_seed_env_sets_tracking_uri(tmp_path, monkeypatch):
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     (tmp_path / "params.yaml").write_text("mlflow:\n  tracking_uri: http://localhost:5000\n")
-    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    _seed_env_from_config(tmp_path / "params.yaml")
     assert os.environ["MLFLOW_TRACKING_URI"] == "http://localhost:5000"
 
 
 def test_seed_env_does_not_override_existing_env(tmp_path, monkeypatch):
     monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://existing:9999")
     (tmp_path / "params.yaml").write_text("mlflow:\n  tracking_uri: http://localhost:5000\n")
-    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    _seed_env_from_config(tmp_path / "params.yaml")
     assert os.environ["MLFLOW_TRACKING_URI"] == "http://existing:9999"
 
 
 def test_seed_env_silently_ignores_bad_yaml(tmp_path, monkeypatch):
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     (tmp_path / "params.yaml").write_text("{{not valid yaml")
-    _seed_env_from_params_yaml(tmp_path / "params.yaml")  # must not raise
+    _seed_env_from_config(tmp_path / "params.yaml")  # must not raise
 
 
 def test_seed_env_resolves_relative_sqlite_uri_to_absolute(tmp_path, monkeypatch):
     """NB-005: relative sqlite:/// URI is resolved against the params.yaml directory."""
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     (tmp_path / "params.yaml").write_text("mlflow:\n  tracking_uri: sqlite:///mlruns.db\n")
-    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    _seed_env_from_config(tmp_path / "params.yaml")
     uri = os.environ["MLFLOW_TRACKING_URI"]
     assert uri.startswith("sqlite:////"), f"Expected absolute URI, got: {uri}"
     assert str(tmp_path) in uri
@@ -75,7 +112,7 @@ def test_seed_env_leaves_absolute_sqlite_uri_unchanged(tmp_path, monkeypatch):
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     abs_uri = f"sqlite:////{tmp_path}/mlruns.db"
     (tmp_path / "params.yaml").write_text(f"mlflow:\n  tracking_uri: {abs_uri}\n")
-    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    _seed_env_from_config(tmp_path / "params.yaml")
     assert os.environ["MLFLOW_TRACKING_URI"] == abs_uri
 
 
@@ -83,7 +120,7 @@ def test_seed_env_leaves_http_uri_unchanged(tmp_path, monkeypatch):
     """NB-005: remote HTTP tracking URIs are not touched."""
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     (tmp_path / "params.yaml").write_text("mlflow:\n  tracking_uri: http://mlflow.internal:5000\n")
-    _seed_env_from_params_yaml(tmp_path / "params.yaml")
+    _seed_env_from_config(tmp_path / "params.yaml")
     assert os.environ["MLFLOW_TRACKING_URI"] == "http://mlflow.internal:5000"
 
 
@@ -142,7 +179,7 @@ def test_experiment_yields_experiment_run():
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
         patch("kitchen.experiment.log_run_context"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
     ):
         with experiment("my-project") as run:
             assert isinstance(run, ExperimentRun)
@@ -156,7 +193,7 @@ def test_experiment_starts_run_with_run_name():
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
         patch("kitchen.experiment.log_run_context"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
     ):
         with experiment("proj", run_name="trial-1"):
             mock_mlflow.start_run.assert_called_once_with(run_name="trial-1")
@@ -169,7 +206,7 @@ def test_experiment_logs_params_when_provided():
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
         patch("kitchen.experiment.log_run_context"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
     ):
         with experiment("proj", params={"model": {"max_depth": 6}}):
             mock_mlflow.log_params.assert_called_once_with({"model.max_depth": 6})
@@ -182,7 +219,7 @@ def test_experiment_calls_log_run_context():
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
         patch("kitchen.experiment.log_run_context") as mock_lrc,
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
     ):
         with experiment("proj"):
             mock_lrc.assert_called_once()
@@ -196,7 +233,7 @@ def test_experiment_exploratory_sets_run_type_tag():
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
         patch("kitchen.experiment.log_run_context"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
     ):
         with experiment("proj", exploratory=True):
             mock_mlflow.set_tag.assert_called_once_with("run_type", "exploratory")
@@ -210,7 +247,7 @@ def test_experiment_default_does_not_tag_run_type():
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
         patch("kitchen.experiment.log_run_context"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
     ):
         with experiment("proj"):
             pass
@@ -224,7 +261,7 @@ def test_experiment_falls_back_to_sqlite_on_configure_error():
         patch("kitchen.experiment.configure_from_env", side_effect=Exception("unreachable")),
         patch("kitchen.experiment.init_experiment"),
         patch("kitchen.experiment.log_run_context"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
     ):
         with pytest.warns(UserWarning, match="falling back to sqlite"):
             with experiment("proj"):
@@ -245,7 +282,7 @@ def test_experiment_seeds_from_params_yaml(tmp_path, monkeypatch):
         patch("kitchen.experiment.configure_from_env") as mock_cfg,
         patch("kitchen.experiment.init_experiment"),
         patch("kitchen.experiment.log_run_context"),
-        patch("kitchen.experiment._find_params_yaml", return_value=params_yaml),
+        patch("kitchen.experiment._find_project_config", return_value=params_yaml),
     ):
         with experiment("proj"):
             pass
@@ -264,7 +301,7 @@ def test_experiment_env_var_wins_over_params_yaml(tmp_path, monkeypatch):
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
         patch("kitchen.experiment.log_run_context"),
-        patch("kitchen.experiment._find_params_yaml", return_value=params_yaml),
+        patch("kitchen.experiment._find_project_config", return_value=params_yaml),
     ):
         with experiment("proj"):
             pass
@@ -298,7 +335,7 @@ def test_init_run_yields_tracker():
         patch("kitchen.experiment.mlflow"),
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker", return_value=mock_tracker),
     ):
         with init_run({"experiment": "proj"}) as tracker:
@@ -312,7 +349,7 @@ def test_init_run_opens_tracker_run_with_params():
         patch("kitchen.experiment.mlflow"),
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker", return_value=mock_tracker),
     ):
         with init_run(params, run_name="nb-trial"):
@@ -326,7 +363,7 @@ def test_init_run_exploratory_sets_run_type_tag():
         patch("kitchen.experiment.mlflow") as mock_mlflow,
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker", return_value=mock_tracker),
     ):
         with init_run({"experiment": "proj"}, exploratory=True):
@@ -339,7 +376,7 @@ def test_init_run_default_does_not_tag_run_type():
         patch("kitchen.experiment.mlflow") as mock_mlflow,
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker", return_value=mock_tracker),
     ):
         with init_run({"experiment": "proj"}):
@@ -354,7 +391,7 @@ def test_init_run_log_model_false_sets_flag_on_tracker():
         patch("kitchen.experiment.mlflow"),
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker", return_value=mock_tracker),
     ):
         with init_run({"experiment": "proj"}, log_model=False) as tracker:
@@ -367,7 +404,7 @@ def test_init_run_log_model_defaults_true():
         patch("kitchen.experiment.mlflow"),
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker", return_value=mock_tracker),
     ):
         with init_run({"experiment": "proj"}) as tracker:
@@ -380,7 +417,7 @@ def test_init_run_uses_experiment_from_params():
         patch("kitchen.experiment.mlflow"),
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker") as MockTracker,
     ):
         MockTracker.return_value = mock_tracker
@@ -394,7 +431,7 @@ def test_init_run_defaults_to_default_experiment_when_no_params():
         patch("kitchen.experiment.mlflow"),
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker") as MockTracker,
     ):
         MockTracker.return_value = mock_tracker
@@ -410,7 +447,7 @@ def test_init_run_seeds_tracking_uri_from_params_dict(monkeypatch):
         patch("kitchen.experiment.mlflow"),
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker", return_value=mock_tracker),
     ):
         with init_run(params):
@@ -426,7 +463,7 @@ def test_init_run_env_var_wins_over_params_dict(monkeypatch):
         patch("kitchen.experiment.mlflow"),
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker", return_value=mock_tracker),
     ):
         with init_run(params):
@@ -443,7 +480,7 @@ def test_init_run_auto_discovers_params_yaml(tmp_path, monkeypatch):
         patch("kitchen.experiment.mlflow"),
         patch("kitchen.experiment.configure_from_env"),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=params_yaml),
+        patch("kitchen.experiment._find_project_config", return_value=params_yaml),
         patch("kitchen.experiment.Tracker") as MockTracker,
     ):
         MockTracker.return_value = mock_tracker
@@ -459,7 +496,7 @@ def test_init_run_falls_back_to_sqlite_on_configure_error():
         patch("kitchen.experiment.mlflow", mock_mlflow),
         patch("kitchen.experiment.configure_from_env", side_effect=Exception("unreachable")),
         patch("kitchen.experiment.init_experiment"),
-        patch("kitchen.experiment._find_params_yaml", return_value=None),
+        patch("kitchen.experiment._find_project_config", return_value=None),
         patch("kitchen.experiment.Tracker", return_value=mock_tracker),
     ):
         with pytest.warns(UserWarning, match="falling back to sqlite"):
