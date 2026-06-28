@@ -8,12 +8,12 @@ A kitchen project moves through seven phases. Each phase has a single entry-poin
 
 ```
 kitchen init
-     │  Creates project scaffold: src/, params.yaml, .env.example,
+     │  Creates project scaffold: src/, menu.yaml, .env.example,
      │  CI workflow, DVC config (optional)
      ▼
 kitchen check
      │  Verifies: Python version, CLI tools (dvc, git), credentials
-     │  (.env present, Kaggle key reachable), params.yaml valid
+     │  (.env present, Kaggle key reachable), menu.yaml valid
      ▼
 kitchen ingest
      │  Downloads raw data to data/raw/ from Kaggle, S3, or local path
@@ -62,7 +62,7 @@ Creates a project directory with all scaffold files. Key outputs:
 
 | File | Purpose |
 |---|---|
-| `params.yaml` | Single source of truth for all training config |
+| `menu.yaml` | Single source of truth for all training config |
 | `src/features/run.py` | Feature engineering stub |
 | `src/train/run.py` | Model training stub (or template if `--template` set) |
 | `src/evaluate/run.py` | Evaluation stub |
@@ -75,7 +75,7 @@ Creates a project directory with all scaffold files. Key outputs:
 
 The core loop. Every run is logged to MLflow with:
 
-- All `params.yaml` values as parameters
+- All `menu.yaml` values as parameters
 - Metrics returned by `src/evaluate/run.py`
 - The trained model as a registered artifact
 

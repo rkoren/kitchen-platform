@@ -60,7 +60,7 @@ python flows/promote.py             # register winner, set champion alias
 run logged. By default they look for a model logged under the name `model` (matching the
 `tracker.log_model(model, "model", ...)` example above). If your project logs under a
 different name — e.g. a composite model logged as `mlflow.sklearn.log_model(m, "cbb_model")`
-— set it once in `params.yaml` so promotion finds it:
+— set it once in `menu.yaml` so promotion finds it:
 
 ```yaml
 mlflow:

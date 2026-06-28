@@ -29,7 +29,7 @@ kitchen run evaluate         # compute metrics → metrics.json
 kitchen submit               # validate and upload Kaggle submission
 ```
 
-Each command reads `params.yaml` and writes outputs to the same paths every
+Each command reads `menu.yaml` and writes outputs to the same paths every
 time. Changing a hyperparameter and re-running replaces the previous output.
 
 This path is sufficient for:
@@ -68,7 +68,7 @@ my-project/
 
 Use `kitchen dvc init` to add DVC to a project that was created without
 `--with-dvc`. It only writes the DVC files — it does not touch your
-`src/`, `params.yaml`, or any other project code:
+`src/`, `menu.yaml`, or any other project code:
 
 ```bash
 cd my-existing-project
@@ -76,7 +76,7 @@ pip install "kitchen[dvc]"
 kitchen dvc init
 ```
 
-Pass `--kaggle` explicitly if your `params.yaml` doesn't have
+Pass `--kaggle` explicitly if your `menu.yaml` doesn't have
 `data.source: kaggle` but you want the Kaggle-variant `dvc.yaml`:
 
 ```bash
@@ -150,7 +150,7 @@ stages:
       - src/train/run.py        # code change → re-run
       - data/processed/         # upstream data change → re-run
     params:
-      - model                   # any key under `model:` in params.yaml → re-run
+      - model                   # any key under `model:` in menu.yaml → re-run
     outs:
       - models/
 ```
