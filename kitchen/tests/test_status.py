@@ -422,3 +422,63 @@ def test_summarize_caps_scalars_with_more_pointer():
     assert "+8 more metrics" in joined
     # 12 scalar lines + 1 "+N more" line
     assert len(lines) == 13
+
+
+# ---------------------------------------------------------------------------
+# CBB-019: metric-collision warning
+# ---------------------------------------------------------------------------
+
+
+def _invoke_with_history(history, *, champion_run_id, champion_metrics, runs):
+    """Drive `status` with a controllable client.get_metric_history (for collision tests)."""
+
+    champ_run = _make_run(champion_run_id, metrics=champion_metrics)
+
+    def _alias(_model_name, _alias):
+        return _make_mv(champion_run_id)
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_client_cls,
+    ):
+        client = mock_client_cls.return_value
+        client.get_experiment_by_name.return_value = MagicMock(experiment_id="1")
+        client.search_runs.return_value = runs
+        client.get_model_version_by_alias.side_effect = _alias
+        client.get_run.return_value = champ_run
+        client.get_metric_history.return_value = history
+        return runner.invoke(app, ["status", "--experiment", "my-exp"])
+
+
+def test_status_warns_on_metric_collision():
+    from mlflow.entities import Metric
+
+    champ_id = "a" * 32
+    # loto_brier logged twice at step 0 with different values → collision on the display metric.
+    history = [Metric("loto_brier", 0.165, 1, 0), Metric("loto_brier", 0.122, 2, 0)]
+    result = _invoke_with_history(
+        history,
+        champion_run_id=champ_id,
+        champion_metrics={"loto_brier": 0.122},
+        runs=[_make_run(metrics={"loto_brier": 0.122})],
+    )
+    assert result.exit_code == 0
+    out = result.output.lower()
+    assert "metric collision" in out
+    assert "loto_brier" in result.output
+    assert "0.165" in result.output and "0.122" in result.output
+
+
+def test_status_no_collision_warning_for_clean_run():
+    from mlflow.entities import Metric
+
+    champ_id = "b" * 32
+    history = [Metric("loto_brier", 0.122, 1, 0)]  # single value → no collision
+    result = _invoke_with_history(
+        history,
+        champion_run_id=champ_id,
+        champion_metrics={"loto_brier": 0.122},
+        runs=[_make_run(metrics={"loto_brier": 0.122})],
+    )
+    assert result.exit_code == 0
+    assert "metric collision" not in result.output.lower()
