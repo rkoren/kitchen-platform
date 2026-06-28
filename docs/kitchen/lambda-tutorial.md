@@ -50,7 +50,7 @@ kitchen init my-model \
 
 This creates a `my-model/` directory with:
 
-- `params.yaml` — single source of truth for all training config
+- `menu.yaml` — single source of truth for all training config
 - `src/features/run.py` — feature engineering stub
 - `src/train/run.py` — XGBoost baseline (because `--template baseline-xgb`)
 - `src/evaluate/run.py` — evaluation stub
@@ -65,7 +65,7 @@ cp .env.example .env
 kitchen check    # should pass all checks
 ```
 
-`kitchen check` verifies Python version, CLI tools, credential presence, and `params.yaml` validity. Fix anything it flags before continuing.
+`kitchen check` verifies Python version, CLI tools, credential presence, and `menu.yaml` validity. Fix anything it flags before continuing.
 
 ---
 
@@ -102,7 +102,7 @@ kitchen ui          # opens MLflow UI in the browser
 kitchen leaderboard # ranked table in the terminal
 ```
 
-Iterate: edit hyperparameters in `params.yaml`, re-run `kitchen run train`, compare on `kitchen leaderboard`. When you have a run you're happy with:
+Iterate: edit hyperparameters in `menu.yaml`, re-run `kitchen run train`, compare on `kitchen leaderboard`. When you have a run you're happy with:
 
 ```bash
 kitchen promote val_accuracy    # registers best run as champion in MLflow registry
@@ -287,6 +287,6 @@ After this, every merge to `main` automatically builds, pushes, and redeploys. T
 ## What's next
 
 - Retrain when your model gets stale: `kitchen run train --auto-promote --promote-metric val_accuracy`
-- Monitor for drift: `kitchen run monitor` (configure `monitor:` in `params.yaml` first)
+- Monitor for drift: `kitchen run monitor` (configure `monitor:` in `menu.yaml` first)
 - Submit to Kaggle: `kitchen run submit` (Kaggle projects)
 - See [Troubleshooting](troubleshooting.md) if anything went wrong
