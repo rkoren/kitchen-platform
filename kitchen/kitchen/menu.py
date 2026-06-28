@@ -23,6 +23,7 @@ from kitchen.config import (
     CheckConfig,
     CIConfig,
     DataConfig,
+    HoldoutSpec,
     MonitorConfig,
     SecretSpec,
     SubmissionConfig,
@@ -152,6 +153,7 @@ class Menu(BaseModel):
     check: CheckConfig | None = None  # deprecated `required_env` legacy guard (superseded by `secrets`)
     secrets: dict[str, SecretSpec] = Field(default_factory=dict)
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
+    holdout: HoldoutSpec | None = None  # CBB-017: frozen-holdout generalization metric
     metrics_file: str = "metrics.json"
     run_name: str | None = None
     variants: dict[str, VariantSpec] = Field(default_factory=dict)  # CBB-016: --variant overlays
@@ -240,6 +242,7 @@ class Menu(BaseModel):
             ci=self.ci,
             secrets=self.secrets,
             thresholds=self.thresholds,
+            holdout=self.holdout,
             metrics_file=self.metrics_file,
             run_name=self.run_name,
         )

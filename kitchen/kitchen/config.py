@@ -159,6 +159,41 @@ class ThresholdSpec(BaseModel):
         return self
 
 
+#: Holdout metrics that score model *probabilities* (positive class). ``accuracy`` also needs
+#: probabilities (thresholded at 0.5) → it's classification but not in this set; the regression
+#: metrics (rmse/mae/r2) score point predictions and are the default ``predict`` path.
+HOLDOUT_PROBA_METRICS: frozenset[str] = frozenset({"brier", "log_loss", "roc_auc"})
+HOLDOUT_CLASSIFICATION_METRICS: frozenset[str] = HOLDOUT_PROBA_METRICS | {"accuracy"}
+
+
+class HoldoutSpec(BaseModel):
+    """``holdout:`` — a frozen, never-trained-on evaluation set scored as a distinct metric (CBB-017).
+
+    The project produces a parity-matched parquet (the model's features + the realized
+    ``label``), leak-free by construction because it lives outside ``data/raw`` where training
+    can't read it. The platform scores **every run's** model against it and logs
+    ``holdout_<metric>`` — a trusted generalization number distinct from the in-CV metric, so a
+    project iterating on its CV score can tell CV-overfit from real generalization. Treat it
+    like a Kaggle private leaderboard: iterate on CV, check the holdout sparingly.
+
+    An absent ``path`` is a no-op (the pipeline runs unchanged until results exist) unless
+    ``optional`` is ``False``. ``features`` defaults to the project's ``feature_candidates``
+    (the training feature list); they are parity-checked against the parquet before scoring and
+    a break **skips** scoring loudly rather than zero-filling — a trusted metric must never be
+    silently wrong. ``predict_method`` overrides the default model call (``predict_proba`` for a
+    classification metric, ``predict`` for a regression one) for models with a custom interface.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    label: str
+    metric: Literal["brier", "log_loss", "roc_auc", "accuracy", "rmse", "mae", "r2"] = "brier"
+    features: list[str] | None = None
+    predict_method: str | None = None
+    optional: bool = True
+
+
 class SecretSpec(BaseModel):
     """One entry in the ``secrets:`` manifest — declares where a secret resolves from.
 
@@ -258,6 +293,7 @@ class KitchenConfig(BaseModel):
     run_name: str | None = None
     metrics_file: str = "metrics.json"
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
+    holdout: HoldoutSpec | None = None
 
     @property
     def uses_legacy_required_env(self) -> bool:
