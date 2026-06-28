@@ -211,6 +211,22 @@ def test_lambda_missing_role_raises():
         LambdaSpec.model_validate({"type": "lambda", "name": "fn"})
 
 
+def test_lambda_schedule_accepts_rate_and_cron():
+    """R-014: rate(...) / cron(...) EventBridge expressions are valid schedules."""
+    for expr in ("rate(7 days)", "cron(0 6 * * ? *)"):
+        spec = LambdaSpec.model_validate(
+            {"type": "lambda", "name": "fn", "role": "r", "ecr_repo": "repo", "schedule": expr}
+        )
+        assert spec.schedule == expr
+
+
+def test_lambda_schedule_rejects_bad_expression():
+    with pytest.raises(ValidationError, match="rate\\(...\\) or cron\\(...\\)"):
+        LambdaSpec.model_validate(
+            {"type": "lambda", "name": "fn", "role": "r", "ecr_repo": "repo", "schedule": "weekly"}
+        )
+
+
 # --- P0-002: extra fields rejected ---
 
 

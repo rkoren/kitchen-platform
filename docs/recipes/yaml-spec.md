@@ -156,6 +156,10 @@ Provisions a Lambda function. Supports both image-based (ECR) and zip-based depl
 | `function_url` | bool | no | `false` | Expose the function over HTTPS via a Lambda function URL |
 | `function_url_auth` | string | no | `"AWS_IAM"` | `"AWS_IAM"` (SigV4-signed) or `"NONE"` (public) — only used when `function_url: true` |
 | `log_retention_days` | int | no | — | Retention for the function's CloudWatch log group (omit to never expire) |
+| `schedule` | string | no | — | EventBridge `rate(...)` / `cron(...)` expression — emits a schedule rule + target + invoke permission so the function runs on a timer |
+
+!!! tip "Scheduled triggers (e.g. drift monitoring)"
+    Set `schedule` to a `rate(...)` or `cron(...)` expression to run the function on a timer — this generates the `aws_cloudwatch_event_rule` + `aws_cloudwatch_event_target` + `aws_lambda_permission` that make up the AWS-native "EventBridge + Lambda" path (e.g. `rate(7 days)` for a weekly drift report). See [monitoring.md](../kitchen/monitoring.md).
 
 !!! tip "Serving over HTTP"
     Set `function_url: true` to get a direct HTTPS endpoint for the function — the simplest way to serve an inference Lambda. The URL is exposed as a Terraform output (`<name>_url`). Auth defaults to `AWS_IAM` (callers sign requests with SigV4); set `function_url_auth: NONE` for a public endpoint, which also adds the `lambda:InvokeFunctionUrl` permission for public access.

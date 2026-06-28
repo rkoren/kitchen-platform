@@ -248,6 +248,28 @@ def test_lambda_role_reference_normalised():
     assert "aws_iam_role.my_exec_role.arn" in out
 
 
+def test_lambda_schedule_emits_eventbridge_resources():
+    """R-014: a schedule emits an EventBridge rule + target + invoke permission."""
+    spec = LambdaSpec(
+        type="lambda", name="my-fn", role="my-role", schedule="rate(7 days)", **_IMAGE_LAMBDA
+    )
+    out = lambda_generate(spec)
+    assert 'resource "aws_cloudwatch_event_rule" "my_fn_schedule"' in out
+    assert 'schedule_expression = "rate(7 days)"' in out
+    assert 'resource "aws_cloudwatch_event_target" "my_fn_schedule"' in out
+    assert "arn  = aws_lambda_function.my_fn.arn" in out
+    assert 'resource "aws_lambda_permission" "my_fn_schedule"' in out
+    assert 'principal     = "events.amazonaws.com"' in out
+    assert 'action        = "lambda:InvokeFunction"' in out
+
+
+def test_lambda_no_schedule_omits_eventbridge():
+    spec = LambdaSpec(type="lambda", name="my-fn", role="my-role", **_IMAGE_LAMBDA)
+    out = lambda_generate(spec)
+    assert "aws_cloudwatch_event_rule" not in out
+    assert "aws_cloudwatch_event_target" not in out
+
+
 def test_lambda_depends_on_generated_for_iam_role_policies():
     role = IAMRoleSpec(
         type="iam_role",
