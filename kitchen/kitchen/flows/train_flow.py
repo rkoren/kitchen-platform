@@ -90,6 +90,36 @@ def _metric_lines(run_id: str, params: dict) -> list[str]:
     return lines
 
 
+def _score_holdout(run_id: str, params: dict) -> dict[str, float]:
+    """CBB-017: score the just-trained model on the frozen holdout, logging ``holdout_<metric>``.
+
+    Runs after the model artifact is logged (re-loads it from the run). A no-op (``{}``) when no
+    ``holdout:`` is configured or the parquet isn't there yet. Best-effort: a scoring failure is
+    reported loudly but never fails an otherwise-successful train run — the model is already
+    trained and logged; the holdout number is a supplement.
+    """
+    import sys
+
+    from kitchen.holdout import score_run_holdout
+
+    artifact_path = (params.get("mlflow") or {}).get("model_artifact_path", "model")
+    try:
+        return score_run_holdout(run_id, params, model_artifact_path=artifact_path)
+    except Exception as exc:  # noqa: BLE001 — supplementary metric must not sink a good run
+        print(f"warning: holdout scoring failed: {exc}", file=sys.stderr)
+        return {}
+
+
+def _holdout_lines(results: dict[str, float]) -> list[str]:
+    """One ``holdout_<metric> = … (n=…, never-trained-on)`` line per scored holdout metric."""
+    n = int(results.get("holdout_n", 0))
+    return [
+        f"  {key} = {val:.6g}  (n={n}, never-trained-on)"
+        for key, val in sorted(results.items())
+        if key != "holdout_n"
+    ]
+
+
 def _train(params: dict, overrides: dict | None = None, variant: str | None = None) -> str | None:
     from src.train.run import train  # project-provided
 
@@ -105,7 +135,10 @@ def _train(params: dict, overrides: dict | None = None, variant: str | None = No
         train(params, DataStore(), tracker)
         run_id = active_run.info.run_id
 
+    holdout = _score_holdout(run_id, params) if run_id else {}
+
     summary = _metric_lines(run_id, params) if run_id else []
+    summary += _holdout_lines(holdout)
     if summary:
         print("Training complete:")
         for line in summary:

@@ -543,3 +543,49 @@ def test_train_prints_metric_summary(monkeypatch, train_env, capsys):
     out = capsys.readouterr().out
     assert "Training complete:" in out
     assert "loto_brier = 0.1653 — PASS" in out
+
+
+# ---------------------------------------------------------------------------
+# CBB-017: holdout scoring wired into the train success path
+# ---------------------------------------------------------------------------
+
+
+def test_train_scores_configured_holdout(monkeypatch, train_env, capsys):
+    """_train scores the holdout after the run and surfaces it in the summary."""
+    _inject_train_mod(monkeypatch)
+    params = {
+        "experiment": "e",
+        "holdout": {"path": "data/holdout/h.parquet", "label": "Outcome"},
+        "mlflow": {"model_artifact_path": "cbb_model"},
+    }
+    with patch(
+        "kitchen.holdout.score_run_holdout",
+        return_value={"holdout_brier": 0.0985, "holdout_n": 134.0},
+    ) as mock_score:
+        _train(params)
+    # called once with the run id and the project's model_artifact_path threaded through
+    assert mock_score.call_count == 1
+    assert mock_score.call_args.kwargs["model_artifact_path"] == "cbb_model"
+    out = capsys.readouterr().out
+    assert "holdout_brier = 0.0985" in out and "never-trained-on" in out
+
+
+def test_train_no_holdout_logs_no_lines(monkeypatch, train_env, capsys):
+    """With no holdout configured, the scorer is a no-op ({}) → no holdout line in the summary."""
+    _inject_train_mod(monkeypatch)
+    with patch("kitchen.holdout.score_run_holdout", return_value={}):
+        _train(PARAMS)
+    assert "never-trained-on" not in capsys.readouterr().out
+
+
+def test_train_holdout_failure_warns_not_crashes(monkeypatch, train_env, capsys):
+    """A holdout-scoring failure is reported but never sinks an otherwise-good train run."""
+    _inject_train_mod(monkeypatch)
+    params = {"experiment": "e", "holdout": {"path": "h.parquet", "label": "Outcome"}}
+    with patch(
+        "kitchen.holdout.score_run_holdout", side_effect=RuntimeError("model load boom")
+    ):
+        run_id = _train(params)
+    assert run_id is not None  # run still succeeds
+    err = capsys.readouterr().err
+    assert "holdout scoring failed" in err and "boom" in err
