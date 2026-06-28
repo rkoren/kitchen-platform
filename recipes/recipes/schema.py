@@ -69,6 +69,19 @@ class LambdaSpec(BaseModel):
     function_url_auth: Literal["AWS_IAM", "NONE"] = "AWS_IAM"
     # Retention for the function's CloudWatch log group; omit for default (never expire).
     log_retention_days: int | None = None
+    # EventBridge schedule that invokes the function — a ``rate(...)`` or ``cron(...)``
+    # expression; emits a CloudWatch event rule + target + invoke permission (R-014).
+    schedule: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_schedule(self) -> "LambdaSpec":
+        if self.schedule is not None and not (
+            self.schedule.startswith("rate(") or self.schedule.startswith("cron(")
+        ):
+            raise ValueError(
+                "Lambda schedule must be an EventBridge expression: rate(...) or cron(...)."
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_package_type(self) -> "LambdaSpec":
