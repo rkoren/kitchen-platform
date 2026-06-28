@@ -253,6 +253,43 @@ without needing a pipeline stage.
 
 ---
 
+## External / API feature inputs (the "third data category")
+
+`data/raw/` (immutable source) and `data/processed/` (regenerable from raw) don't
+cover features pulled from a **live API** — KenPom ratings, an odds feed, weather.
+Those aren't regenerable from raw (they need the API and are *point-in-time*), and
+they aren't Kaggle raw. Caching them in `data/processed/` is the footgun behind a
+real bug: that directory is gitignored and rebuilt, so CI's `dvc pull` never restores
+the cache and the features stage **silently trains baseline-only**.
+
+The pattern (`kitchen.ingest`):
+
+```python
+from kitchen.ingest import cached_fetch, require_external
+
+# Fetch once, cache to a project-chosen, DVC-tracked path. Skip-if-present means the
+# snapshot is pulled exactly once and CI reuses it after `dvc pull` — never re-fetched
+# to a different "now". Encode the as-of key (season/date) in the filename.
+ratings = cached_fetch(fetch_kenpom_2026, "data/kenpom/kenpom_2026.parquet")
+
+# At the merge site, guard the input. A missing cache is a loud, explained error —
+# never a silent skip that degrades the model to baseline-only.
+require_external("data/kenpom/kenpom_2026.parquet")
+```
+
+Then track the directory once so CI restores it:
+
+```bash
+dvc add data/kenpom/      # `dvc pull` now restores it in CI, like data/raw/
+```
+
+The platform owns the cache/snapshot/restore semantics; **you** supply the fetch (it's
+source-specific — a KenPom scrape isn't an odds API) and choose the path. There's no
+`kitchen ingest` subcommand for this, precisely because the fetch is project code the
+platform can't drive from config.
+
+---
+
 ## CI integration
 
 When using DVC in CI, runners need the versioned data before training.

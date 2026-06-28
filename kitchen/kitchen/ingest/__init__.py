@@ -5,6 +5,18 @@ from pathlib import Path
 
 import boto3
 
+from kitchen.ingest.external import cached_fetch, require_external
+
+__all__ = [
+    "IngestSource",
+    "KaggleSource",
+    "LocalSource",
+    "S3Source",
+    "cached_fetch",
+    "require_external",
+    "source_from_params",
+]
+
 
 class IngestSource(ABC):
     @abstractmethod
