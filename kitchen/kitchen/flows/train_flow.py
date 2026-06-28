@@ -90,7 +90,7 @@ def _metric_lines(run_id: str, params: dict) -> list[str]:
     return lines
 
 
-def _train(params: dict, overrides: dict | None = None) -> str | None:
+def _train(params: dict, overrides: dict | None = None, variant: str | None = None) -> str | None:
     from src.train.run import train  # project-provided
 
     configure_from_env()
@@ -98,6 +98,8 @@ def _train(params: dict, overrides: dict | None = None) -> str | None:
     init_experiment(experiment)
     tracker = Tracker(experiment)
     with tracker.run(run_name=params.get("run_name"), params=params) as active_run:
+        if variant:
+            mlflow.set_tag("model_variant", variant)  # leaderboard/diff/status group by this
         if overrides:
             mlflow.set_tags({f"override.{k}": str(v) for k, v in overrides.items()})
         train(params, DataStore(), tracker)
@@ -113,19 +115,31 @@ def _train(params: dict, overrides: dict | None = None) -> str | None:
     return run_id
 
 
-def train_pipeline(params_file: str = "params.yaml", overrides: dict | None = None) -> str | None:
+def train_pipeline(
+    params_file: str = "params.yaml",
+    overrides: dict | None = None,
+    variant: str | None = None,
+) -> str | None:
     """Run a single training pass: features → train → log to MLflow.
+
+    Composition order is base config → ``--variant`` overlay → ``--override`` scalars (so an
+    override always wins on a conflict). The ``variants:`` definition itself is dropped from
+    the params before training so it isn't logged as a run param — the choice is captured by
+    the ``model_variant`` tag instead.
 
     Returns the MLflow run_id of the training run (used by ``kitchen sweep`` to
     rank runs); ``None`` only if the tracker did not expose an active run.
     """
-    from kitchen.menu import load_params
+    from kitchen.menu import apply_variant, load_params
 
     params = load_params(params_file)
+    if variant:
+        apply_variant(params, variant)  # raises VariantNotFound (caller renders it)
+    params.pop("variants", None)  # a menu definition, not a run param
     if overrides:
         _apply_overrides(params, overrides)
     _build(params)
-    return _train(params, overrides=overrides)
+    return _train(params, overrides=overrides, variant=variant)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,16 @@ import yaml
 from pydantic import ValidationError
 
 from kitchen.config import KitchenConfig
-from kitchen.menu import INFRA_KINDS, Menu, RecipeEntry, RoleRef, is_menu, load_params
+from kitchen.menu import (
+    INFRA_KINDS,
+    Menu,
+    RecipeEntry,
+    RoleRef,
+    VariantNotFound,
+    apply_variant,
+    is_menu,
+    load_params,
+)
 
 VALID: dict = {
     "project": "cbb-model",
@@ -211,6 +220,66 @@ def test_load_params_leaves_params_yaml_untouched(tmp_path):
     params = load_params(str(p))
     assert params["experiment"] == "exp"
     assert params["model"]["target"] == "y"
+
+
+# --- CBB-016: experiment variants (apply_variant + schema) ---
+
+
+def _variant_params():
+    return {
+        "model": {"max_depth": 4, "eta": 0.01},
+        "feature_candidates": ["a", "b", "c"],
+        "variants": {
+            "rich": {
+                "model": {"max_depth": 5},
+                "feature_candidates": {"add": ["d_kp_1", "a"], "remove": ["b"]},
+            },
+            "swap": {"feature_candidates": ["x", "y"]},
+        },
+    }
+
+
+def test_apply_variant_deep_merges_scalars():
+    p = _variant_params()
+    apply_variant(p, "rich")
+    assert p["model"] == {"max_depth": 5, "eta": 0.01}  # max_depth merged, eta kept
+
+
+def test_apply_variant_feature_candidates_add_remove():
+    p = _variant_params()
+    apply_variant(p, "rich")
+    # b removed, a not duplicated, d_kp_1 appended (order-preserving union)
+    assert p["feature_candidates"] == ["a", "c", "d_kp_1"]
+
+
+def test_apply_variant_feature_candidates_plain_list_replaces():
+    p = _variant_params()
+    apply_variant(p, "swap")
+    assert p["feature_candidates"] == ["x", "y"]
+
+
+def test_apply_variant_composes_with_overrides_override_wins():
+    from kitchen.flows.train_flow import _apply_overrides
+
+    p = _variant_params()
+    apply_variant(p, "rich")  # sets model.max_depth=5
+    _apply_overrides(p, {"model.max_depth": 7})  # override applied after
+    assert p["model"]["max_depth"] == 7  # override wins on conflict
+
+
+def test_apply_variant_unknown_name_lists_available():
+    with pytest.raises(VariantNotFound, match="available: rich, swap"):
+        apply_variant(_variant_params(), "nope")
+
+
+def test_menu_validates_variants_schema():
+    m = Menu.model_validate(
+        _menu(variants={"rich": {"feature_candidates": {"add": ["d_kp_1"], "remove": ["x"]}}})
+    )
+    assert "rich" in m.variants
+    # a bad feature_candidates overlay key is rejected up front (extra=forbid on the overlay)
+    with pytest.raises(ValidationError):
+        Menu.model_validate(_menu(variants={"rich": {"feature_candidates": {"addd": ["typo"]}}}))
 
 
 # --- locked to recipes' discriminator ---

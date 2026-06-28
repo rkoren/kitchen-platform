@@ -320,6 +320,15 @@ def run_train(
             "(any --override still applies on top), then re-train.",
         ),
     ] = None,
+    variant: Annotated[
+        str | None,
+        typer.Option(
+            "--variant",
+            help="Apply a named overlay from the menu's `variants:` map (multi-field: "
+            "feature_candidates add/remove + config keys). Tagged as model_variant. "
+            "--override scalars still apply on top.",
+        ),
+    ] = None,
     debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
     """Run the full train pipeline: features → train → log to MLflow.
@@ -365,6 +374,15 @@ def run_train(
             key, _, raw_val = item.partition("=")
             parsed_overrides[key.strip()] = _coerce_override_value(raw_val)
 
+    if variant:
+        from kitchen.menu import load_params
+
+        available = load_params(params_file).get("variants") or {}
+        if variant not in available:
+            have = ", ".join(sorted(available)) or "(none defined in the menu)"
+            typer.echo(f"error: no variant {variant!r} in menu — available: {have}", err=True)
+            raise typer.Exit(1)
+
     # Reproduce a past run by training from its logged params (original
     # params_file is kept for auto-promote threshold lookup).
     train_params_file = params_file
@@ -385,7 +403,9 @@ def run_train(
         raise typer.Exit(1)
 
     try:
-        run_id = train_pipeline(params_file=train_params_file, overrides=parsed_overrides)
+        run_id = train_pipeline(
+            params_file=train_params_file, overrides=parsed_overrides, variant=variant
+        )
     except ModuleNotFoundError as exc:
         typer.echo(
             f"error: {exc}\nRun from the project root and make sure src/ is implemented.",

@@ -96,6 +96,31 @@ class MlflowSettings(BaseModel):
     model_artifact_path: str = "model"
 
 
+class FeatureCandidatesOverlay(BaseModel):
+    """A variant's change to the base ``feature_candidates`` list (CBB-016).
+
+    ``add``/``remove`` are a delta on the base list; ``replace`` swaps it wholesale. A variant
+    may instead give a plain list (the obvious full-replacement case). Structured rather than
+    ``+``/``-`` prefixes so a feature name can never be mistaken for a marker."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    add: list[str] = Field(default_factory=list)
+    remove: list[str] = Field(default_factory=list)
+    replace: list[str] | None = None
+
+
+class VariantSpec(BaseModel):
+    """One named experiment variant — an overlay of arbitrary config keys (CBB-016).
+
+    Non-list keys (``model.max_depth``, …) deep-merge over the base; ``feature_candidates``
+    takes the typed overlay above (or a plain replacement list)."""
+
+    model_config = ConfigDict(extra="allow")  # arbitrary overlay keys (model, run_name, …)
+
+    feature_candidates: list[str] | FeatureCandidatesOverlay | None = None
+
+
 class Menu(BaseModel):
     """The unified project manifest (``menu.yaml``).
 
@@ -129,6 +154,7 @@ class Menu(BaseModel):
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
     metrics_file: str = "metrics.json"
     run_name: str | None = None
+    variants: dict[str, VariantSpec] = Field(default_factory=dict)  # CBB-016: --variant overlays
 
     @model_validator(mode="after")
     def _default_experiment(self) -> "Menu":
@@ -248,3 +274,54 @@ def load_params(path: str) -> dict[str, Any]:
     if is_menu(raw):
         raw.setdefault("experiment", raw.get("project"))
     return raw
+
+
+class VariantNotFound(KeyError):
+    """A ``--variant`` name has no entry in the menu's ``variants:`` map."""
+
+
+def _deep_merge(base: dict, overlay: dict) -> None:
+    """Recursively merge ``overlay`` into ``base`` in-place; overlay wins on a scalar/leaf
+    conflict, nested dicts merge rather than replace."""
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+
+
+def _merge_feature_candidates(base: list[str], overlay: Any) -> list[str]:
+    """Apply a variant's ``feature_candidates`` overlay to the base list (CBB-016).
+
+    A plain list replaces. A mapping applies ``replace`` (wholesale) then ``remove`` then
+    ``add`` (union, order-preserving, no duplicates)."""
+    if isinstance(overlay, list):
+        return list(overlay)
+    if not isinstance(overlay, dict):
+        raise ValueError("variant feature_candidates must be a list or an {add,remove,replace} map")
+    result = list(overlay["replace"]) if overlay.get("replace") is not None else list(base)
+    remove = set(overlay.get("remove") or [])
+    result = [f for f in result if f not in remove]
+    for f in overlay.get("add") or []:
+        if f not in result:
+            result.append(f)
+    return result
+
+
+def apply_variant(params: dict[str, Any], name: str) -> None:
+    """Overlay the named variant onto ``params`` in-place (CBB-016).
+
+    Non-list keys deep-merge (variant wins); ``feature_candidates`` uses list-merge semantics.
+    Composes with ``--override`` by being applied first (overrides win). Raises
+    :class:`VariantNotFound` (message lists the available names) when ``name`` is undeclared."""
+    variants = params.get("variants") or {}
+    if name not in variants:
+        have = ", ".join(sorted(variants)) or "(none defined)"
+        raise VariantNotFound(f"no variant {name!r} in menu — available: {have}")
+    overlay = dict(variants[name] or {})
+    fc_overlay = overlay.pop("feature_candidates", None)
+    _deep_merge(params, overlay)
+    if fc_overlay is not None:
+        params["feature_candidates"] = _merge_feature_candidates(
+            params.get("feature_candidates") or [], fc_overlay
+        )
