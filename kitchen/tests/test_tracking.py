@@ -19,6 +19,7 @@ from kitchen.tracking import (
     _verify_store_schema,
     configure,
     configure_from_env,
+    detect_metric_collisions,
     explain_model_load_error,
     init_experiment,
     log_run_context,
@@ -449,3 +450,63 @@ def test_explain_returns_none_when_lookup_fails(monkeypatch):
     client.get_model_version_by_alias.side_effect = Exception("registry down")
     monkeypatch.setattr("kitchen.tracking.mlflow.tracking.MlflowClient", lambda: client)
     assert explain_model_load_error("models:/proj-model@champion", OSError("x")) is None
+
+
+# ── detect_metric_collisions (CBB-019) ────────────────────────────────────────
+
+
+def _run_with_metrics(tmp_path, logs):
+    """Create one MLflow run, apply each (key, value, step) log, return its run_id."""
+    uri = f"sqlite:///{tmp_path}/mlruns.db"
+    mlflow.set_tracking_uri(uri)
+    mlflow.set_experiment("collision-exp")
+    with mlflow.start_run() as run:
+        for key, value, step in logs:
+            mlflow.log_metric(key, value, step=step)
+    return run.info.run_id
+
+
+def test_collision_same_step_different_values_flagged(tmp_path):
+    # Two stages log loto_brier at step 0 (the cbb footgun); a clean metric does not collide.
+    run_id = _run_with_metrics(
+        tmp_path,
+        [("loto_brier", 0.165, 0), ("loto_brier", 0.122, 0), ("auc", 0.88, 0)],
+    )
+    cols = detect_metric_collisions(run_id)
+    assert "auc" not in cols
+    assert cols["loto_brier"] == pytest.approx([0.165, 0.122])
+    # The last value is what run.data.metrics (and so the gate) exposes.
+    assert cols["loto_brier"][-1] == pytest.approx(0.122)
+
+
+def test_collision_identical_values_not_flagged(tmp_path):
+    run_id = _run_with_metrics(tmp_path, [("x", 0.5, 0), ("x", 0.5, 0)])
+    assert detect_metric_collisions(run_id) == {}
+
+
+def test_collision_distinct_steps_is_a_curve_not_flagged(tmp_path):
+    # A legitimate training curve logs one key across steps — must not false-positive.
+    run_id = _run_with_metrics(
+        tmp_path, [("loss", 0.5, 0), ("loss", 0.3, 1), ("loss", 0.21, 2)]
+    )
+    assert detect_metric_collisions(run_id) == {}
+
+
+def test_collision_single_value_not_flagged(tmp_path):
+    run_id = _run_with_metrics(tmp_path, [("brier", 0.12, 0)])
+    assert detect_metric_collisions(run_id) == {}
+
+
+def test_collision_keys_filter_limits_inspection(tmp_path):
+    run_id = _run_with_metrics(
+        tmp_path,
+        [("a", 1.0, 0), ("a", 2.0, 0), ("b", 1.0, 0), ("b", 2.0, 0)],
+    )
+    cols = detect_metric_collisions(run_id, keys=["a"])
+    assert set(cols) == {"a"}  # 'b' collides too but wasn't requested
+
+
+def test_collision_unknown_run_returns_empty(tmp_path):
+    # Establish a reachable store, then ask about a run that doesn't exist.
+    _run_with_metrics(tmp_path, [("x", 0.1, 0)])
+    assert detect_metric_collisions("0" * 32) == {}

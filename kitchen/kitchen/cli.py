@@ -359,6 +359,19 @@ def status(
 
     typer.echo()
 
+    # CBB-019: warn if the champion's gated/displayed metric was logged more than once
+    # with different values (two stages reusing one name) — the gate uses last-write.
+    collision_keys = set(thresholds)
+    if display_metric:
+        collision_keys.add(display_metric)
+    if champion_run_id and collision_keys:
+        from kitchen.tracking import detect_metric_collisions
+
+        _warn_metric_collisions(
+            detect_metric_collisions(champion_run_id, keys=collision_keys, client=client),
+            champion_run_id,
+        )
+
     if has_thresholds:
         typer.echo("Thresholds:")
         for tname, spec in sorted(thresholds.items()):
@@ -856,6 +869,32 @@ def _time_ago(ms: int) -> str:
 
 def _fmt_metric(value: float | None) -> str:
     return "-" if value is None else f"{value:.4f}"
+
+
+def _warn_metric_collisions(collisions: dict[str, list[float]], run_id: str) -> None:
+    """Print a loud stderr warning for metric-name collisions within a run (CBB-019).
+
+    ``collisions`` is the output of :func:`kitchen.tracking.detect_metric_collisions` —
+    metric keys logged more than once at the same step with materially different values,
+    almost always two pipeline stages reusing one metric name. MLflow keeps only the last
+    value, so any gate/leaderboard reading the metric silently uses it.
+    """
+    if not collisions:
+        return
+    typer.echo(
+        f"\nwarning: metric collision in run {run_id[:8]} — a metric was logged more than "
+        "once with different values; MLflow keeps only the LAST, so any reader of this "
+        "metric silently uses it:",
+        err=True,
+    )
+    for key, values in sorted(collisions.items()):
+        seq = " → ".join(f"{v:.6f}" for v in values)
+        typer.echo(f"  {key}: {seq}  (last = {values[-1]:.6f})", err=True)
+    typer.echo(
+        "  Two pipeline stages logging the same metric name is almost always unintended — "
+        "give each stage a distinct name (e.g. an in-sample number → 'insample_brier').",
+        err=True,
+    )
 
 
 def _data_status(root: Path) -> tuple[str, str] | None:
@@ -2016,6 +2055,24 @@ def report(
                 typer.echo(f"Kaggle Public Leaderboard: {kaggle_score:.6f}")
 
     thresholds = cfg.thresholds if cfg is not None else {}
+
+    # CBB-019: warn if the run logged a gated metric more than once with different values
+    # (two stages reusing one name). metrics.json carries last-write, so the gate below can
+    # silently grade the wrong stage's number. Best-effort: needs the run id + a reachable
+    # tracking store; any failure is swallowed so the gate is never blocked by this check.
+    report_run_id = run_meta.get("run_id")
+    if thresholds and report_run_id:
+        try:
+            from kitchen.tracking import configure_from_env, detect_metric_collisions
+
+            configure_from_env()
+            _warn_metric_collisions(
+                detect_metric_collisions(report_run_id, keys=list(thresholds)),
+                report_run_id,
+            )
+        except Exception:
+            pass
+
     if thresholds:
         failures: list[tuple[str, float | int, str]] = []
         for name in sorted(thresholds):
