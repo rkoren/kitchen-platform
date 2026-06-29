@@ -827,3 +827,64 @@ def test_check_no_secrets_section_no_secret_lines(tmp_path, monkeypatch):
             env={"MLFLOW_TRACKING_URI": "x", "KAGGLE_USERNAME": "u"},
         )
     assert "secret:" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# KG-014: feature schema validation
+# ---------------------------------------------------------------------------
+
+import pandas as pd  # noqa: E402
+
+_FEATURE_SCHEMA_PARAMS = """\
+experiment: test-project
+feature_schema:
+  file: matchups.parquet
+  columns:
+    a: int64
+    b: float64
+"""
+
+
+def _write_processed(tmp_path, df):
+    proc = tmp_path / "data" / "processed"
+    proc.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(proc / "matchups.parquet", index=False)
+
+
+def _invoke_fs(tmp_path, monkeypatch):
+    # Patch the same externals the other check tests do, so unrelated probes stay quiet.
+    with (
+        patch("shutil.which", return_value=None),
+        patch("boto3.Session") as mock_session,
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
+        mock_session.return_value.get_credentials.return_value = None
+        return _invoke(
+            tmp_path,
+            monkeypatch,
+            params_content=_FEATURE_SCHEMA_PARAMS,
+            env={"MLFLOW_TRACKING_URI": "sqlite:///x.db", "KAGGLE_USERNAME": "u"},
+        )
+
+
+def test_feature_schema_ok(tmp_path, monkeypatch):
+    _write_processed(tmp_path, pd.DataFrame({"a": [1, 2], "b": [1.0, 2.0]}))
+    result = _invoke_fs(tmp_path, monkeypatch)
+    assert "feature schema: matchups.parquet" in result.output
+    assert "column(s) OK" in result.output
+
+
+def test_feature_schema_mismatch_fails(tmp_path, monkeypatch):
+    # 'a' is float64 on disk but declared int64 → hard failure, non-zero exit.
+    _write_processed(tmp_path, pd.DataFrame({"a": [1.0, 2.0], "b": [1.0, 2.0]}))
+    result = _invoke_fs(tmp_path, monkeypatch)
+    assert result.exit_code != 0
+    assert "feature schema: matchups.parquet" in result.output
+    assert "a:" in result.output and "int64" in result.output  # the offending column + expected
+
+
+def test_feature_schema_absent_file_warns(tmp_path, monkeypatch):
+    # No data/processed/matchups.parquet → soft warning, not a hard failure from this check.
+    result = _invoke_fs(tmp_path, monkeypatch)
+    assert "feature schema: matchups.parquet" in result.output
+    assert "not built yet" in result.output

@@ -194,6 +194,23 @@ class HoldoutSpec(BaseModel):
     optional: bool = True
 
 
+class FeatureSchemaSpec(BaseModel):
+    """``feature_schema:`` — the expected schema of a processed feature file (KG-014).
+
+    Declares the column → pandas-dtype contract for a ``data/processed/`` parquet (e.g. the
+    feature matrix the training stage reads). ``kitchen check`` validates the file against it,
+    catching feature-matrix schema drift before training — the feature-side analogue of the
+    submission/parity checks (KG-006..013). An absent file is a soft warning (not built yet);
+    a missing column or dtype mismatch is a hard check failure. Validation reuses the same
+    ``DataStore`` schema machinery (DS-002) a stage gets from ``load_parquet(schema=...)``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    file: str  # processed parquet to validate, relative to data/processed/
+    columns: dict[str, str]  # column name → expected pandas dtype (e.g. "float64", "int64")
+
+
 class SecretSpec(BaseModel):
     """One entry in the ``secrets:`` manifest — declares where a secret resolves from.
 
@@ -294,6 +311,7 @@ class KitchenConfig(BaseModel):
     metrics_file: str = "metrics.json"
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
     holdout: HoldoutSpec | None = None
+    feature_schema: FeatureSchemaSpec | None = None
 
     @property
     def uses_legacy_required_env(self) -> bool:
