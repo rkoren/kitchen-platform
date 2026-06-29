@@ -1166,13 +1166,29 @@ def leaderboard(
         fold_suffixes = sorted(all_fold_suffixes)
     fold_widths: list[int] = [max(len(s), 6) for s in fold_suffixes]
 
+    # CBB-022: surface the trusted holdout metric(s) (CBB-017) as columns next to the CV metric,
+    # so the never-trained-on generalization number is visible where runs are compared. Auto-
+    # included whenever any run logs a holdout_* *quality* metric; count-like keys (holdout_n,
+    # holdout_n_games, *_games) are excluded so only scored metrics (holdout_brier, holdout_ece,
+    # …) become columns.
+    holdout_keys: list[str] = sorted(
+        {
+            k
+            for r in runs
+            for k in r.data.metrics
+            if k.startswith("holdout_") and k != "holdout_n" and not k.endswith("_games")
+        }
+    )
+    holdout_widths: list[int] = [max(len(k), 8) for k in holdout_keys]
+
     direction = "higher=better" if higher_is_better else "lower=better"
     typer.echo(f"\nExperiment: {exp_name}  |  {metric} ({direction})\n")
 
     id_w = 32
     param_col_header = "".join(f"  {key:>{w}}" for key, w in zip(param_keys, param_widths))
     fold_col_header = "".join(f"  {s:>{w}}" for s, w in zip(fold_suffixes, fold_widths))
-    header = f"{'#':<4}  {'RUN ID':<{id_w}}  {'VARIANT':<12}  {metric:>12}{fold_col_header}  {'lb_score':>10}{param_col_header}  STARTED"
+    holdout_col_header = "".join(f"  {k:>{w}}" for k, w in zip(holdout_keys, holdout_widths))
+    header = f"{'#':<4}  {'RUN ID':<{id_w}}  {'VARIANT':<12}  {metric:>12}{holdout_col_header}{fold_col_header}  {'lb_score':>10}{param_col_header}  STARTED"
     typer.echo(header)
     typer.echo("-" * len(header))
 
@@ -1190,6 +1206,10 @@ def leaderboard(
             rank = str(i + 1)
         variant = (run.data.tags.get("model_variant") or run.info.run_name or "")[:12]
         primary = _fmt_metric(run.data.metrics.get(metric))
+        holdout_col_vals = "".join(
+            f"  {_fmt_metric(run.data.metrics.get(k)):>{w}}"
+            for k, w in zip(holdout_keys, holdout_widths)
+        )
         lb = _fmt_metric(run.data.metrics.get("lb_score"))
         fold_col_vals = "".join(
             f"  {_fmt_metric(run.data.metrics.get(f'{metric}_{s}')):>{w}}"
@@ -1200,7 +1220,7 @@ def leaderboard(
         )
         started = _time_ago(run.info.start_time) if run.info.start_time else "-"
         typer.echo(
-            f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}{fold_col_vals}  {lb:>10}{param_col_vals}  {started}"
+            f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}{holdout_col_vals}{fold_col_vals}  {lb:>10}{param_col_vals}  {started}"
         )
 
     typer.echo()
@@ -1233,6 +1253,18 @@ def _diff_load_fi(run_id: str) -> dict[str, float] | None:
             return json.loads(Path(fi_path).read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+#: Max display width for a param value in `kitchen diff` (CBB-021). MLflow logs params as
+#: strings, so a list-valued param (e.g. a 57-element `feature_candidates`) stringifies to
+#: ~700 chars; rendered raw it sizes the value column to its own length and blows the table
+#: out. Values longer than this are ellipsized for display (the comparison still uses the
+#: full value, so a difference is never missed).
+_DIFF_VALUE_MAX = 60
+
+
+def _ellipsize(value: str, width: int = _DIFF_VALUE_MAX) -> str:
+    return value if len(value) <= width else value[: width - 1] + "…"
 
 
 @app.command()
@@ -1281,7 +1313,9 @@ def diff(
         va = params_a.get(key, "(missing)")
         vb = params_b.get(key, "(missing)")
         if va != vb:
-            param_rows.append((key, va, vb))
+            # CBB-021: compare on the full value, display ellipsized so a long list-valued
+            # param (e.g. feature_candidates) can't blow the value column out to its own width.
+            param_rows.append((key, _ellipsize(va), _ellipsize(vb)))
 
     # --- Metric diffs ---
     metrics_a = {k: v for k, v in run_a.data.metrics.items() if not k.startswith("fi.")}
@@ -1746,6 +1780,28 @@ def check(
                             _ok(f"secret: {_name}", f"env override (else {_spec.source})")
                         else:
                             _ok(f"secret: {_name}", f"resolved from {_spec.source}")
+            # KG-014: validate the processed feature matrix against the declared schema.
+            # Reuses the DataStore schema machinery (DS-002). Absent file → soft warn
+            # (not built yet); a column/dtype mismatch → hard fail (catches drift pre-train).
+            if cfg.feature_schema is not None:
+                from kitchen.store import DataStore, SchemaError
+
+                _fs = cfg.feature_schema
+                _feat_path = DataStore().processed_dir / _fs.file
+                if not _feat_path.exists():
+                    _warn(
+                        f"feature schema: {_fs.file}",
+                        "not built yet — run `kitchen run features`",
+                    )
+                else:
+                    try:
+                        DataStore().load_parquet(_fs.file, schema=_fs.columns)
+                        _ok(f"feature schema: {_fs.file}", f"{len(_fs.columns)} column(s) OK")
+                    except SchemaError as _exc:
+                        _detail = "; ".join(line.strip() for line in str(_exc).splitlines()[1:])
+                        _fail(f"feature schema: {_fs.file}", _detail or "schema mismatch")
+                    except Exception as _exc:  # noqa: BLE001 — unreadable file shouldn't crash check
+                        _fail(f"feature schema: {_fs.file}", f"could not read — {_exc}")
         except ValidationError:
             _fail(params_file, f"invalid — run `kitchen validate {params_file}`")
         except Exception as exc:

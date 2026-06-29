@@ -25,6 +25,7 @@ to exercise the typed route (with Pydantic request/response models), use the
 module-level state.
 """
 
+import logging
 import os
 import subprocess
 import warnings
@@ -33,6 +34,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import create_model
 
 from kitchen.serve.loader import PredictorBundle, PredictorLoadError, load_predictor_bundle
+
+log = logging.getLogger(__name__)
 
 #: Default maximum number of items accepted in a single ``POST /predict/batch``
 #: request.  Override via the ``KITCHEN_BATCH_MAX_ITEMS`` environment variable.
@@ -145,6 +148,36 @@ def metadata() -> dict:
     return _collect_metadata(_bundle)
 
 
+def _invoke_predict(fn, payload: dict):
+    """Call the predictor, turning a prediction-time exception into a *structured* 500
+    instead of a bare ``Internal Server Error`` (CBB-023).
+
+    The full traceback is always logged server-side; the response carries the exception
+    type + message so a consumer gets an actionable error (e.g. a feature ``KeyError`` from a
+    predictor/model mismatch) instead of an opaque 500. Unless ``KITCHEN_DEBUG`` is set, a hint
+    points at the logs; with it, the traceback is included in the response. An ``HTTPException``
+    the predictor itself raises (a deliberate 4xx/5xx) is passed through unchanged.
+    """
+    try:
+        return fn(payload)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("kitchen-serve: prediction failed")
+        detail: dict = {
+            "error": "prediction failed",
+            "type": type(exc).__name__,
+            "message": str(exc),
+        }
+        if os.environ.get("KITCHEN_DEBUG", "").lower() in ("", "0", "false", "no"):
+            detail["hint"] = "set KITCHEN_DEBUG=1 or check the server logs for the full traceback"
+        else:
+            import traceback
+
+            detail["traceback"] = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=detail) from exc
+
+
 if (
     _bundle is not None
     and _bundle.request_model is not None
@@ -157,7 +190,7 @@ if (
     @app.post("/predict", response_model=_ResponseModel)
     def predict(payload: _RequestModel) -> _ResponseModel:  # type: ignore[valid-type]
         """Typed prediction endpoint — schema generated from predictor models."""
-        return _predict_fn(payload.model_dump())  # type: ignore[misc]
+        return _invoke_predict(_predict_fn, payload.model_dump())  # type: ignore[misc]
 
 else:
     # Dict route — plain dict in / dict out; backward-compatible with all
@@ -167,7 +200,7 @@ else:
         """Prediction endpoint (untyped) — accepts and returns arbitrary JSON."""
         if _predict_fn is None:
             raise HTTPException(status_code=501, detail="No predictor implemented")
-        return _predict_fn(payload)
+        return _invoke_predict(_predict_fn, payload)
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +262,7 @@ def _register_batch_routes(app: FastAPI, predict_fn, bundle: PredictorBundle | N
                     status_code=413,
                     detail=f"Batch too large: {len(payload.items)} items exceeds limit of {max_items}",  # type: ignore[arg-type]
                 )
-            results = [predict_fn(item.model_dump()) for item in payload.items]  # type: ignore[attr-defined]
+            results = [_invoke_predict(predict_fn, item.model_dump()) for item in payload.items]  # type: ignore[attr-defined]
             return {"results": results}
 
     else:
@@ -254,7 +287,7 @@ def _register_batch_routes(app: FastAPI, predict_fn, bundle: PredictorBundle | N
                     status_code=413,
                     detail=f"Batch too large: {len(items)} items exceeds limit of {max_items}",
                 )
-            return {"results": [predict_fn(item) for item in items]}
+            return {"results": [_invoke_predict(predict_fn, item) for item in items]}
 
 
 # ---------------------------------------------------------------------------

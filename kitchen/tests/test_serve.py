@@ -168,3 +168,39 @@ def test_serving_dockerfile_uses_package_handler():
     text = dockerfile.read_text(encoding="utf-8")
     assert "kitchen.serve.app.handler" in text, "CMD must use the package handler path"
     assert "./kitchen/serve/" in text, "serve/ must be copied as a kitchen.serve package, not flat"
+
+
+# ---------------------------------------------------------------------------
+# CBB-023: structured /predict error instead of a bare 500
+# ---------------------------------------------------------------------------
+
+
+def test_predictor_exception_returns_structured_500():
+    """An unhandled predictor exception returns a structured error body, not a bare 500."""
+    def predict(payload):
+        raise KeyError("['d_kp_APL_Def'] not in index")
+
+    with patch("kitchen.serve.app._predict_fn", predict):
+        safe_client = TestClient(app, raise_server_exceptions=False)
+        resp = safe_client.post("/predict", json={"x": 1.0})
+    assert resp.status_code == 500
+    detail = resp.json()["detail"]
+    assert isinstance(detail, dict)
+    assert detail["type"] == "KeyError"
+    assert "d_kp_APL_Def" in detail["message"]
+    assert "hint" in detail and "traceback" not in detail  # logs hint, no traceback by default
+
+
+def test_predictor_exception_includes_traceback_under_debug(monkeypatch):
+    monkeypatch.setenv("KITCHEN_DEBUG", "1")
+
+    def predict(payload):
+        raise RuntimeError("boom")
+
+    with patch("kitchen.serve.app._predict_fn", predict):
+        safe_client = TestClient(app, raise_server_exceptions=False)
+        resp = safe_client.post("/predict", json={"x": 1.0})
+    assert resp.status_code == 500
+    detail = resp.json()["detail"]
+    assert "traceback" in detail and "RuntimeError" in detail["traceback"]
+    assert "hint" not in detail
