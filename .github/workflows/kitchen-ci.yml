@@ -46,16 +46,21 @@ jobs:
       - name: Test
         run: pytest tests/ -v --cov=kitchen
 
-  # S-008: build the framework serving image on every push/PR (no AWS). Catches
-  # dependency drift, a broken COPY context, and base-image deprecation before a
-  # deploy. (Container start + /health smoke check is a follow-up — see backlog.)
+  # S-008/S-010: build the framework serving image on every push/PR (no AWS), then
+  # runtime-smoke it under the Lambda RIE. Build alone catches dependency drift / a broken
+  # COPY context / base-image deprecation; the smoke run also catches a broken handler,
+  # entrypoint, or import — which a build can't (the build passes while the container fails
+  # to start). No AWS: the public.ecr.aws/lambda base image bundles the RIE.
   serving-image-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Build serving image
-        run: docker build -f kitchen/kitchen/serve/Dockerfile kitchen/
+        run: docker build -f kitchen/kitchen/serve/Dockerfile kitchen/ -t kitchen-serve:ci
+
+      - name: Runtime smoke test (S-010)
+        run: .github/serving-smoke.sh kitchen-serve:ci
 
   docker-build:
     runs-on: ubuntu-latest

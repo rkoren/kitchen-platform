@@ -153,6 +153,24 @@ def test_predictor_multiple_requests_isolated():
 
 
 # ---------------------------------------------------------------------------
+# S-010: serving image must be runtime-importable (regression guard)
+# ---------------------------------------------------------------------------
+
+
+def test_serving_dockerfile_uses_package_handler():
+    """The serving image copies serve as a `kitchen.serve` PACKAGE and uses the package
+    handler path. A flat copy + bare `app.handler` builds fine but fails to import the
+    handler at container start ("No module named 'kitchen'") — caught by the CI RIE smoke
+    (S-010); this pins it locally too so the fix can't be silently reverted."""
+    from pathlib import Path
+
+    dockerfile = Path(__file__).resolve().parents[1] / "kitchen" / "serve" / "Dockerfile"
+    text = dockerfile.read_text(encoding="utf-8")
+    assert "kitchen.serve.app.handler" in text, "CMD must use the package handler path"
+    assert "./kitchen/serve/" in text, "serve/ must be copied as a kitchen.serve package, not flat"
+
+
+# ---------------------------------------------------------------------------
 # CBB-023: structured /predict error instead of a bare 500
 # ---------------------------------------------------------------------------
 
