@@ -1766,6 +1766,28 @@ def check(
                             _ok(f"secret: {_name}", f"env override (else {_spec.source})")
                         else:
                             _ok(f"secret: {_name}", f"resolved from {_spec.source}")
+            # KG-014: validate the processed feature matrix against the declared schema.
+            # Reuses the DataStore schema machinery (DS-002). Absent file → soft warn
+            # (not built yet); a column/dtype mismatch → hard fail (catches drift pre-train).
+            if cfg.feature_schema is not None:
+                from kitchen.store import DataStore, SchemaError
+
+                _fs = cfg.feature_schema
+                _feat_path = DataStore().processed_dir / _fs.file
+                if not _feat_path.exists():
+                    _warn(
+                        f"feature schema: {_fs.file}",
+                        "not built yet — run `kitchen run features`",
+                    )
+                else:
+                    try:
+                        DataStore().load_parquet(_fs.file, schema=_fs.columns)
+                        _ok(f"feature schema: {_fs.file}", f"{len(_fs.columns)} column(s) OK")
+                    except SchemaError as _exc:
+                        _detail = "; ".join(line.strip() for line in str(_exc).splitlines()[1:])
+                        _fail(f"feature schema: {_fs.file}", _detail or "schema mismatch")
+                    except Exception as _exc:  # noqa: BLE001 — unreadable file shouldn't crash check
+                        _fail(f"feature schema: {_fs.file}", f"could not read — {_exc}")
         except ValidationError:
             _fail(params_file, f"invalid — run `kitchen validate {params_file}`")
         except Exception as exc:
