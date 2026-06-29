@@ -23,6 +23,7 @@ from kitchen.config import (
     CheckConfig,
     CIConfig,
     DataConfig,
+    FeatureSchemaSpec,
     HoldoutSpec,
     ModelSpec,
     MonitorConfig,
@@ -155,6 +156,7 @@ class Menu(BaseModel):
     secrets: dict[str, SecretSpec] = Field(default_factory=dict)
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
     holdout: HoldoutSpec | None = None  # CBB-017: frozen-holdout generalization metric
+    feature_schema: FeatureSchemaSpec | None = None  # KG-014: processed-feature schema contract
     models: dict[str, ModelSpec] = Field(default_factory=dict)  # CBB-020: multi-model map
     metrics_file: str = "metrics.json"
     run_name: str | None = None
@@ -245,6 +247,7 @@ class Menu(BaseModel):
             secrets=self.secrets,
             thresholds=self.thresholds,
             holdout=self.holdout,
+            feature_schema=self.feature_schema,
             models=self.models,
             metrics_file=self.metrics_file,
             run_name=self.run_name,

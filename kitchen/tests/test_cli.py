@@ -4475,3 +4475,53 @@ def test_status_model_scopes_experiment_and_champion(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "cbb-reg" in seen_exp
     assert "cbb-reg-model" in seen_champ
+
+
+def test_diff_ellipsizes_long_param_value():
+    # CBB-021: a long list-valued param (stringified feature_candidates) must not blow the
+    # value column out — it's ellipsized for display, and no output line runs absurdly long.
+    long_val = str([f"feat_{i}" for i in range(60)])  # ~600+ chars
+    run_a = _make_diff_run("a" * 32, {"feature_candidates": long_val}, {})
+    run_b = _make_diff_run("b" * 32, {"feature_candidates": "['feat_0']"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "feature_candidates" in result.output
+    assert "…" in result.output  # the long value was truncated
+    assert long_val not in result.output  # the full ~600-char value is never printed
+    assert max(len(line) for line in result.output.splitlines()) < 160  # table stays bounded
+
+
+def test_diff_short_param_value_not_truncated():
+    run_a = _make_diff_run("a" * 32, {"model.max_depth": "3"}, {})
+    run_b = _make_diff_run("b" * 32, {"model.max_depth": "6"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "…" not in result.output  # short values are shown in full, no ellipsis
+
+# CBB-022: leaderboard auto-surfaces the trusted holdout metric (CBB-017)
+def test_leaderboard_auto_shows_holdout_metric():
+    runs = [_make_lb_run("a" * 32, 0.18, extra_metrics={"holdout_brier": 0.1655, "holdout_n": 68})]
+    result = _lb_invoke(runs)
+    assert result.exit_code == 0
+    assert "holdout_brier" in result.output
+    assert "0.1655" in result.output
+    assert "holdout_n" not in result.output  # count key excluded, not a column
+
+
+def test_leaderboard_excludes_holdout_count_keys():
+    runs = [
+        _make_lb_run(
+            "a" * 32, 0.18, extra_metrics={"holdout_n_games": 68, "holdout_scored_games": 50}
+        )
+    ]
+    result = _lb_invoke(runs)
+    assert result.exit_code == 0
+    assert "holdout_n_games" not in result.output
+    assert "holdout_scored_games" not in result.output
+
+
+def test_leaderboard_no_holdout_column_when_absent():
+    runs = [_make_lb_run("a" * 32, 0.18)]
+    result = _lb_invoke(runs)
+    assert result.exit_code == 0
+    assert "holdout" not in result.output
