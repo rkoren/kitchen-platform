@@ -1255,6 +1255,18 @@ def _diff_load_fi(run_id: str) -> dict[str, float] | None:
         return None
 
 
+#: Max display width for a param value in `kitchen diff` (CBB-021). MLflow logs params as
+#: strings, so a list-valued param (e.g. a 57-element `feature_candidates`) stringifies to
+#: ~700 chars; rendered raw it sizes the value column to its own length and blows the table
+#: out. Values longer than this are ellipsized for display (the comparison still uses the
+#: full value, so a difference is never missed).
+_DIFF_VALUE_MAX = 60
+
+
+def _ellipsize(value: str, width: int = _DIFF_VALUE_MAX) -> str:
+    return value if len(value) <= width else value[: width - 1] + "…"
+
+
 @app.command()
 def diff(
     run_id_a: str = typer.Argument(..., help="First run ID (a)"),
@@ -1301,7 +1313,9 @@ def diff(
         va = params_a.get(key, "(missing)")
         vb = params_b.get(key, "(missing)")
         if va != vb:
-            param_rows.append((key, va, vb))
+            # CBB-021: compare on the full value, display ellipsized so a long list-valued
+            # param (e.g. feature_candidates) can't blow the value column out to its own width.
+            param_rows.append((key, _ellipsize(va), _ellipsize(vb)))
 
     # --- Metric diffs ---
     metrics_a = {k: v for k, v in run_a.data.metrics.items() if not k.startswith("fi.")}
