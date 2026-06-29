@@ -56,8 +56,13 @@ def _try_auto_promote(
     metric: str,
     lower_is_better: bool,
     model_name: str | None,
+    experiment: str | None = None,
 ) -> None:
-    """Compare the latest run against the current champion; promote if it wins."""
+    """Compare the latest run against the current champion; promote if it wins.
+
+    ``experiment`` scopes the run search to a specific model's experiment (CBB-020); when
+    omitted it falls back to the project's ``cfg.experiment`` (single-model / legacy path).
+    """
 
     import mlflow.tracking
 
@@ -67,7 +72,7 @@ def _try_auto_promote(
 
     configure_from_env()
     cfg = KitchenConfig.from_yaml(params_file)
-    exp_name = cfg.experiment
+    exp_name = experiment or cfg.experiment
     resolved_model = model_name or os.environ.get("MLFLOW_MODEL_NAME", f"{exp_name}-model")
 
     client = mlflow.tracking.MlflowClient()
@@ -329,6 +334,16 @@ def run_train(
             "--override scalars still apply on top.",
         ),
     ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Select a model from the menu's `models:` map (multi-model projects). "
+            "Scopes the run's experiment + auto-promote metric/direction/champion to that "
+            "model, so --promote-metric/--model-name aren't needed. Single-model projects "
+            "omit this.",
+        ),
+    ] = None,
     debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
     """Run the full train pipeline: features → train → log to MLflow.
@@ -351,18 +366,43 @@ def run_train(
 
     params_file = _resolve_params_path(params_file)
 
-    if auto_promote and not promote_metric:
-        detected = _promote_metric_from_thresholds(params_file)
-        if detected is None:
-            typer.echo(
-                "error: --promote-metric is required when using --auto-promote "
-                "(or add a 'thresholds:' section to menu.yaml for auto-detection)",
-                err=True,
-            )
-            raise typer.Exit(1)
-        promote_metric, lower_is_better = detected
+    # CBB-020: resolve the model identity (experiment + champion + metric/direction) from the
+    # menu's `models:` map. Backward-compatible: no map + no --model → the legacy single-model
+    # identity (cfg.experiment, thresholds-derived metric). `--model` makes auto-promote
+    # model-scoped so --promote-metric/--model-name aren't needed in a multi-model project.
+    resolved_model = None
+    try:
+        from kitchen.config import KitchenConfig, ModelNotFound, resolve_model
 
-    params_file = _resolve_params_path(params_file)
+        _cfg = KitchenConfig.from_yaml(params_file)
+        resolved_model = resolve_model(_cfg, model)
+    except ModelNotFound as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    except Exception:
+        resolved_model = None  # unreadable config → legacy path; downstream surfaces the error
+        if model is not None:
+            typer.echo(f"error: --model {model!r} given but the menu could not be read", err=True)
+            raise typer.Exit(1)
+
+    # Resolve the auto-promote metric/direction up front (fail fast, before training):
+    # explicit --promote-metric wins; else the selected model's declared metric; else the
+    # first thresholds key.
+    if auto_promote:
+        if promote_metric:
+            pass  # user-specified metric + the --lower/higher-is-better flag own the direction
+        elif resolved_model is not None and resolved_model.metric:
+            promote_metric, lower_is_better = resolved_model.metric, resolved_model.lower_is_better
+        else:
+            detected = _promote_metric_from_thresholds(params_file)
+            if detected is None:
+                typer.echo(
+                    "error: --promote-metric is required when using --auto-promote "
+                    "(or declare a `models:` entry / add a 'thresholds:' section for auto-detection)",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            promote_metric, lower_is_better = detected
 
     parsed_overrides: dict | None = None
     if override:
@@ -373,6 +413,15 @@ def run_train(
                 raise typer.Exit(1)
             key, _, raw_val = item.partition("=")
             parsed_overrides[key.strip()] = _coerce_override_value(raw_val)
+
+    # CBB-020: a selected model trains into its own experiment (per-model isolation).
+    if (
+        resolved_model is not None
+        and resolved_model.name is not None
+        and resolved_model.experiment != _cfg.experiment
+    ):
+        parsed_overrides = parsed_overrides or {}
+        parsed_overrides.setdefault("experiment", resolved_model.experiment)
 
     if variant:
         from kitchen.menu import load_params
@@ -430,7 +479,17 @@ def run_train(
         MlflowClient().set_tag(run_id, "kitchen.from_run", from_run)
 
     if auto_promote:
-        _try_auto_promote(params_file, promote_metric, lower_is_better, promote_model_name)  # type: ignore[arg-type]
+        ap_model_name = promote_model_name or (
+            resolved_model.model_name if resolved_model else None
+        )
+        ap_experiment = resolved_model.experiment if resolved_model else None
+        _try_auto_promote(
+            params_file,
+            promote_metric,  # type: ignore[arg-type]
+            lower_is_better,
+            ap_model_name,
+            experiment=ap_experiment,
+        )
 
 
 def run_sweep(

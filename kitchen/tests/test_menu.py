@@ -324,3 +324,14 @@ def test_to_kitchen_config_carries_feature_schema():
     assert cfg.feature_schema is not None
     assert cfg.feature_schema.file == "matchups.parquet"
     assert cfg.feature_schema.columns == {"a": "int64"}
+
+
+def test_to_kitchen_config_carries_models():
+    """CBB-020: the `models:` map survives the menu→KitchenConfig bridge."""
+    m = Menu.model_validate(
+        _menu(models={"reg": {"experiment": "cbb-reg", "metric": "loto_brier_reg", "lower_is_better": True}})
+    )
+    cfg = m.to_kitchen_config()
+    assert cfg.models["reg"].experiment == "cbb-reg"
+    assert cfg.models["reg"].metric == "loto_brier_reg"
+    assert cfg.models["reg"].lower_is_better is True
