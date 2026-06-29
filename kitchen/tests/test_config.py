@@ -405,3 +405,28 @@ def test_effective_secrets_manifest_wins_over_legacy():
 
 def test_uses_legacy_required_env_false_without_check():
     assert KitchenConfig(experiment="e").uses_legacy_required_env is False
+
+
+# KG-014: feature schema spec
+def test_feature_schema_spec_parses():
+    from kitchen.config import FeatureSchemaSpec, KitchenConfig
+
+    cfg = KitchenConfig(
+        experiment="e",
+        feature_schema={"file": "matchups.parquet", "columns": {"a": "int64", "b": "float64"}},
+    )
+    assert isinstance(cfg.feature_schema, FeatureSchemaSpec)
+    assert cfg.feature_schema.file == "matchups.parquet"
+    assert cfg.feature_schema.columns == {"a": "int64", "b": "float64"}
+
+
+def test_feature_schema_spec_rejects_unknown_key():
+    import pytest
+
+    from kitchen.config import KitchenConfig
+
+    with pytest.raises(Exception, match="typo"):
+        KitchenConfig(
+            experiment="e",
+            feature_schema={"file": "f.parquet", "columns": {}, "typo": 1},
+        )
