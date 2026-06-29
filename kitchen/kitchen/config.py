@@ -12,6 +12,7 @@ Or validate inline::
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -194,6 +195,84 @@ class HoldoutSpec(BaseModel):
     optional: bool = True
 
 
+class ModelSpec(BaseModel):
+    """One entry in the ``models:`` map — a distinct model in a multi-model project (CBB-020).
+
+    A project that grows a second model (e.g. cbb's tournament Brier model **and** a
+    regular-season margin/total model) declares each here so the platform can scope
+    auto-promote, the champion, and the read commands per-model instead of guessing from a
+    single shared experiment + the first ``thresholds`` key. ``--model <name>`` on the
+    ``run train``/``leaderboard``/``status`` commands selects an entry.
+
+    All fields default sensibly so a minimal entry works: ``experiment`` falls back to the
+    project's top-level ``experiment``; ``model_name`` (the registered champion) to
+    ``f"{experiment}-model"``; ``metric``/``lower_is_better`` (the promote/rank metric) to the
+    first ``thresholds`` key. Single-model projects don't need a ``models:`` map at all.
+    """
+
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+
+    experiment: str | None = None  # MLflow experiment for this model's runs (default: project experiment)
+    model_name: str | None = None  # registered champion model name (default: f"{experiment}-model")
+    metric: str | None = None  # promote/rank metric (default: first thresholds key)
+    lower_is_better: bool = False  # metric direction for promotion/ranking
+
+
+class ModelNotFound(KeyError):
+    """A ``--model`` name has no entry in the menu's ``models:`` map (or one is required)."""
+
+
+@dataclass(frozen=True)
+class ResolvedModel:
+    """The concrete identity a ``--model`` selection resolves to (CBB-020)."""
+
+    name: str | None  # the models: key, or None for a single-model project
+    experiment: str
+    model_name: str
+    metric: str | None
+    lower_is_better: bool
+
+
+def resolve_model(cfg: "KitchenConfig", model: str | None = None) -> ResolvedModel:
+    """Resolve ``--model <name>`` (or its absence) to a concrete model identity (CBB-020).
+
+    - ``model`` given → that ``models:`` entry (raises :class:`ModelNotFound` if absent).
+    - ``model`` omitted + exactly one entry → that entry (convenience).
+    - ``model`` omitted + multiple entries → :class:`ModelNotFound` (ambiguous; pass ``--model``).
+    - ``model`` omitted + no ``models:`` map → the legacy single-model identity
+      (``cfg.experiment`` + ``MLFLOW_MODEL_NAME``/``f"{experiment}-model"``), so existing
+      projects are unchanged.
+    """
+    import os
+
+    models = cfg.models
+    spec: ModelSpec | None
+    name: str | None
+    if model is not None:
+        if model not in models:
+            have = ", ".join(sorted(models)) or "(no models: map defined)"
+            raise ModelNotFound(f"no model {model!r} in menu — available: {have}")
+        spec, name = models[model], model
+    elif len(models) == 1:
+        name, spec = next(iter(models.items()))
+    elif len(models) > 1:
+        raise ModelNotFound(
+            f"project defines multiple models ({', '.join(sorted(models))}) — pass --model <name>"
+        )
+    else:
+        spec, name = None, None
+
+    experiment = (spec.experiment if spec else None) or cfg.experiment
+    model_name = (
+        (spec.model_name if spec else None)
+        or os.environ.get("MLFLOW_MODEL_NAME")
+        or f"{experiment}-model"
+    )
+    metric = spec.metric if spec else None
+    lower = spec.lower_is_better if spec else False
+    return ResolvedModel(name=name, experiment=experiment, model_name=model_name, metric=metric, lower_is_better=lower)
+
+
 class SecretSpec(BaseModel):
     """One entry in the ``secrets:`` manifest — declares where a secret resolves from.
 
@@ -294,6 +373,7 @@ class KitchenConfig(BaseModel):
     metrics_file: str = "metrics.json"
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
     holdout: HoldoutSpec | None = None
+    models: dict[str, ModelSpec] = Field(default_factory=dict)
 
     @property
     def uses_legacy_required_env(self) -> bool:

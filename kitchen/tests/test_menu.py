@@ -313,3 +313,14 @@ def test_menu_infra_kinds_match_recipes_types():
     union = get_args(ResourceSpec)[0]  # Annotated[Union[...], Field] → the Union
     recipes_types = {get_args(m.model_fields["type"].annotation)[0] for m in get_args(union)}
     assert set(INFRA_KINDS) == recipes_types
+
+
+def test_to_kitchen_config_carries_models():
+    """CBB-020: the `models:` map survives the menu→KitchenConfig bridge."""
+    m = Menu.model_validate(
+        _menu(models={"reg": {"experiment": "cbb-reg", "metric": "loto_brier_reg", "lower_is_better": True}})
+    )
+    cfg = m.to_kitchen_config()
+    assert cfg.models["reg"].experiment == "cbb-reg"
+    assert cfg.models["reg"].metric == "loto_brier_reg"
+    assert cfg.models["reg"].lower_is_better is True
