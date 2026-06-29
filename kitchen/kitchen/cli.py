@@ -1166,13 +1166,29 @@ def leaderboard(
         fold_suffixes = sorted(all_fold_suffixes)
     fold_widths: list[int] = [max(len(s), 6) for s in fold_suffixes]
 
+    # CBB-022: surface the trusted holdout metric(s) (CBB-017) as columns next to the CV metric,
+    # so the never-trained-on generalization number is visible where runs are compared. Auto-
+    # included whenever any run logs a holdout_* *quality* metric; count-like keys (holdout_n,
+    # holdout_n_games, *_games) are excluded so only scored metrics (holdout_brier, holdout_ece,
+    # …) become columns.
+    holdout_keys: list[str] = sorted(
+        {
+            k
+            for r in runs
+            for k in r.data.metrics
+            if k.startswith("holdout_") and k != "holdout_n" and not k.endswith("_games")
+        }
+    )
+    holdout_widths: list[int] = [max(len(k), 8) for k in holdout_keys]
+
     direction = "higher=better" if higher_is_better else "lower=better"
     typer.echo(f"\nExperiment: {exp_name}  |  {metric} ({direction})\n")
 
     id_w = 32
     param_col_header = "".join(f"  {key:>{w}}" for key, w in zip(param_keys, param_widths))
     fold_col_header = "".join(f"  {s:>{w}}" for s, w in zip(fold_suffixes, fold_widths))
-    header = f"{'#':<4}  {'RUN ID':<{id_w}}  {'VARIANT':<12}  {metric:>12}{fold_col_header}  {'lb_score':>10}{param_col_header}  STARTED"
+    holdout_col_header = "".join(f"  {k:>{w}}" for k, w in zip(holdout_keys, holdout_widths))
+    header = f"{'#':<4}  {'RUN ID':<{id_w}}  {'VARIANT':<12}  {metric:>12}{holdout_col_header}{fold_col_header}  {'lb_score':>10}{param_col_header}  STARTED"
     typer.echo(header)
     typer.echo("-" * len(header))
 
@@ -1190,6 +1206,10 @@ def leaderboard(
             rank = str(i + 1)
         variant = (run.data.tags.get("model_variant") or run.info.run_name or "")[:12]
         primary = _fmt_metric(run.data.metrics.get(metric))
+        holdout_col_vals = "".join(
+            f"  {_fmt_metric(run.data.metrics.get(k)):>{w}}"
+            for k, w in zip(holdout_keys, holdout_widths)
+        )
         lb = _fmt_metric(run.data.metrics.get("lb_score"))
         fold_col_vals = "".join(
             f"  {_fmt_metric(run.data.metrics.get(f'{metric}_{s}')):>{w}}"
@@ -1200,7 +1220,7 @@ def leaderboard(
         )
         started = _time_ago(run.info.start_time) if run.info.start_time else "-"
         typer.echo(
-            f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}{fold_col_vals}  {lb:>10}{param_col_vals}  {started}"
+            f"{rank:<4}  {run_id:<{id_w}}  {variant:<12}  {primary:>12}{holdout_col_vals}{fold_col_vals}  {lb:>10}{param_col_vals}  {started}"
         )
 
     typer.echo()

@@ -4325,3 +4325,32 @@ def test_menu_run_provision_needs_state_bucket(tmp_path, monkeypatch):
     result = runner.invoke(app, ["menu", "run"], env={})
     assert result.exit_code == 1
     assert "state bucket" in result.output
+
+
+# CBB-022: leaderboard auto-surfaces the trusted holdout metric (CBB-017)
+def test_leaderboard_auto_shows_holdout_metric():
+    runs = [_make_lb_run("a" * 32, 0.18, extra_metrics={"holdout_brier": 0.1655, "holdout_n": 68})]
+    result = _lb_invoke(runs)
+    assert result.exit_code == 0
+    assert "holdout_brier" in result.output
+    assert "0.1655" in result.output
+    assert "holdout_n" not in result.output  # count key excluded, not a column
+
+
+def test_leaderboard_excludes_holdout_count_keys():
+    runs = [
+        _make_lb_run(
+            "a" * 32, 0.18, extra_metrics={"holdout_n_games": 68, "holdout_scored_games": 50}
+        )
+    ]
+    result = _lb_invoke(runs)
+    assert result.exit_code == 0
+    assert "holdout_n_games" not in result.output
+    assert "holdout_scored_games" not in result.output
+
+
+def test_leaderboard_no_holdout_column_when_absent():
+    runs = [_make_lb_run("a" * 32, 0.18)]
+    result = _lb_invoke(runs)
+    assert result.exit_code == 0
+    assert "holdout" not in result.output
