@@ -1,6 +1,8 @@
 from kitchen import evaluate, registry, search, tracking
 from kitchen.config import KitchenConfig
 from kitchen.experiment import experiment, init_run
+from kitchen.holdout import score_run_holdout
+from kitchen.ingest import cached_fetch, require_external
 from kitchen.menu import load_params
 from kitchen.modeling import (
     blend_predictions,
@@ -35,6 +37,7 @@ __all__ = [
     "Trainer",
     "bayes_search",
     "blend_predictions",
+    "cached_fetch",
     "calibrate_model",
     "classification_metrics",
     "clip_predictions",
@@ -47,6 +50,8 @@ __all__ = [
     "random_search",
     "rank_average",
     "regression_metrics",
+    "require_external",
+    "score_run_holdout",
     "set_seed",
     "time_series_cv",
     "tracking",
