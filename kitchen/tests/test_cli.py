@@ -4325,3 +4325,25 @@ def test_menu_run_provision_needs_state_bucket(tmp_path, monkeypatch):
     result = runner.invoke(app, ["menu", "run"], env={})
     assert result.exit_code == 1
     assert "state bucket" in result.output
+
+
+def test_diff_ellipsizes_long_param_value():
+    # CBB-021: a long list-valued param (stringified feature_candidates) must not blow the
+    # value column out — it's ellipsized for display, and no output line runs absurdly long.
+    long_val = str([f"feat_{i}" for i in range(60)])  # ~600+ chars
+    run_a = _make_diff_run("a" * 32, {"feature_candidates": long_val}, {})
+    run_b = _make_diff_run("b" * 32, {"feature_candidates": "['feat_0']"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "feature_candidates" in result.output
+    assert "…" in result.output  # the long value was truncated
+    assert long_val not in result.output  # the full ~600-char value is never printed
+    assert max(len(line) for line in result.output.splitlines()) < 160  # table stays bounded
+
+
+def test_diff_short_param_value_not_truncated():
+    run_a = _make_diff_run("a" * 32, {"model.max_depth": "3"}, {})
+    run_b = _make_diff_run("b" * 32, {"model.max_depth": "6"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "…" not in result.output  # short values are shown in full, no ellipsis
