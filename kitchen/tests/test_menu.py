@@ -315,6 +315,17 @@ def test_menu_infra_kinds_match_recipes_types():
     assert set(INFRA_KINDS) == recipes_types
 
 
+def test_to_kitchen_config_carries_feature_schema():
+    """KG-014: a typed `feature_schema:` block survives the menu→KitchenConfig bridge."""
+    m = Menu.model_validate(
+        _menu(feature_schema={"file": "matchups.parquet", "columns": {"a": "int64"}})
+    )
+    cfg = m.to_kitchen_config()
+    assert cfg.feature_schema is not None
+    assert cfg.feature_schema.file == "matchups.parquet"
+    assert cfg.feature_schema.columns == {"a": "int64"}
+
+
 def test_to_kitchen_config_carries_models():
     """CBB-020: the `models:` map survives the menu→KitchenConfig bridge."""
     m = Menu.model_validate(
