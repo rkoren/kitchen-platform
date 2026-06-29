@@ -405,3 +405,65 @@ def test_effective_secrets_manifest_wins_over_legacy():
 
 def test_uses_legacy_required_env_false_without_check():
     assert KitchenConfig(experiment="e").uses_legacy_required_env is False
+
+
+# CBB-020: multi-model map + resolver
+def test_model_spec_and_resolve_model():
+    import pytest
+
+    from kitchen.config import KitchenConfig, ModelNotFound, ModelSpec, resolve_model
+
+    cfg = KitchenConfig(
+        experiment="proj",
+        models={
+            "tournament": {
+                "experiment": "cbb-tournament",
+                "model_name": "cbb-tournament-model",
+                "metric": "loto_brier",
+                "lower_is_better": True,
+            },
+            "reg": {"experiment": "cbb-reg", "metric": "loto_brier_reg", "lower_is_better": True},
+        },
+    )
+    assert isinstance(cfg.models["tournament"], ModelSpec)
+
+    # explicit --model resolves the entry
+    r = resolve_model(cfg, "reg")
+    assert (r.name, r.experiment, r.metric, r.lower_is_better) == ("reg", "cbb-reg", "loto_brier_reg", True)
+    # model_name defaults to f"{experiment}-model" when the entry omits it
+    assert r.model_name == "cbb-reg-model"
+
+    # ambiguous: multiple models, no --model
+    with pytest.raises(ModelNotFound, match="multiple models"):
+        resolve_model(cfg, None)
+    # unknown model name
+    with pytest.raises(ModelNotFound, match="available: reg, tournament"):
+        resolve_model(cfg, "nope")
+
+
+def test_resolve_model_legacy_single_model():
+    """No models: map → the legacy single-model identity (unchanged for existing projects)."""
+    from kitchen.config import KitchenConfig, resolve_model
+
+    r = resolve_model(KitchenConfig(experiment="solo"), None)
+    assert r.name is None
+    assert r.experiment == "solo"
+    assert r.model_name == "solo-model"
+    assert r.metric is None
+
+
+def test_resolve_model_single_entry_auto_selected():
+    from kitchen.config import KitchenConfig, resolve_model
+
+    cfg = KitchenConfig(experiment="p", models={"only": {"experiment": "e", "metric": "m"}})
+    r = resolve_model(cfg, None)  # one entry → no --model needed
+    assert r.name == "only" and r.experiment == "e" and r.metric == "m"
+
+
+def test_model_spec_rejects_unknown_key():
+    import pytest
+
+    from kitchen.config import KitchenConfig
+
+    with pytest.raises(Exception, match="typo"):
+        KitchenConfig(experiment="p", models={"a": {"experiment": "e", "typo": 1}})

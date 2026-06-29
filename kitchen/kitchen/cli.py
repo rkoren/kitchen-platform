@@ -218,6 +218,14 @@ def status(
     model_name: Annotated[
         str | None, typer.Option("--model-name", help="Registered model name")
     ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Select a model from the menu's `models:` map (multi-model projects): scopes "
+            "the summary to that model's experiment and champion.",
+        ),
+    ] = None,
     n_runs: Annotated[int, typer.Option("--runs", "-n", help="Number of recent runs to show")] = 5,
 ) -> None:
     """One-screen project summary: champion, recent runs with thresholds, and submission file.
@@ -253,6 +261,22 @@ def status(
             err=True,
         )
         raise typer.Exit(1)
+
+    # CBB-020: --model scopes the summary to that model's experiment + champion.
+    if model is not None:
+        if cfg is None:
+            typer.echo(f"error: --model {model!r} given but no menu was found to resolve it", err=True)
+            raise typer.Exit(1)
+        from kitchen.config import ModelNotFound, resolve_model
+
+        try:
+            _rm = resolve_model(cfg, model)
+        except ModelNotFound as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1)
+        exp_name = _rm.experiment
+        if model_name is None:
+            model_name = _rm.model_name
 
     resolved_model = model_name or os.environ.get("MLFLOW_MODEL_NAME", f"{exp_name}-model")
     typer.echo(f"\nProject: {exp_name}  ({params_file})\n")
@@ -1028,6 +1052,14 @@ def leaderboard(
         str | None,
         typer.Option("--model-name", help="Registered model name to resolve champion alias"),
     ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Select a model from the menu's `models:` map (multi-model projects): scopes "
+            "the board to that model's experiment, metric, and champion.",
+        ),
+    ] = None,
     show_params: Annotated[
         str | None,
         typer.Option(
@@ -1083,6 +1115,22 @@ def leaderboard(
 
     configure_from_env()
     exp_name = _resolve_experiment(experiment, params_file)
+
+    # CBB-020: --model scopes the board to that model's experiment / metric / champion.
+    if model is not None:
+        from kitchen.config import KitchenConfig, ModelNotFound, resolve_model, resolve_params_path
+
+        try:
+            _rm = resolve_model(KitchenConfig.from_yaml(resolve_params_path(params_file)), model)
+        except ModelNotFound as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1)
+        exp_name = _rm.experiment
+        if model_name is None:
+            model_name = _rm.model_name
+        if metric is None and _rm.metric:
+            metric, higher_is_better = _rm.metric, not _rm.lower_is_better
+
     client = mlflow.tracking.MlflowClient()
     exp = client.get_experiment_by_name(exp_name)
     if exp is None:

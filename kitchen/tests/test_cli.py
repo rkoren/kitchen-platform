@@ -4325,3 +4325,153 @@ def test_menu_run_provision_needs_state_bucket(tmp_path, monkeypatch):
     result = runner.invoke(app, ["menu", "run"], env={})
     assert result.exit_code == 1
     assert "state bucket" in result.output
+
+
+# ---------------------------------------------------------------------------
+# CBB-020: multi-model auto-promote / leaderboard scoping
+# ---------------------------------------------------------------------------
+
+_MULTI_MODEL_MENU = """\
+project: cbb
+pipeline: []
+recipes: {}
+experiment: cbb
+models:
+  tournament:
+    experiment: cbb-tournament
+    model_name: cbb-tournament-model
+    metric: loto_brier
+    lower_is_better: true
+  reg:
+    experiment: cbb-reg
+    model_name: cbb-reg-model
+    metric: loto_brier_reg
+    lower_is_better: true
+thresholds:
+  loto_brier:
+    max: 0.175
+"""
+
+
+def test_run_train_model_scopes_auto_promote(tmp_path, monkeypatch):
+    """--model reg auto-promotes on the reg model's metric/experiment/champion (no manual flags)."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_MULTI_MODEL_MENU)
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+
+    new_run = MagicMock()
+    new_run.info.run_id = "newrun" + "0" * 26
+    new_run.data.metrics = {"loto_brier_reg": 0.18}
+    seen_experiments = []
+
+    def make_client():
+        client = MagicMock()
+
+        def _get_exp(name):
+            seen_experiments.append(name)
+            exp = MagicMock()
+            exp.experiment_id = "1"
+            return exp
+
+        client.get_experiment_by_name.side_effect = _get_exp
+        client.search_runs.return_value = [new_run]
+        client.get_model_version_by_alias.side_effect = mlflow.exceptions.MlflowException("no alias")
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+        patch("kitchen.registry.register_model", return_value="1") as mock_reg,
+        patch("kitchen.registry.promote_model"),
+    ):
+        result = runner.invoke(
+            app, ["run", "train", "--model", "reg", "--auto-promote"], catch_exceptions=False
+        )
+
+    assert result.exit_code == 0
+    assert "loto_brier_reg" in result.output  # the reg model's metric, not the first threshold
+    # champion registered under the reg model's name, in the reg experiment
+    assert mock_reg.call_args.args[2] == "cbb-reg-model"
+    assert "cbb-reg" in seen_experiments
+
+
+def test_run_train_multi_model_requires_model_flag(tmp_path, monkeypatch):
+    """A multi-model project must say which model — `run train` without --model errors clearly."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_MULTI_MODEL_MENU)
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+    with patch("kitchen.tracking.configure_from_env"):
+        result = runner.invoke(app, ["run", "train", "--auto-promote"])
+    assert result.exit_code != 0
+    assert "--model" in result.output
+
+
+def test_run_train_unknown_model_errors(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_MULTI_MODEL_MENU)
+    with patch("kitchen.tracking.configure_from_env"):
+        result = runner.invoke(app, ["run", "train", "--model", "nope"])
+    assert result.exit_code != 0
+    assert "no model 'nope'" in result.output
+
+
+def test_leaderboard_model_scopes_experiment(tmp_path, monkeypatch):
+    """leaderboard --model reg queries the reg model's experiment."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_MULTI_MODEL_MENU)
+    seen = []
+
+    def make_client():
+        client = MagicMock()
+
+        def _get_exp(name):
+            seen.append(name)
+            exp = MagicMock()
+            exp.experiment_id = "1"
+            return exp
+
+        client.get_experiment_by_name.side_effect = _get_exp
+        client.search_runs.return_value = []  # no runs → early clean exit
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+    ):
+        result = runner.invoke(app, ["leaderboard", "--model", "reg"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "cbb-reg" in seen  # scoped to the reg experiment, not the project default
+
+
+def test_status_model_scopes_experiment_and_champion(tmp_path, monkeypatch):
+    """status --model reg targets the reg experiment + reg champion."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_MULTI_MODEL_MENU)
+    seen_exp = []
+    seen_champ = []
+
+    def make_client():
+        client = MagicMock()
+
+        def _get_exp(name):
+            seen_exp.append(name)
+            return None  # no experiment → status prints "no runs", clean exit 0
+
+        def _alias(model_name, alias):
+            seen_champ.append(model_name)
+            raise mlflow.exceptions.MlflowException("no champion")
+
+        client.get_experiment_by_name.side_effect = _get_exp
+        client.get_model_version_by_alias.side_effect = _alias
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+    ):
+        result = runner.invoke(app, ["status", "--model", "reg"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "cbb-reg" in seen_exp
+    assert "cbb-reg-model" in seen_champ
