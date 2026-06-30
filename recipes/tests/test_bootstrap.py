@@ -12,6 +12,9 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "bootstrap-aws.sh"
+# SEC-010: the CI-role IAM policy was extracted out of the bootstrap heredoc into this
+# version-controlled template (single source of truth; bootstrap renders it via envsubst).
+POLICY_TMPL = Path(__file__).resolve().parents[2] / "infra" / "ci-role-policy.json.tmpl"
 
 # The bootstrap script is intentionally gitignored (local-only), so it is absent in a
 # fresh CI checkout. Skip these guards when it isn't present rather than fail; they run
@@ -60,9 +63,12 @@ def test_parameters_are_env_overridable(var):
 
 
 def test_ci_role_permissions_narrowed():
-    # SEC-004: ECR scoped to explicit actions (no ecr:*), and the IAM action set
-    # includes ListInstanceProfilesForRole (Terraform reads it on aws_iam_role refresh).
-    text = SCRIPT.read_text()
+    # SEC-004/SEC-010: the policy now lives in the version-controlled template (the bootstrap
+    # renders it via envsubst). ECR is scoped to explicit actions (no ecr:*), and the IAM
+    # action set includes ListInstanceProfilesForRole (Terraform reads it on aws_iam_role
+    # refresh). Assert both the wiring (bootstrap renders the template) and the content.
+    assert "ci-role-policy.json.tmpl" in SCRIPT.read_text(), "bootstrap must render the tracked policy"
+    text = POLICY_TMPL.read_text()
     assert '"ecr:*"' not in text, "ECR should be scoped to explicit actions, not ecr:*"
     assert "ecr:GetAuthorizationToken" in text and "ecr:PutImage" in text
     assert "iam:ListInstanceProfilesForRole" in text
