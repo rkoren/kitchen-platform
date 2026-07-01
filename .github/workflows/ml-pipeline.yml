@@ -129,8 +129,9 @@ jobs:
           python-version: ${{ inputs.python-version }}
           cache: pip
 
-      - name: Install recipes
-        run: pip install "recipes @ git+https://github.com/rkoren/kitchen-platform#subdirectory=recipes"
+      - name: Install kitchen (provides the recipes CLI)
+        # INT-013: recipes merged into rkoren-kitchen as the kitchen.recipes sub-package.
+        run: pip install "rkoren-kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
 
       - name: Generate Terraform
         run: recipes generate ${{ inputs.infra-spec }} --out tf
@@ -175,8 +176,9 @@ jobs:
           python-version: ${{ inputs.python-version }}
           cache: pip
 
-      - name: Install recipes
-        run: pip install "recipes @ git+https://github.com/rkoren/kitchen-platform#subdirectory=recipes"
+      - name: Install kitchen (provides the recipes CLI)
+        # INT-013: recipes merged into rkoren-kitchen as the kitchen.recipes sub-package.
+        run: pip install "rkoren-kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
 
       - name: Generate Terraform
         run: recipes generate ${{ inputs.infra-spec }} --out tf
@@ -227,8 +229,9 @@ jobs:
           python-version: ${{ inputs.python-version }}
           cache: pip
 
-      - name: Install recipes
-        run: pip install "recipes @ git+https://github.com/rkoren/kitchen-platform#subdirectory=recipes"
+      - name: Install kitchen (provides the recipes CLI)
+        # INT-013: recipes merged into rkoren-kitchen as the kitchen.recipes sub-package.
+        run: pip install "rkoren-kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
 
       - name: Generate Terraform
         run: recipes generate ${{ inputs.infra-spec }} --out tf

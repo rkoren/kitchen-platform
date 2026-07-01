@@ -6,7 +6,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from recipes.schema import (
+from kitchen.recipes.schema import (
     ECRSpec,
     IAMRoleSpec,
     LambdaSpec,
@@ -349,14 +349,14 @@ def test_valid_cross_references_pass():
 
 
 def test_example_lambda_api_yaml_validates():
-    example = Path(__file__).parent.parent / "examples" / "lambda-api.yaml"
+    example = Path(__file__).resolve().parents[3] / "recipes" / "examples" / "lambda-api.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)
     assert spec.name == "my-api"
 
 
 def test_example_inference_api_yaml_validates():
-    example = Path(__file__).parent.parent / "examples" / "ecr-lambda-inference-api.yaml"
+    example = Path(__file__).resolve().parents[3] / "recipes" / "examples" / "ecr-lambda-inference-api.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)
     assert spec.name == "inference-api"
@@ -368,7 +368,7 @@ def test_example_inference_api_yaml_validates():
 
 
 def test_example_s3_data_bucket_yaml_validates():
-    example = Path(__file__).parent.parent / "examples" / "s3-data-bucket.yaml"
+    example = Path(__file__).resolve().parents[3] / "recipes" / "examples" / "s3-data-bucket.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)
     assert [r.type for r in spec.resources] == ["s3"]
@@ -378,7 +378,7 @@ def test_example_s3_data_bucket_yaml_validates():
 
 
 def test_example_mlflow_artifacts_yaml_validates():
-    example = Path(__file__).parent.parent / "examples" / "mlflow-artifacts.yaml"
+    example = Path(__file__).resolve().parents[3] / "recipes" / "examples" / "mlflow-artifacts.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)
     assert [r.type for r in spec.resources] == ["s3"]
@@ -389,7 +389,7 @@ def test_example_mlflow_artifacts_yaml_validates():
 
 
 def test_example_mlflow_tracking_backend_yaml_validates():
-    example = Path(__file__).parent.parent / "examples" / "mlflow-tracking-backend.yaml"
+    example = Path(__file__).resolve().parents[3] / "recipes" / "examples" / "mlflow-tracking-backend.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)
     # Security group (reachability) + RDS backend store + S3 artifact bucket.
@@ -403,7 +403,7 @@ def test_example_mlflow_tracking_backend_yaml_validates():
 
 
 def test_example_mlflow_backend_validation_yaml_validates():
-    example = Path(__file__).parent.parent / "examples" / "mlflow-backend-validation.yaml"
+    example = Path(__file__).resolve().parents[3] / "recipes" / "examples" / "mlflow-backend-validation.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)
     assert [r.type for r in spec.resources] == ["security_group", "rds"]
@@ -414,7 +414,7 @@ def test_example_mlflow_backend_validation_yaml_validates():
 
 
 def test_example_serving_stack_yaml_validates():
-    example = Path(__file__).parent.parent / "examples" / "kaggle-serving-stack.yaml"
+    example = Path(__file__).resolve().parents[3] / "recipes" / "examples" / "kaggle-serving-stack.yaml"
     data = yaml.safe_load(example.read_text())
     spec = RecipeSpec.model_validate(data)
     assert spec.name == "titanic"

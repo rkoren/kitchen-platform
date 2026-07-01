@@ -1,13 +1,13 @@
 """Tests for per-resource Terraform generators."""
 
-from recipes.generators import generate_resource
-from recipes.generators.ecr import generate as ecr_generate
-from recipes.generators.iam import generate as iam_generate
-from recipes.generators.lambda_ import generate as lambda_generate
-from recipes.generators.rds import generate as rds_generate
-from recipes.generators.s3 import generate as s3_generate
-from recipes.generators.security_group import generate as sg_generate
-from recipes.schema import (
+from kitchen.recipes.generators import generate_resource
+from kitchen.recipes.generators.ecr import generate as ecr_generate
+from kitchen.recipes.generators.iam import generate as iam_generate
+from kitchen.recipes.generators.lambda_ import generate as lambda_generate
+from kitchen.recipes.generators.rds import generate as rds_generate
+from kitchen.recipes.generators.s3 import generate as s3_generate
+from kitchen.recipes.generators.security_group import generate as sg_generate
+from kitchen.recipes.schema import (
     ECRSpec,
     IAMRoleSpec,
     LambdaSpec,

@@ -24,7 +24,13 @@ classifiers = [
 ]
 dependencies = [
     # CLI
-    "typer>=0.9",
+    "typer>=0.12",
+    # Provisioning (recipes → Terraform); folded in at the INT-013 package merge.
+    # NOTE: pandas/numpy/mlflow/… below stay in base for now — the base-vs-[ml] split is
+    # INT-013b (needs a lazy-import refactor of kitchen/__init__.py, not a mechanical move).
+    "pydantic>=2.0",
+    "jinja2>=3.1",
+    "rich>=13.0",
     # Data
     "pandas>=2.0",
     "pyarrow>=14.0",
@@ -71,6 +77,7 @@ dev = [
     "httpx",
     "optuna>=3.0",  # for test_search.py bayes_search coverage
     "ruff",
+    "jsonschema>=4.0",  # recipes schema round-trip validation (tests/recipes/test_schema_export.py)
 ]
 
 [project.urls]
@@ -80,6 +87,9 @@ Issues = "https://github.com/rkoren/kitchen-platform/issues"
 
 [project.scripts]
 kitchen = "kitchen.cli:main"
+# Back-compat alias for standalone provisioning use (INT-012 ADR). menu_run still shells out
+# to `recipes` until INT-017 makes provisioning in-process, so this entry point is load-bearing.
+recipes = "kitchen.recipes.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["kitchen"]
@@ -103,11 +113,5 @@ indent-style = "space"
 [dependency-groups]
 dev = [
     "pylint>=4.0.5",
-    # Monorepo dev only (a uv dependency-group — pip-based CI ignores it, so no CI impact):
-    # lets test_menu lock the menu's infra kinds to recipes' ResourceSpec discriminator.
     "pytest-randomly>=4.1.0",
-    "rkoren-recipes",
 ]
-
-[tool.uv.sources]
-rkoren-recipes = { path = "../recipes", editable = true }

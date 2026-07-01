@@ -111,8 +111,11 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install recipes
-        run: pip install -e recipes/
+      - name: Install kitchen (provides the recipes CLI)
+        # INT-013: recipes is now the kitchen.recipes sub-package; the `recipes` console
+        # script ships with rkoren-kitchen. (INT-013b's [ml] extra will let provision-only
+        # jobs install the light base instead of the full ML stack.)
+        run: pip install -e kitchen/
 
       - name: Generate Terraform
         run: recipes generate kitchen/infra.yaml --out kitchen/tf
@@ -158,8 +161,11 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install recipes
-        run: pip install -e recipes/
+      - name: Install kitchen (provides the recipes CLI)
+        # INT-013: recipes is now the kitchen.recipes sub-package; the `recipes` console
+        # script ships with rkoren-kitchen. (INT-013b's [ml] extra will let provision-only
+        # jobs install the light base instead of the full ML stack.)
+        run: pip install -e kitchen/
 
       - name: Generate Terraform
         run: recipes generate kitchen/infra.yaml --out kitchen/tf
@@ -210,8 +216,11 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install recipes
-        run: pip install -e recipes/
+      - name: Install kitchen (provides the recipes CLI)
+        # INT-013: recipes is now the kitchen.recipes sub-package; the `recipes` console
+        # script ships with rkoren-kitchen. (INT-013b's [ml] extra will let provision-only
+        # jobs install the light base instead of the full ML stack.)
+        run: pip install -e kitchen/
 
       - name: Generate Terraform
         run: recipes generate kitchen/infra.yaml --out kitchen/tf

@@ -6,7 +6,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from recipes.cli import app
+from kitchen.recipes.cli import app
 
 # jsonschema lives only in the recipes `dev` extra, so a bare `uv run python -m
 # pytest` (the documented convention) would otherwise error at collection. Guard
