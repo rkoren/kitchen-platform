@@ -78,12 +78,43 @@ def test_network_does_not_override_explicit_recipe_values():
     assert db.db_subnet_group_name == "own-group" and not db.subnet_ids
 
 
-def test_per_kind_validation_catches_bad_field():
-    """A typo in a recipe's fields is caught when RecipeSpec validates (the validation
-    INT-002 deferred to this projection; INT-015/S-2 moves it earlier into Menu load)."""
+def test_bad_infra_field_errors_at_menu_load():
+    """S-2 (INT-015): a typo in an infra recipe's fields errors at ``Menu.model_validate`` —
+    not later at projection/provision. This is the seam's whole point, so assert the raise
+    wraps *only* the load, and that the message names the offending recipe + field."""
     menu = {"project": "p", "recipes": {"db": {"kind": "rds", "instance_clas": "typo"}}}
-    with pytest.raises(ValidationError):
-        _spec(menu)
+    with pytest.raises(ValidationError) as exc:
+        Menu.model_validate(menu)  # <- fails here, before any to_recipe_spec()
+    msg = str(exc.value)
+    assert "'db'" in msg and "instance_clas" in msg  # recipe key + bad field attributed
+
+
+def test_bad_lambda_field_errors_at_load_after_wiring():
+    """A serve lambda is validated *after* its iam_role/source menu-isms are wired, so a real
+    typo in a lambda field still errors at load (and the wiring itself doesn't false-trip)."""
+    menu = {
+        "project": "p",
+        "recipes": {"serve": {"kind": "lambda", "iam_role": "arn:role/x", "memoryy_size": 512}},
+    }
+    with pytest.raises(ValidationError, match="serve"):
+        Menu.model_validate(menu)
+
+
+def test_valid_infra_with_network_inheritance_loads():
+    """A valid menu whose rds/sg rely on inherited networking must still load cleanly — the
+    load-time validation projects with inheritance, so inherited fields aren't seen as bad."""
+    Menu.model_validate(MENU)  # sg + rds inherit vpc_id/subnets; no error
+
+
+def test_stage_recipe_args_stay_loose_at_load():
+    """`stage` recipes have no infra spec — arbitrary fields (e.g. `args`) must pass at load."""
+    menu = {
+        "project": "p",
+        "pipeline": ["train"],
+        "recipes": {"train": {"kind": "stage", "source": "src/train/run.py", "args": ["--x"]}},
+    }
+    m = Menu.model_validate(menu)
+    assert m.recipes["train"].fields["args"] == ["--x"]
 
 
 def test_empty_recipes_yields_no_resources():

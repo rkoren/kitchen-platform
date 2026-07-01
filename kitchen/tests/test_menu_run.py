@@ -18,7 +18,13 @@ FULL = Menu.model_validate(
         "recipes": {
             "mlflow-backend": {"kind": "rds", "role": "mlflow-backend"},
             "train": {"kind": "stage", "source": "src/train/run.py"},
-            "serve": {"kind": "lambda", "role": "serving", "source": "src/serve/"},
+            "serve": {
+                "kind": "lambda",
+                "role": "serving",
+                "iam_role": "arn:aws:iam::123456789012:role/serving-exec",
+                "source": "src/serve/",
+                "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/serve:latest",
+            },
         },
     }
 )
