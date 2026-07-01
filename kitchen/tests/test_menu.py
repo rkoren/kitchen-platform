@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from typing import get_args
 
 import pytest
 import yaml
@@ -10,6 +11,7 @@ from pydantic import ValidationError
 
 from kitchen.config import KitchenConfig
 from kitchen.menu import (
+    INFRA_KINDS,
     Menu,
     RecipeEntry,
     RoleRef,
@@ -106,6 +108,16 @@ def test_menu_allows_project_sections_at_top_level():
 def test_recipe_entry_unknown_kind_raises():
     with pytest.raises(ValidationError):
         RecipeEntry.model_validate({"kind": "dynamodb"})
+
+
+def test_recipe_entry_kind_covers_all_infra_kinds():
+    """`INFRA_KINDS` is derived from recipes' `ResourceSpec` (S-3), but `RecipeEntry.kind` is a
+    static `Literal` that also lists the infra kinds — a `Literal` can't be derived. This guards
+    that remaining duplication: a new recipe kind added to `ResourceSpec` must also be added to
+    `RecipeEntry.kind`, else a menu using it is accepted as infra yet rejected at entry load."""
+    entry_kinds = set(get_args(RecipeEntry.model_fields["kind"].annotation))
+    missing = set(INFRA_KINDS) - entry_kinds
+    assert not missing, f"RecipeEntry.kind is missing infra kinds from ResourceSpec: {missing}"
 
 
 # --- cross-reference errors ---

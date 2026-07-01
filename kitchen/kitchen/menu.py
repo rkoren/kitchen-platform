@@ -44,7 +44,6 @@ INFRA_KINDS: tuple[str, ...] = tuple(
     get_args(spec.model_fields["type"].annotation)[0]
     for spec in get_args(get_args(ResourceSpec)[0])  # Annotated[Union[...], Field] → the specs
 )
-RUNTIME_KINDS: tuple[str, ...] = ("stage",)
 
 # Pipeline steps that are platform actions rather than references into ``recipes``:
 #   provision — apply the infra recipes (recipes/Terraform resolves their internal order)
