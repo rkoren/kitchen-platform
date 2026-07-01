@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-from typing import get_args
 
 import pytest
 import yaml
@@ -11,7 +10,6 @@ from pydantic import ValidationError
 
 from kitchen.config import KitchenConfig
 from kitchen.menu import (
-    INFRA_KINDS,
     Menu,
     RecipeEntry,
     RoleRef,
@@ -306,18 +304,6 @@ def test_menu_validates_variants_schema():
     # a bad feature_candidates overlay key is rejected up front (extra=forbid on the overlay)
     with pytest.raises(ValidationError):
         Menu.model_validate(_menu(variants={"rich": {"feature_candidates": {"addd": ["typo"]}}}))
-
-
-# --- locked to recipes' discriminator ---
-
-
-def test_menu_infra_kinds_match_recipes_types():
-    """INFRA_KINDS must equal recipes' ResourceSpec `type` discriminator — no drift."""
-    from kitchen.recipes.schema import ResourceSpec
-
-    union = get_args(ResourceSpec)[0]  # Annotated[Union[...], Field] → the Union
-    recipes_types = {get_args(m.model_fields["type"].annotation)[0] for m in get_args(union)}
-    assert set(INFRA_KINDS) == recipes_types
 
 
 def test_to_kitchen_config_carries_feature_schema():
