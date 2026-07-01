@@ -36,7 +36,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install rkoren-recipes
+      - run: pip install rkoren-kitchen
       - name: Validate spec
         run: recipes validate infra/my-project.yaml
 
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install rkoren-recipes
+      - run: pip install rkoren-kitchen
       - name: Generate Terraform configs
         run: recipes generate infra/my-project.yaml --out tf/
       - uses: actions/upload-artifact@v4

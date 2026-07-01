@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from recipes.menu import is_menu, recipe_spec_from_menu
+from kitchen.recipes.menu import is_menu, recipe_spec_from_menu
 
 MENU: dict = {
     "project": "cbb-model",

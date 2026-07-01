@@ -11,12 +11,12 @@ The workflow has two modes:
 
 ## Modules
 
-### `recipes/` — IaC CLI
+### `kitchen.recipes` — IaC CLI
 
-Generates Terraform from a declarative YAML spec. Supports S3, ECR, IAM roles, and Lambda. Used in CI to provision infrastructure before deploying.
+Generates Terraform from a declarative YAML spec. Supports S3, ECR, IAM roles, and Lambda. Used in CI to provision infrastructure before deploying. Merged into `rkoren-kitchen` as the `kitchen.recipes` sub-package (INT-013); the `recipes` command ships with the kitchen install.
 
 ```bash
-pip install -e recipes/
+pip install -e kitchen/
 recipes generate infra.yaml --out ./tf
 ```
 
