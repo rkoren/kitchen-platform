@@ -11,10 +11,11 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "bootstrap-aws.sh"
+# parents[3] == repo root (this file is kitchen/tests/recipes/test_bootstrap.py)
+SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "bootstrap-aws.sh"
 # SEC-010: the CI-role IAM policy was extracted out of the bootstrap heredoc into this
 # version-controlled template (single source of truth; bootstrap renders it via envsubst).
-POLICY_TMPL = Path(__file__).resolve().parents[2] / "infra" / "ci-role-policy.json.tmpl"
+POLICY_TMPL = Path(__file__).resolve().parents[3] / "infra" / "ci-role-policy.json.tmpl"
 
 # The bootstrap script is intentionally gitignored (local-only), so it is absent in a
 # fresh CI checkout. Skip these guards when it isn't present rather than fail; they run
