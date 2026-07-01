@@ -14,7 +14,7 @@ recipe's kind-specific fields against the real ``RDSSpec``/``S3Spec``/… at loa
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -31,14 +31,19 @@ from kitchen.config import (
     SubmissionConfig,
     ThresholdSpec,
 )
+from kitchen.recipes.schema import ResourceSpec
 
 if TYPE_CHECKING:
     from kitchen.config import KitchenConfig
     from kitchen.recipes.schema import RecipeSpec
 
-# Infra kinds must stay in lockstep with recipes' ``ResourceSpec`` discriminator (a test
-# asserts equality). ``stage`` is the runtime-only kind recipes has no equivalent for.
-INFRA_KINDS: tuple[str, ...] = ("rds", "s3", "security_group", "iam_role", "ecr", "lambda")
+# Infra kinds are derived directly from recipes' ``ResourceSpec`` discriminator — the single
+# source of truth (S-3, INT-016; possible now recipes is the ``kitchen.recipes`` sub-package).
+# ``stage`` is the runtime-only kind recipes has no equivalent for.
+INFRA_KINDS: tuple[str, ...] = tuple(
+    get_args(spec.model_fields["type"].annotation)[0]
+    for spec in get_args(get_args(ResourceSpec)[0])  # Annotated[Union[...], Field] → the specs
+)
 RUNTIME_KINDS: tuple[str, ...] = ("stage",)
 
 # Pipeline steps that are platform actions rather than references into ``recipes``:
