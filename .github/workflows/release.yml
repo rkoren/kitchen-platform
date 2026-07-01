@@ -1,33 +1,27 @@
 name: release
 
-# Publish a single package to production PyPI when a per-package version tag is pushed.
+# Publish rkoren-kitchen to production PyPI when a version tag is pushed.
 #
-# Versioning is independent per package (see docs/decisions/versioning.md), so tags are
-# namespaced by package:
-#   - kitchen-vX.Y.Z  -> publishes rkoren-kitchen  (built from kitchen/)
-#   - recipes-vX.Y.Z  -> publishes rkoren-recipes  (built from recipes/)
-#
-# The tag version must match the version in that package's pyproject.toml, or the run fails
+# Since INT-013 merged recipes into rkoren-kitchen there is a single distribution and a
+# single tag family: kitchen-vX.Y.Z -> publishes rkoren-kitchen (built from kitchen/).
+# The tag version must match the version in kitchen/pyproject.toml, or the run fails
 # before anything is built or published.
 #
-# Setup required (one-time, PER PACKAGE):
-#   1. Create the project on https://pypi.org (rkoren-kitchen AND rkoren-recipes).
-#   2. For EACH project, under Publishing → add a Trusted Publisher:
+# Setup required (one-time):
+#   1. Create the rkoren-kitchen project on https://pypi.org.
+#   2. Under Publishing → add a Trusted Publisher:
 #        Owner: rkoren   Repo: kitchen-platform   Workflow: release.yml   Environment: pypi
-#      Both projects must have their own entry — one missing entry means that package 403s
-#      while the other publishes fine.
 #   3. Create a GitHub environment named "pypi" (repo Settings → Environments).
-#      Add a deployment branch/tag rule restricting it to tags: kitchen-v* and recipes-v*.
+#      Add a deployment branch/tag rule restricting it to tags: kitchen-v*.
 #      No secrets needed — OIDC + Trusted Publisher handles auth.
 #
-# To cut a release: bump the version in the package's pyproject.toml, merge, then
-#   git tag kitchen-v0.6.0 && git push origin kitchen-v0.6.0
+# To cut a release: bump the version in kitchen/pyproject.toml, merge, then
+#   git tag kitchen-v1.0.0 && git push origin kitchen-v1.0.0
 
 on:
   push:
     tags:
       - "kitchen-v*"
-      - "recipes-v*"
 
 # A re-pushed tag should not race itself past the version guard.
 concurrency:
@@ -52,8 +46,7 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           case "$tag" in
             kitchen-v*) package=kitchen; dir=kitchen; tag_version="${tag#kitchen-v}" ;;
-            recipes-v*) package=recipes; dir=recipes; tag_version="${tag#recipes-v}" ;;
-            *) echo "::error::Tag '$tag' does not match kitchen-v* or recipes-v*"; exit 1 ;;
+            *) echo "::error::Tag '$tag' does not match kitchen-v*"; exit 1 ;;
           esac
 
           pyproject="${dir}/pyproject.toml"

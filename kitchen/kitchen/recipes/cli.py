@@ -10,9 +10,9 @@ import yaml
 from jinja2 import Environment, FileSystemLoader
 from rich.console import Console
 
-from recipes.generators import generate_resource
-from recipes.menu import is_menu, recipe_spec_from_menu
-from recipes.schema import RecipeSpec
+from kitchen.recipes.generators import generate_resource
+from kitchen.recipes.menu import is_menu, recipe_spec_from_menu
+from kitchen.recipes.schema import RecipeSpec
 
 app = typer.Typer(help="YAML spec → Terraform config generator and provisioner.")
 console = Console()

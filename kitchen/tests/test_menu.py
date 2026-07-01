@@ -307,8 +307,7 @@ def test_menu_validates_variants_schema():
 
 def test_menu_infra_kinds_match_recipes_types():
     """INFRA_KINDS must equal recipes' ResourceSpec `type` discriminator — no drift."""
-    pytest.importorskip("recipes")
-    from recipes.schema import ResourceSpec
+    from kitchen.recipes.schema import ResourceSpec
 
     union = get_args(ResourceSpec)[0]  # Annotated[Union[...], Field] → the Union
     recipes_types = {get_args(m.model_fields["type"].annotation)[0] for m in get_args(union)}

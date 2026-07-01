@@ -11,7 +11,7 @@ surface here — this is the validation ``kitchen.menu`` (INT-002) deliberately 
 
 from __future__ import annotations
 
-from recipes.schema import RecipeSpec
+from kitchen.recipes.schema import RecipeSpec
 
 # Infra kinds recipes provisions — must match the ``ResourceSpec`` discriminator (and
 # ``kitchen.menu.INFRA_KINDS``, which a kitchen test locks to this same set).

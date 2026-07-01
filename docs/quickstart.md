@@ -1,12 +1,15 @@
 # 5-Minute Quickstart
 
-Get both packages installed and working locally — no AWS account, no Kaggle credentials required.
+Get the platform installed and working locally — no AWS account, no Kaggle credentials required.
 
 ## Install
 
 ```bash
-pip install rkoren-recipes rkoren-kitchen
+pip install rkoren-kitchen
 ```
+
+`rkoren-kitchen` ships the ML framework and the `recipes` provisioning CLI (the
+`kitchen.recipes` sub-package) in one install.
 
 Or install from source during development:
 

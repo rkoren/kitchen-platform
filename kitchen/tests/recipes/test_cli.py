@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from recipes.cli import _refresh_tf_files, _workspace, app
-from recipes.schema import RecipeSpec
+from kitchen.recipes.cli import _refresh_tf_files, _workspace, app
+from kitchen.recipes.schema import RecipeSpec
 
 runner = CliRunner()
 
@@ -160,7 +160,7 @@ def test_validate_invalid_spec_exits_nonzero(tmp_path):
 
 
 def test_workspace_creates_directory(tmp_path):
-    with patch("recipes.cli._WORKSPACE_ROOT", tmp_path):
+    with patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path):
         ws = _workspace("my-project")
     assert ws.exists()
     assert ws.name == "my-project"
@@ -215,7 +215,7 @@ def test_plan_runs_init_then_plan(tmp_path):
     mock_proc.returncode = 0
 
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
     ):
@@ -240,7 +240,7 @@ def test_plan_does_not_prompt_for_confirmation(tmp_path):
     mock_proc.returncode = 0
 
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc),
     ):
@@ -260,7 +260,7 @@ def test_plan_aborts_on_terraform_failure(tmp_path):
     mock_proc.returncode = 1
 
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc),
     ):
@@ -280,7 +280,7 @@ def test_plan_refreshes_tf_files(tmp_path):
     mock_proc.returncode = 0
 
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc),
     ):
@@ -319,7 +319,7 @@ def test_apply_streams_terraform_output(tmp_path):
     mock_proc.returncode = 0
 
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
     ):
@@ -345,7 +345,7 @@ def test_apply_aborts_on_terraform_failure(tmp_path):
     mock_proc.returncode = 1
 
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc),
     ):
@@ -370,7 +370,7 @@ def _plan(changes: list[tuple[str, list[str]]]) -> dict:
 
 
 def test_classify_plan_splits_created_deleted_kept():
-    from recipes.cli import _classify_plan
+    from kitchen.recipes.cli import _classify_plan
 
     created, deleted, kept = _classify_plan(
         _plan(
@@ -403,10 +403,10 @@ def test_apply_refuses_destructive_collision(tmp_path):
     mock_proc = MagicMock(stdout=iter(["init\n"]), returncode=0)
     mock_proc.wait.return_value = None
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
-        patch("recipes.cli._plan_resource_changes", return_value=collision),
+        patch("kitchen.recipes.cli._plan_resource_changes", return_value=collision),
     ):
         result = runner.invoke(app, ["apply", str(spec), "--state-bucket", "b", "--yes"])
 
@@ -424,10 +424,10 @@ def test_apply_allow_destroy_overrides_guard(tmp_path):
     mock_proc = MagicMock(stdout=iter(["ok\n"]), returncode=0)
     mock_proc.wait.return_value = None
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
-        patch("recipes.cli._plan_resource_changes", return_value=collision),
+        patch("kitchen.recipes.cli._plan_resource_changes", return_value=collision),
     ):
         result = runner.invoke(
             app, ["apply", str(spec), "--state-bucket", "b", "--yes", "--allow-destroy"]
@@ -452,10 +452,10 @@ def test_apply_allows_normal_removal(tmp_path):
     mock_proc = MagicMock(stdout=iter(["ok\n"]), returncode=0)
     mock_proc.wait.return_value = None
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
-        patch("recipes.cli._plan_resource_changes", return_value=normal),
+        patch("kitchen.recipes.cli._plan_resource_changes", return_value=normal),
     ):
         result = runner.invoke(app, ["apply", str(spec), "--state-bucket", "b", "--yes"])
 
@@ -483,7 +483,7 @@ def test_destroy_calls_terraform_destroy(tmp_path):
     mock_proc.returncode = 0
 
     with (
-        patch("recipes.cli._WORKSPACE_ROOT", tmp_path),
+        patch("kitchen.recipes.cli._WORKSPACE_ROOT", tmp_path),
         patch("shutil.which", return_value="/usr/bin/terraform"),
         patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
     ):
@@ -554,7 +554,7 @@ def test_generate_check_fails_when_terraform_missing(tmp_path):
     spec = tmp_path / "infra.yaml"
     spec.write_text(VALID_SPEC)
     out = tmp_path / "tf"
-    with patch("recipes.cli.shutil.which", return_value=None):
+    with patch("kitchen.recipes.cli.shutil.which", return_value=None):
         result = runner.invoke(app, ["generate", str(spec), "--out", str(out), "--check"])
     assert result.exit_code == 1
     assert "terraform not found" in result.output
@@ -586,8 +586,8 @@ def test_doctor_all_present():
         "version": (0, '{"terraform_version": "1.10.5"}'),
         "sts": (0, "123456789012\n"),
     })
-    with patch("recipes.cli.shutil.which", side_effect=which), \
-         patch("recipes.cli.subprocess.run", side_effect=runs):
+    with patch("kitchen.recipes.cli.shutil.which", side_effect=which), \
+         patch("kitchen.recipes.cli.subprocess.run", side_effect=runs):
         result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0, result.output
     assert "All checks passed" in result.output
@@ -597,8 +597,8 @@ def test_doctor_all_present():
 def test_doctor_fails_without_terraform():
     which = _fake_which({"aws": "/usr/bin/aws"})  # no terraform
     runs = _fake_run({"sts": (0, "123456789012\n")})
-    with patch("recipes.cli.shutil.which", side_effect=which), \
-         patch("recipes.cli.subprocess.run", side_effect=runs):
+    with patch("kitchen.recipes.cli.shutil.which", side_effect=which), \
+         patch("kitchen.recipes.cli.subprocess.run", side_effect=runs):
         result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1
     assert "terraform not found" in result.output
@@ -610,8 +610,8 @@ def test_doctor_fails_on_bad_aws_credentials():
         "version": (0, '{"terraform_version": "1.10.5"}'),
         "sts": (255, ""),  # get-caller-identity fails
     })
-    with patch("recipes.cli.shutil.which", side_effect=which), \
-         patch("recipes.cli.subprocess.run", side_effect=runs):
+    with patch("kitchen.recipes.cli.shutil.which", side_effect=which), \
+         patch("kitchen.recipes.cli.subprocess.run", side_effect=runs):
         result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1
     assert "AWS credentials not found" in result.output
@@ -623,8 +623,8 @@ def test_doctor_warns_on_old_terraform():
         "version": (0, '{"terraform_version": "1.9.8"}'),
         "sts": (0, "123456789012\n"),
     })
-    with patch("recipes.cli.shutil.which", side_effect=which), \
-         patch("recipes.cli.subprocess.run", side_effect=runs):
+    with patch("kitchen.recipes.cli.shutil.which", side_effect=which), \
+         patch("kitchen.recipes.cli.subprocess.run", side_effect=runs):
         result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0
     assert "< 1.10" in result.output
@@ -637,8 +637,8 @@ def test_doctor_checks_state_bucket_access():
         "sts": (0, "123456789012\n"),
         "head-bucket": (255, ""),  # bucket inaccessible
     })
-    with patch("recipes.cli.shutil.which", side_effect=which), \
-         patch("recipes.cli.subprocess.run", side_effect=runs):
+    with patch("kitchen.recipes.cli.shutil.which", side_effect=which), \
+         patch("kitchen.recipes.cli.subprocess.run", side_effect=runs):
         result = runner.invoke(app, ["doctor", "--state-bucket", "my-bucket"])
     assert result.exit_code == 1
     assert "cannot access state bucket" in result.output
@@ -646,7 +646,7 @@ def test_doctor_checks_state_bucket_access():
 
 # ── R-006: ECR + Lambda inference API example ────────────────────────────────────
 
-_INFERENCE_EXAMPLE = Path(__file__).parent.parent / "examples" / "ecr-lambda-inference-api.yaml"
+_INFERENCE_EXAMPLE = Path(__file__).resolve().parents[3] / "recipes" / "examples" / "ecr-lambda-inference-api.yaml"
 
 
 def test_generate_inference_api_example(tmp_path):
@@ -669,7 +669,7 @@ def test_inference_api_example_is_canonical_hcl(tmp_path):
 
 # ── R-008: full Kaggle serving stack example ─────────────────────────────────────
 
-_SERVING_STACK_EXAMPLE = Path(__file__).parent.parent / "examples" / "kaggle-serving-stack.yaml"
+_SERVING_STACK_EXAMPLE = Path(__file__).resolve().parents[3] / "recipes" / "examples" / "kaggle-serving-stack.yaml"
 
 
 def test_generate_serving_stack_example(tmp_path):

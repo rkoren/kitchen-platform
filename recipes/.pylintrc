@@ -1,7 +1,0 @@
-[MESSAGES CONTROL]
-# Generator dispatch imports inside __init__ are intentional lazy loads.
-disable=
-    import-outside-toplevel,
-
-[FORMAT]
-max-line-length = 100
