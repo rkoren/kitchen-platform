@@ -34,6 +34,7 @@ from kitchen.config import (
 
 if TYPE_CHECKING:
     from kitchen.config import KitchenConfig
+    from kitchen.recipes.schema import RecipeSpec
 
 # Infra kinds must stay in lockstep with recipes' ``ResourceSpec`` discriminator (a test
 # asserts equality). ``stage`` is the runtime-only kind recipes has no equivalent for.
@@ -207,6 +208,36 @@ class Menu(BaseModel):
         is the single place mapping a stage/deploy to its code (INT-006)."""
         return {name: r.source for name, r in self.recipes.items() if r.source}
 
+    def to_recipe_spec(self) -> "RecipeSpec":
+        """Project the menu's infra recipes into a recipes :class:`RecipeSpec` (S-1, INT-014).
+
+        The single menu reader: recipes no longer re-parses ``menu.yaml`` (the old
+        ``recipes/menu.py`` re-parser is gone) — it consumes the already-validated ``Menu``
+        and calls this. Only infra kinds are provisioned; runtime ``stage`` recipes are
+        kitchen's and skipped. Menu-only keys (``role`` discovery marker, ``source`` code
+        location) are dropped — they live on :class:`RecipeEntry`, not in ``.fields``. A serve
+        ``lambda``'s ``iam_role``/``source`` are wired for provisioning (INT-006, S-4), and
+        menu-level networking is inherited unless the recipe overrides it (R-017).
+
+        Per-kind field validation happens when ``RecipeSpec`` validates each resource against
+        the ``extra="forbid"`` specs — the validation INT-002 deferred to this projection
+        (INT-015/S-2 moves it earlier, into ``Menu`` load itself).
+        """
+        from kitchen.recipes.schema import RecipeSpec
+
+        resources: list[dict[str, Any]] = []
+        for name, entry in self.recipes.items():
+            if entry.kind not in INFRA_KINDS:
+                continue  # runtime kinds (e.g. `stage`) are kitchen's, not infra
+            resource: dict[str, Any] = {"type": entry.kind, "name": name, **entry.fields}
+            if entry.kind == "lambda":
+                _wire_lambda_resource(resource, entry.source)
+            _inherit_network(resource, entry.kind, self.network)
+            resources.append(resource)
+        return RecipeSpec.model_validate(
+            {"name": self.project, "region": self.region, "resources": resources}
+        )
+
     def to_kitchen_config(self) -> "KitchenConfig":
         """Project the ML half of the menu onto a :class:`KitchenConfig` (INT-007).
 
@@ -264,8 +295,44 @@ class Menu(BaseModel):
 def is_menu(raw: Any) -> bool:
     """True when a parsed YAML mapping is a unified ``menu.yaml`` rather than a legacy
     ``params.yaml``. Neither ``recipes`` nor ``pipeline`` is a meaningful top-level key in a
-    params file, so their presence identifies a menu (INT-007)."""
+    params file, so their presence identifies a menu (INT-007).
+
+    Also the router recipes uses (S-1): a standalone recipes spec carries ``resources:`` and
+    neither ``recipes:`` nor ``pipeline:``, so it correctly reads as *not* a menu.
+    """
     return isinstance(raw, dict) and ("recipes" in raw or "pipeline" in raw)
+
+
+def _wire_lambda_resource(resource: dict[str, Any], source: str | None) -> None:
+    """Resolve a serve lambda's two menu-isms for provisioning (INT-006, S-4):
+
+    * the menu uses ``role`` for the *discovery* marker and ``iam_role`` for the lambda's
+      execution role — map ``iam_role`` onto recipes' ``LambdaSpec.role``;
+    * the menu ``source`` (where the predictor lives) is injected as the deployed function's
+      ``KITCHEN_PREDICTOR_DIR`` so serving finds it at runtime.
+    """
+    if "iam_role" in resource:
+        resource["role"] = resource.pop("iam_role")
+    if source:
+        env = dict(resource.get("environment") or {})
+        env.setdefault("KITCHEN_PREDICTOR_DIR", source)
+        resource["environment"] = env
+
+
+def _inherit_network(resource: dict[str, Any], kind: str, network: "NetworkSpec | None") -> None:
+    """Apply menu-level networking unless the recipe overrides it (R-017 at the menu scope):
+    the security group inherits ``vpc_id``; the rds inherits ``subnets`` as ``subnet_ids``."""
+    if network is None:
+        return
+    if kind == "security_group" and network.vpc_id and "vpc_id" not in resource:
+        resource["vpc_id"] = network.vpc_id
+    if (
+        kind == "rds"
+        and network.subnets
+        and "subnet_ids" not in resource
+        and "db_subnet_group_name" not in resource
+    ):
+        resource["subnet_ids"] = list(network.subnets)
 
 
 def load_params(path: str) -> dict[str, Any]:
