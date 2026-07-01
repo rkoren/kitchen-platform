@@ -5,11 +5,11 @@ sequence) and `recipes` (the definition of each unit — its `kind`, `role`, `so
 kind-specific fields), plus the ML settings. See
 ``docs/decisions/recipes-kitchen-integration.md``.
 
-This module owns the *schema and cross-references only* — not resolution (INT-003), the
-pipeline runner (INT-005), or any deploy wiring. It deliberately does **not** import
-``recipes`` (kitchen installs without it); the kind-specific fields of an infra recipe are
-validated per-kind by recipes at deploy time (INT-004), where they become an actual
-``RDSSpec``/``S3Spec``/… via ``{type=kind, name=<key>, **fields}``.
+This module owns the *schema, cross-references, and the projection to recipes* — not
+resolution (INT-003), the pipeline runner (INT-005), or any deploy wiring. Since the package
+merge (INT-013) it imports ``kitchen.recipes.schema`` (lazily) to validate each infra
+recipe's kind-specific fields against the real ``RDSSpec``/``S3Spec``/… at load (S-2, via
+``{type=kind, name=<key>, **fields}``) and to project the menu into a ``RecipeSpec`` (S-1).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from kitchen.config import (
     CheckConfig,
@@ -202,6 +202,29 @@ class Menu(BaseModel):
             raise ValueError("\n".join(errors))
         return self
 
+    @model_validator(mode="after")
+    def _validate_infra_fields(self) -> "Menu":
+        """Validate each infra recipe's kind-specific fields against the real recipes spec at
+        ``Menu`` load (S-2, INT-015). A typo like ``instance_clas`` on an ``rds`` recipe now
+        errors here — in *every* command that loads the manifest (``kitchen run``, a notebook,
+        ``recipes generate``) — instead of only surfacing at provision time.
+
+        Possible now that recipes is the ``kitchen.recipes`` sub-package (INT-013). We build the
+        *whole* projected ``RecipeSpec`` (via :meth:`to_recipe_spec`) rather than validating each
+        entry in isolation, because the recipes specs carry **cross-resource** rules — a
+        lambda's ``ecr_repo``/``iam_role`` and an rds's ``security_groups`` must resolve to
+        sibling resources in the same spec. ``stage`` entries have no spec and stay loose — the
+        runner owns them.
+        """
+        infra_names = [name for name, e in self.recipes.items() if e.kind in INFRA_KINDS]
+        if not infra_names:
+            return self
+        try:
+            self.to_recipe_spec()  # builds + validates the full RecipeSpec (all infra resources)
+        except ValidationError as exc:
+            raise ValueError(_infra_error_msg(exc, infra_names)) from exc
+        return self
+
     @property
     def source_map(self) -> dict[str, str]:
         """Each recipe that declares where its code lives → its ``source`` path. The manifest
@@ -219,21 +242,17 @@ class Menu(BaseModel):
         ``lambda``'s ``iam_role``/``source`` are wired for provisioning (INT-006, S-4), and
         menu-level networking is inherited unless the recipe overrides it (R-017).
 
-        Per-kind field validation happens when ``RecipeSpec`` validates each resource against
-        the ``extra="forbid"`` specs — the validation INT-002 deferred to this projection
-        (INT-015/S-2 moves it earlier, into ``Menu`` load itself).
+        Per-kind field validation already ran at ``Menu`` load (``_validate_infra_fields``,
+        INT-015/S-2); ``RecipeSpec`` re-validates here as cheap defence-in-depth (a ``Menu``
+        can be hand-built in a test without going through ``model_validate``).
         """
         from kitchen.recipes.schema import RecipeSpec
 
-        resources: list[dict[str, Any]] = []
-        for name, entry in self.recipes.items():
-            if entry.kind not in INFRA_KINDS:
-                continue  # runtime kinds (e.g. `stage`) are kitchen's, not infra
-            resource: dict[str, Any] = {"type": entry.kind, "name": name, **entry.fields}
-            if entry.kind == "lambda":
-                _wire_lambda_resource(resource, entry.source)
-            _inherit_network(resource, entry.kind, self.network)
-            resources.append(resource)
+        resources = [
+            _project_entry(name, entry, self.network)
+            for name, entry in self.recipes.items()
+            if entry.kind in INFRA_KINDS  # runtime kinds (e.g. `stage`) are kitchen's, not infra
+        ]
         return RecipeSpec.model_validate(
             {"name": self.project, "region": self.region, "resources": resources}
         )
@@ -333,6 +352,38 @@ def _inherit_network(resource: dict[str, Any], kind: str, network: "NetworkSpec 
         and "db_subnet_group_name" not in resource
     ):
         resource["subnet_ids"] = list(network.subnets)
+
+
+def _project_entry(name: str, entry: "RecipeEntry", network: "NetworkSpec | None") -> dict[str, Any]:
+    """Project one infra ``RecipeEntry`` into a recipes resource dict: ``{type, name}`` +
+    kind-specific fields, plus the serve-lambda menu-isms and menu-level network inheritance.
+
+    The single projection, shared by ``Menu._validate_infra_fields`` (validate at load, S-2)
+    and ``Menu.to_recipe_spec`` (build the RecipeSpec recipes consumes, S-1) — so both see an
+    identical resource and validation can't diverge from what actually gets provisioned.
+    """
+    resource: dict[str, Any] = {"type": entry.kind, "name": name, **entry.fields}
+    if entry.kind == "lambda":
+        _wire_lambda_resource(resource, entry.source)
+    _inherit_network(resource, entry.kind, network)
+    return resource
+
+
+def _infra_error_msg(exc: ValidationError, infra_names: list[str]) -> str:
+    """Turn a projected-``RecipeSpec`` validation error into a menu-centric message that names
+    the offending recipe. The error ``loc`` is ``("resources", <index>, [<kind-tag>,] <field>…)``;
+    map the index back to the recipe key and drop the projection framing + discriminator tag."""
+    err = exc.errors()[0]
+    loc = list(err["loc"])
+    recipe = None
+    if len(loc) >= 2 and loc[0] == "resources" and isinstance(loc[1], int):
+        recipe = infra_names[loc[1]] if loc[1] < len(infra_names) else None
+        loc = loc[2:]
+        if loc and loc[0] in INFRA_KINDS:  # drop the discriminated-union tag
+            loc = loc[1:]
+    field = ".".join(str(p) for p in loc)
+    where = f"recipe {recipe!r}" if recipe else "infra recipe"
+    return f"{where}: {field + ' — ' if field else ''}{err['msg']}"
 
 
 def load_params(path: str) -> dict[str, Any]:

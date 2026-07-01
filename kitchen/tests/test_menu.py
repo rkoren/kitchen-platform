@@ -31,7 +31,13 @@ VALID: dict = {
         "mlflow-backend": {"kind": "rds", "role": "mlflow-backend", "instance_class": "db.t4g.small"},
         "mlflow-artifacts": {"kind": "s3", "role": "mlflow-artifacts"},
         "train": {"kind": "stage", "source": "src/train/run.py"},
-        "serve": {"kind": "lambda", "role": "serving", "source": "src/serve/", "ecr_repo": "cbb-serve"},
+        "serve": {
+            "kind": "lambda",
+            "role": "serving",
+            "iam_role": "arn:aws:iam::123456789012:role/serving-exec",
+            "source": "src/serve/",
+            "image_uri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/cbb-serve:latest",
+        },
     },
     "mlflow": {
         "tracking_uri": {"from_role": "mlflow-backend"},
