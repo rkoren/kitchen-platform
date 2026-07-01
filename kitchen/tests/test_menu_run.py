@@ -40,10 +40,17 @@ class _Recorder:
 
 def test_sequences_provision_stage_monitor_and_skips_serve():
     rec = _Recorder()
+    prov: list[tuple[str, str]] = []
     with patch("kitchen.menu_run.resolve_mlflow_env", return_value={}):
-        run_pipeline(FULL, menu_path="menu.yaml", state_bucket="b", run=rec)
+        run_pipeline(
+            FULL,
+            menu_path="menu.yaml",
+            state_bucket="b",
+            run=rec,
+            provision=lambda mp, sb: prov.append((mp, sb)),
+        )
+    assert prov == [("menu.yaml", "b")]  # provisioned in-process (S-7), not shelled out
     assert rec.cmds == [
-        ["recipes", "apply", "menu.yaml", "--state-bucket", "b", "--yes"],
         ["kitchen", "run", "train", "--params", "menu.yaml"],
         ["kitchen", "run", "monitor", "--params", "menu.yaml"],
     ]  # serve (lambda) is recognised but not run; stages load the manifest for project sections
@@ -51,9 +58,18 @@ def test_sequences_provision_stage_monitor_and_skips_serve():
 
 def test_dry_run_executes_nothing_but_plans():
     rec = _Recorder()
+    prov: list[tuple[str, str]] = []
     lines: list[str] = []
-    run_pipeline(FULL, menu_path="menu.yaml", state_bucket="b", dry_run=True, run=rec, echo=lines.append)
-    assert rec.cmds == []
+    run_pipeline(
+        FULL,
+        menu_path="menu.yaml",
+        state_bucket="b",
+        dry_run=True,
+        run=rec,
+        provision=lambda mp, sb: prov.append((mp, sb)),
+        echo=lines.append,
+    )
+    assert rec.cmds == [] and prov == []
     assert any("provision" in line for line in lines)
     assert any("train" in line for line in lines)
 
@@ -76,7 +92,9 @@ def test_provision_materializes_env_into_process(monkeypatch):
     with patch(
         "kitchen.menu_run.resolve_mlflow_env", return_value={"MLFLOW_TRACKING_URI": "postgresql://x"}
     ):
-        run_pipeline(menu, menu_path="m", state_bucket="b", run=_Recorder())
+        run_pipeline(
+            menu, menu_path="m", state_bucket="b", run=_Recorder(), provision=lambda *a: None
+        )
     try:
         assert os.environ["MLFLOW_TRACKING_URI"] == "postgresql://x"  # inherited by later stages
     finally:
