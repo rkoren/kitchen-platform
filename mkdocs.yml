@@ -67,5 +67,6 @@ nav:
     - Orchestration: kitchen/orchestration.md
     - Modeling Helpers: kitchen/modeling.md
     - CI/CD Integration: kitchen/ci-cd.md
+    - API Stability & Versioning: kitchen/api-stability.md
   - Notebooks:
     - Notebook-First Exploration: notebooks/exploration.ipynb
