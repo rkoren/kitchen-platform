@@ -4249,6 +4249,48 @@ def test_secrets_db_url_from_terraform_writes_entry(tmp_path, monkeypatch):
     assert out.read_text().strip() == "MLFLOW_TRACKING_URI=postgresql://mlflow:p%40@h:5432/mlflow"
 
 
+def test_secrets_db_url_menu_resolves_workspace_from_project(tmp_path, monkeypatch):
+    """S-6 (INT-018): --menu resolves ~/.recipes/tf/<project> from the manifest — the platform
+    already knows the workspace, so no --from-terraform path argument is needed."""
+    monkeypatch.chdir(tmp_path)
+    menu = tmp_path / "menu.yaml"
+    menu.write_text(
+        "project: my-proj\nrecipes:\n  db:\n    kind: rds\n    role: mlflow-backend\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "gh_env"
+    with patch(
+        "kitchen.secrets.db_url_from_terraform",
+        return_value="postgresql://mlflow:p%40@h:5432/mlflow",
+    ) as mocked:
+        result = runner.invoke(app, ["secrets", "db-url", "--menu", str(menu), "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    # workspace was resolved from the menu's project, not passed as a path
+    assert mocked.call_args[0][0] == str(Path.home() / ".recipes" / "tf" / "my-proj")
+    assert out.read_text().strip() == "MLFLOW_TRACKING_URI=postgresql://mlflow:p%40@h:5432/mlflow"
+
+
+def test_secrets_db_url_menu_rejects_combining_with_explicit(tmp_path):
+    menu = tmp_path / "menu.yaml"
+    menu.write_text("project: p\n", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        ["secrets", "db-url", "--menu", str(menu), "--secret-id", "arn:x", "--endpoint", "h:5432"],
+        env={"GITHUB_ENV": str(tmp_path / "e")},
+    )
+    assert result.exit_code == 1
+    assert "don't combine" in result.output
+
+
+def test_secrets_db_url_menu_missing_file_errors(tmp_path):
+    result = runner.invoke(
+        app,
+        ["secrets", "db-url", "--menu", str(tmp_path / "nope.yaml"), "-o", str(tmp_path / "e")],
+    )
+    assert result.exit_code == 1
+    assert "menu not found" in result.output
+
+
 def test_secrets_db_url_rejects_both_modes(tmp_path, monkeypatch):
     result = runner.invoke(
         app,
