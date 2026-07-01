@@ -2878,6 +2878,13 @@ app.add_typer(dashboard_app, name="dashboard")
 app.add_typer(secrets_app, name="secrets")
 app.add_typer(menu_app, name="menu")
 
+# S-7 (INT-017): one CLI. The provisioning commands (generate/plan/apply/destroy/validate/
+# doctor/schema) mount under `kitchen recipes …`; the standalone `recipes` entry point stays
+# as a back-compat alias (INT-012 ADR).
+from kitchen.recipes.cli import app as recipes_app  # noqa: E402
+
+app.add_typer(recipes_app, name="recipes")
+
 
 def main() -> None:
     """Console-script entry point: render known fatal errors cleanly (no traceback)."""

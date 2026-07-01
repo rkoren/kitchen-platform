@@ -2,16 +2,17 @@
 
 Sequences existing commands, fail-fast, in the manifest's ``pipeline`` order:
 
-* ``provision`` → ``recipes apply <menu>`` (the infra recipes), then materialize the resolved
-  MLflow env (INT-003) into ``os.environ`` so the stages that follow inherit it;
+* ``provision`` → provision the infra recipes **in-process** via ``recipes.cli.apply_spec``
+  (S-7, INT-017 — no longer shells out to a separate ``recipes`` CLI), then materialize the
+  resolved MLflow env (INT-003) into ``os.environ`` so the stages that follow inherit it;
 * a ``stage`` recipe (``kind: stage``) → ``kitchen run <step>``;
 * ``monitor`` → ``kitchen run monitor``;
 * ``serve`` (a ``lambda`` recipe) is recognized but **not yet wired** (INT-006 — see the
   ``role`` collision, simplification S-4): it is reported and skipped.
 
 Skip-unchanged, ``--from`` resume, and retries are deliberately out of scope (additive). The
-runner shells out to the ``recipes`` and ``kitchen`` CLIs (two entry points — simplification
-S-7); a merged package would call in-process.
+``kitchen run <stage>`` steps still shell out to the same ``kitchen`` CLI (same package —
+cosmetic, not the S-7 seam, which was the cross-CLI ``recipes`` shell-out now removed).
 """
 
 from __future__ import annotations
@@ -33,6 +34,13 @@ def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
+def _provision(menu_path: str, state_bucket: str) -> None:
+    """Provision the menu's infra recipes in-process (S-7). Raises on any provisioning error."""
+    from kitchen.recipes.cli import apply_spec
+
+    apply_spec(menu_path, state_bucket)  # no confirm prompt; INT-010 guard still applies
+
+
 def run_pipeline(
     menu: Menu,
     *,
@@ -40,11 +48,12 @@ def run_pipeline(
     state_bucket: str | None = None,
     dry_run: bool = False,
     run: Callable[[list[str]], None] = _run,
+    provision: Callable[[str, str], None] = _provision,
     echo: Callable[[str], None] = lambda _msg: None,
 ) -> None:
-    """Execute ``menu.pipeline`` in order. ``run`` is injectable for testing; ``--dry-run``
-    prints the plan without executing. Raises :class:`PipelineError` / propagates the failing
-    step's error (fail-fast)."""
+    """Execute ``menu.pipeline`` in order. ``run``/``provision`` are injectable for testing;
+    ``--dry-run`` prints the plan without executing. Raises :class:`PipelineError` / propagates
+    the failing step's error (fail-fast)."""
     for step in menu.pipeline:
         if step == "provision":
             if not state_bucket:
@@ -52,9 +61,9 @@ def run_pipeline(
                     "`provision` needs a Terraform state bucket — pass --state-bucket or set "
                     "RECIPES_STATE_BUCKET."
                 )
-            echo(f"→ provision: recipes apply {menu_path}")
+            echo(f"→ provision (in-process): {menu_path}")
             if not dry_run:
-                run(["recipes", "apply", menu_path, "--state-bucket", state_bucket, "--yes"])
+                provision(menu_path, state_bucket)
                 env = resolve_mlflow_env(menu)
                 os.environ.update(env)
                 echo(f"  materialized: {', '.join(env) or '(nothing)'}")

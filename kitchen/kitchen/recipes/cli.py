@@ -3,6 +3,7 @@
 import json
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
@@ -19,6 +20,14 @@ console = Console()
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _WORKSPACE_ROOT = Path.home() / ".recipes" / "tf"
+
+
+class ProvisionError(RuntimeError):
+    """A provision (apply) failed — a terraform error or the destructive-collision guard.
+
+    Raised by :func:`apply_spec` so the in-process pipeline runner (``kitchen menu run``, S-7)
+    gets a real exception instead of a ``typer.Exit``; the ``apply`` CLI command converts it
+    back to a non-zero exit."""
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -230,7 +239,10 @@ def _guard_destructive_collision(
         "  Give this spec a distinct name/`project` so it gets its own state, or re-run with "
         "[bold]--allow-destroy[/bold] if this wipe is intentional."
     )
-    raise typer.Exit(1)
+    raise ProvisionError(
+        f"destructive state collision: applying '{spec_name}' would delete "
+        f"{len(deleted)} resource(s) from a state owned by a different spec"
+    )
 
 
 # ── Commands ───────────────────────────────────────────────────────────────────
@@ -455,6 +467,28 @@ def apply(
     Resources are provisioned in dependency order — Terraform resolves the graph.
     State is stored at s3://<state-bucket>/<spec-name>/terraform.tfstate.
     """
+    confirm = None if yes else lambda: typer.confirm("Apply these changes?", abort=True)
+    try:
+        apply_spec(spec_path, state_bucket, allow_destroy=allow_destroy, confirm=confirm)
+    except ProvisionError as exc:
+        console.print(f"\n[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+
+def apply_spec(
+    spec_path: str,
+    state_bucket: str,
+    *,
+    allow_destroy: bool = False,
+    confirm: Callable[[], None] | None = None,
+) -> str:
+    """Provision a spec/menu in-process — the core `recipes apply` logic, no ``typer.Exit``.
+
+    Shared by the ``apply`` CLI command (which passes a ``confirm`` prompt) and by the
+    ``kitchen menu run`` pipeline runner (S-7, INT-017), so a menu provisions without shelling
+    out to a second CLI. ``confirm`` (if given) is called after the plan is shown, before
+    anything is applied. Raises :class:`ProvisionError` on any failure; returns the spec name.
+    """
     spec = _load_spec(spec_path)
     workspace = _workspace(spec.name)
 
@@ -470,11 +504,11 @@ def apply(
         console.print(f"  [green]✓[/green] {resource.type}  [dim]{resource.name}[/dim]")
     console.print()
 
-    if not yes:
-        typer.confirm("Apply these changes?", abort=True)
+    if confirm is not None:
+        confirm()
 
     if not _tf_init(spec, workspace, state_bucket):
-        raise typer.Exit(1)
+        raise ProvisionError(f"terraform init failed for '{spec.name}'")
 
     # INT-010: refuse a plan that would wipe a state owned by a different spec.
     _guard_destructive_collision(
@@ -484,10 +518,10 @@ def apply(
     console.print("\n[bold]→ terraform apply[/bold]\n")
     rc = _run_tf(["apply", "-auto-approve"], workspace)
     if rc != 0:
-        console.print("\n[red]apply failed[/red]")
-        raise typer.Exit(rc)
+        raise ProvisionError(f"terraform apply failed (exit {rc}) for '{spec.name}'")
 
     console.print(f"\n[bold green]✓ apply complete[/bold green]  [{spec.name}]")
+    return spec.name
 
 
 @app.command()
