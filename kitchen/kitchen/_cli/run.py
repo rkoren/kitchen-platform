@@ -249,15 +249,13 @@ def run_features(
 
     params = load_params(str(path))
 
-    from kitchen.menu import stage_module_name  # noqa: PLC0415
+    from kitchen.menu import load_stage_callable, stage_module_name  # noqa: PLC0415
     from kitchen.store import DataStore  # noqa: PLC0415
 
-    _mod = stage_module_name("features", params)  # honors a menu's declared source (S-8, INT-019)
-    _src = _mod.replace(".", "/") + ".py"
+    # honors a menu's declared source (S-8, INT-019), else the src/features/run.py convention
+    _src = stage_module_name("features", params).replace(".", "/") + ".py"
     try:
-        # `__import__(..., fromlist=…)` is exactly what `from <mod> import build` compiles to —
-        # a package import (intra-src imports resolve), just with a source-derived module name.
-        build = __import__(_mod, fromlist=["build"]).build  # project-provided
+        build = load_stage_callable("features", "build", params)  # project-provided
     except ModuleNotFoundError as exc:
         typer.echo(
             f"error: {exc}\nRun from the project root and make sure {_src} is implemented.",
@@ -762,10 +760,10 @@ def run_evaluate(
                 typer.echo(f"error loading model from {model_uri!r}: {exc}", err=True)
         raise typer.Exit(1)
 
-    from kitchen.menu import stage_module_name  # noqa: PLC0415
+    from kitchen.menu import load_stage_callable  # noqa: PLC0415
 
     try:
-        evaluate = __import__(stage_module_name("evaluate", params), fromlist=["evaluate"]).evaluate
+        evaluate = load_stage_callable("evaluate", "evaluate", params)  # project-provided
     except ModuleNotFoundError as exc:
         typer.echo(
             f"error: {exc}\nRun from the project root and make sure src/ is implemented.",
