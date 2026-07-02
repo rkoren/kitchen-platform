@@ -1,0 +1,856 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "CIConfig": {
+      "additionalProperties": true,
+      "description": "``ci:`` section \u2014 one home for CI behavior knobs.\n\nRead by the scaffolded GitHub Actions workflow and by ``kitchen report``.\nMetric thresholds themselves stay in the top-level ``thresholds:`` map;\n``fail_on_threshold`` controls whether a breach fails the CI job.",
+      "properties": {
+        "auto_submit": {
+          "default": false,
+          "title": "Auto Submit",
+          "type": "boolean"
+        },
+        "fail_on_threshold": {
+          "default": true,
+          "title": "Fail On Threshold",
+          "type": "boolean"
+        },
+        "notifications": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NotificationsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "CIConfig",
+      "type": "object"
+    },
+    "CheckConfig": {
+      "additionalProperties": true,
+      "description": "``check:`` section \u2014 extra pre-flight validations for ``kitchen check``.\n\n``required_env`` lists environment variables the project needs to run (e.g. an\nAPI key`). ``kitchen check`` hard-fails when one is\nabsent from both the process environment and a local ``.env`` \u2014 so a project\nfed by an external API gates on its own secrets without editing platform code.",
+      "properties": {
+        "required_env": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Env",
+          "type": "array"
+        }
+      },
+      "title": "CheckConfig",
+      "type": "object"
+    },
+    "DataConfig": {
+      "additionalProperties": true,
+      "description": "``data:`` section \u2014 describes where raw data lives.",
+      "properties": {
+        "source": {
+          "enum": [
+            "kaggle",
+            "s3",
+            "local"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "competition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Competition"
+        },
+        "bucket": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bucket"
+        },
+        "prefix": {
+          "default": "",
+          "title": "Prefix",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "DataConfig",
+      "type": "object"
+    },
+    "FeatureCandidatesOverlay": {
+      "additionalProperties": false,
+      "description": "A variant's change to the base ``feature_candidates`` list (CBB-016).\n\n``add``/``remove`` are a delta on the base list; ``replace`` swaps it wholesale. A variant\nmay instead give a plain list (the obvious full-replacement case). Structured rather than\n``+``/``-`` prefixes so a feature name can never be mistaken for a marker.",
+      "properties": {
+        "add": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Add",
+          "type": "array"
+        },
+        "remove": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Remove",
+          "type": "array"
+        },
+        "replace": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replace"
+        }
+      },
+      "title": "FeatureCandidatesOverlay",
+      "type": "object"
+    },
+    "FeatureSchemaSpec": {
+      "additionalProperties": false,
+      "description": "``feature_schema:`` \u2014 the expected schema of a processed feature file (KG-014).\n\nDeclares the column \u2192 pandas-dtype contract for a ``data/processed/`` parquet (e.g. the\nfeature matrix the training stage reads). ``kitchen check`` validates the file against it,\ncatching feature-matrix schema drift before training \u2014 the feature-side analogue of the\nsubmission/parity checks (KG-006..013). An absent file is a soft warning (not built yet);\na missing column or dtype mismatch is a hard check failure. Validation reuses the same\n``DataStore`` schema machinery (DS-002) a stage gets from ``load_parquet(schema=...)``.",
+      "properties": {
+        "file": {
+          "title": "File",
+          "type": "string"
+        },
+        "columns": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "object"
+        }
+      },
+      "required": [
+        "file",
+        "columns"
+      ],
+      "title": "FeatureSchemaSpec",
+      "type": "object"
+    },
+    "HoldoutSpec": {
+      "additionalProperties": false,
+      "description": "``holdout:`` \u2014 a frozen, never-trained-on evaluation set scored as a distinct metric (CBB-017).\n\nThe project produces a parity-matched parquet (the model's features + the realized\n``label``), leak-free by construction because it lives outside ``data/raw`` where training\ncan't read it. The platform scores **every run's** model against it and logs\n``holdout_<metric>`` \u2014 a trusted generalization number distinct from the in-CV metric, so a\nproject iterating on its CV score can tell CV-overfit from real generalization. Treat it\nlike a Kaggle private leaderboard: iterate on CV, check the holdout sparingly.\n\nAn absent ``path`` is a no-op (the pipeline runs unchanged until results exist) unless\n``optional`` is ``False``. ``features`` defaults to the project's ``feature_candidates``\n(the training feature list); they are parity-checked against the parquet before scoring and\na break **skips** scoring loudly rather than zero-filling \u2014 a trusted metric must never be\nsilently wrong. ``predict_method`` overrides the default model call (``predict_proba`` for a\nclassification metric, ``predict`` for a regression one) for models with a custom interface.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "metric": {
+          "default": "brier",
+          "enum": [
+            "brier",
+            "log_loss",
+            "roc_auc",
+            "accuracy",
+            "rmse",
+            "mae",
+            "r2"
+          ],
+          "title": "Metric",
+          "type": "string"
+        },
+        "features": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Features"
+        },
+        "predict_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Predict Method"
+        },
+        "optional": {
+          "default": true,
+          "title": "Optional",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "label"
+      ],
+      "title": "HoldoutSpec",
+      "type": "object"
+    },
+    "MlflowSettings": {
+      "additionalProperties": true,
+      "description": "Menu-local MLflow settings \u2014 like ``KitchenConfig.mlflow`` but the infra-coupled\nvalues may be a :class:`RoleRef` resolved from a recipe (INT-003). Kept separate so the\nback-compat ``KitchenConfig`` stays untouched until the INT-007 bridge.",
+      "properties": {
+        "tracking_uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/RoleRef"
+            }
+          ],
+          "default": "sqlite:///mlruns.db",
+          "title": "Tracking Uri"
+        },
+        "artifact_bucket": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/RoleRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Bucket"
+        },
+        "model_artifact_path": {
+          "default": "model",
+          "title": "Model Artifact Path",
+          "type": "string"
+        }
+      },
+      "title": "MlflowSettings",
+      "type": "object"
+    },
+    "ModelSpec": {
+      "additionalProperties": false,
+      "description": "One entry in the ``models:`` map \u2014 a distinct model in a multi-model project (CBB-020).\n\nA project that grows a second model (e.g. cbb's tournament Brier model **and** a\nregular-season margin/total model) declares each here so the platform can scope\nauto-promote, the champion, and the read commands per-model instead of guessing from a\nsingle shared experiment + the first ``thresholds`` key. ``--model <name>`` on the\n``run train``/``leaderboard``/``status`` commands selects an entry.\n\nAll fields default sensibly so a minimal entry works: ``experiment`` falls back to the\nproject's top-level ``experiment``; ``model_name`` (the registered champion) to\n``f\"{experiment}-model\"``; ``metric``/``lower_is_better`` (the promote/rank metric) to the\nfirst ``thresholds`` key. Single-model projects don't need a ``models:`` map at all.",
+      "properties": {
+        "experiment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Experiment"
+        },
+        "model_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Name"
+        },
+        "metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metric"
+        },
+        "lower_is_better": {
+          "default": false,
+          "title": "Lower Is Better",
+          "type": "boolean"
+        }
+      },
+      "title": "ModelSpec",
+      "type": "object"
+    },
+    "MonitorConfig": {
+      "additionalProperties": true,
+      "description": "``monitor:`` section \u2014 drift monitoring configuration.",
+      "properties": {
+        "reference_file": {
+          "default": "reference.parquet",
+          "title": "Reference File",
+          "type": "string"
+        },
+        "current_file": {
+          "default": "current.parquet",
+          "title": "Current File",
+          "type": "string"
+        },
+        "report_bucket": {
+          "default": "",
+          "title": "Report Bucket",
+          "type": "string"
+        },
+        "report_key": {
+          "default": "monitoring/drift_report.html",
+          "title": "Report Key",
+          "type": "string"
+        },
+        "local_path": {
+          "default": "",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "drift_threshold": {
+          "default": 0.05,
+          "title": "Drift Threshold",
+          "type": "number"
+        },
+        "fail_on_drift": {
+          "default": false,
+          "title": "Fail On Drift",
+          "type": "boolean"
+        },
+        "max_drift_share": {
+          "default": 0.5,
+          "title": "Max Drift Share",
+          "type": "number"
+        },
+        "log_to_mlflow": {
+          "default": false,
+          "title": "Log To Mlflow",
+          "type": "boolean"
+        },
+        "mlflow_experiment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mlflow Experiment"
+        }
+      },
+      "title": "MonitorConfig",
+      "type": "object"
+    },
+    "NetworkSpec": {
+      "additionalProperties": false,
+      "description": "Networking declared once and inherited by infra recipes (R-017 at the menu scope).",
+      "properties": {
+        "vpc_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vpc Id"
+        },
+        "subnets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Subnets",
+          "type": "array"
+        }
+      },
+      "title": "NetworkSpec",
+      "type": "object"
+    },
+    "NotificationsConfig": {
+      "additionalProperties": true,
+      "description": "``ci.notifications:`` \u2014 where to send CI run notifications.\n\nDeclarative only \u2014 the scaffolded workflow reads these to decide whether to\nfire a notify step. ``slack_webhook_secret`` names the GitHub *secret* that\nholds the incoming-webhook URL (the URL itself never lives in params.yaml).",
+      "properties": {
+        "slack_webhook_secret": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slack Webhook Secret"
+        },
+        "when": {
+          "default": "failure",
+          "enum": [
+            "failure",
+            "success",
+            "always"
+          ],
+          "title": "When",
+          "type": "string"
+        }
+      },
+      "title": "NotificationsConfig",
+      "type": "object"
+    },
+    "RecipeEntry": {
+      "additionalProperties": true,
+      "description": "One entry in the ``recipes:`` map \u2014 keyed by name, defining what to deploy/run.\n\n``kind`` (not recipes' ``type``) is the discriminator, per the unified-platform\ndecision; the same value is handed to recipes as ``type`` when an infra recipe is\ndeployed (INT-004). Kind-specific fields (e.g. an rds ``instance_class``, a stage's\nextras) sit flat alongside ``kind``/``role``/``source`` and are collected into\n:pyattr:`fields`; they are validated **per kind** downstream (recipes for infra, the\nrunner for ``stage``), not here.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "rds",
+            "s3",
+            "security_group",
+            "iam_role",
+            "ecr",
+            "lambda",
+            "stage"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "RecipeEntry",
+      "type": "object"
+    },
+    "RoleRef": {
+      "additionalProperties": false,
+      "description": "A reference to a recipe's ``role`` \u2014 resolved to a concrete value at deploy time\n(INT-003), e.g. ``tracking_uri: {from_role: mlflow-backend}``.",
+      "properties": {
+        "from_role": {
+          "title": "From Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_role"
+      ],
+      "title": "RoleRef",
+      "type": "object"
+    },
+    "SecretSpec": {
+      "additionalProperties": true,
+      "description": "One entry in the ``secrets:`` manifest \u2014 declares where a secret resolves from.\n\nPick one source (or none, for env-only):\n  - **SM JSON bundle:** ``aws_secret`` (bundle name/ARN) + ``key`` (field within the JSON)\n  - **SSM Parameter Store:** ``ssm`` (parameter path)\n  - **omit both:** the secret must come from the environment / ``.env``\n\n``required`` (default True) gates ``kitchen check``. This manifest is the single\ndeclarative source of truth the resolver (SECR-002) reads; it supersedes the deprecated\n``check.required_env`` list.",
+      "properties": {
+        "aws_secret": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aws Secret"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        },
+        "ssm": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ssm"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "title": "SecretSpec",
+      "type": "object"
+    },
+    "SubmissionConfig": {
+      "additionalProperties": true,
+      "description": "``submission:`` section \u2014 Kaggle submission configuration.",
+      "properties": {
+        "id_col": {
+          "default": "Id",
+          "title": "Id Col",
+          "type": "string"
+        },
+        "target_col": {
+          "default": "target",
+          "title": "Target Col",
+          "type": "string"
+        },
+        "competition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Competition"
+        },
+        "message": {
+          "default": "kitchen submit",
+          "title": "Message",
+          "type": "string"
+        },
+        "sample_submission": {
+          "default": "sample_submission.csv",
+          "title": "Sample Submission",
+          "type": "string"
+        }
+      },
+      "title": "SubmissionConfig",
+      "type": "object"
+    },
+    "ThresholdSpec": {
+      "additionalProperties": false,
+      "description": "Explicit min/max threshold for a single metric.\n\nUse ``min`` for higher-is-better metrics (accuracy, AUC).\nUse ``max`` for lower-is-better metrics (logloss, RMSE).\nBoth can be set to define a valid range.",
+      "properties": {
+        "min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max"
+        }
+      },
+      "title": "ThresholdSpec",
+      "type": "object"
+    },
+    "VariantSpec": {
+      "additionalProperties": true,
+      "description": "One named experiment variant \u2014 an overlay of arbitrary config keys (CBB-016).\n\nNon-list keys (``model.max_depth``, \u2026) deep-merge over the base; ``feature_candidates``\ntakes the typed overlay above (or a plain replacement list).",
+      "properties": {
+        "feature_candidates": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "$ref": "#/$defs/FeatureCandidatesOverlay"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Feature Candidates"
+        }
+      },
+      "title": "VariantSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "description": "The unified project manifest (``menu.yaml``).\n\n``extra=\"allow\"`` intentionally \u2014 the menu is a *superset* of ``params.yaml``, so a\nproject's free-form stage sections (``model:``, ``features:``, ``train:``, \u2026) live at the\ntop level exactly as before and pass through to ``model_extra`` (INT-007). The stage code\nreads them from the raw YAML (``params[\"model\"][\"target\"]``), so they must stay here, not\nnested. This matches ``KitchenConfig``'s posture and trades top-level-key typo safety for\nthat passthrough.",
+  "properties": {
+    "project": {
+      "title": "Project",
+      "type": "string"
+    },
+    "region": {
+      "default": "us-east-1",
+      "title": "Region",
+      "type": "string"
+    },
+    "aws_account": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Aws Account"
+    },
+    "network": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NetworkSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "pipeline": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Pipeline",
+      "type": "array"
+    },
+    "recipes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/RecipeEntry"
+      },
+      "title": "Recipes",
+      "type": "object"
+    },
+    "experiment": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Experiment"
+    },
+    "mlflow": {
+      "$ref": "#/$defs/MlflowSettings"
+    },
+    "data": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DataConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "monitor": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MonitorConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "ci": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CIConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "submission": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SubmissionConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "check": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CheckConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "secrets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/SecretSpec"
+      },
+      "title": "Secrets",
+      "type": "object"
+    },
+    "thresholds": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "$ref": "#/$defs/ThresholdSpec"
+          }
+        ]
+      },
+      "title": "Thresholds",
+      "type": "object"
+    },
+    "holdout": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HoldoutSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "feature_schema": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FeatureSchemaSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "models": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ModelSpec"
+      },
+      "title": "Models",
+      "type": "object"
+    },
+    "metrics_file": {
+      "default": "metrics.json",
+      "title": "Metrics File",
+      "type": "string"
+    },
+    "run_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Name"
+    },
+    "variants": {
+      "additionalProperties": {
+        "$ref": "#/$defs/VariantSpec"
+      },
+      "title": "Variants",
+      "type": "object"
+    }
+  },
+  "required": [
+    "project"
+  ],
+  "title": "Menu",
+  "type": "object"
+}
