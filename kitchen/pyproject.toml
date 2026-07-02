@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "rkoren-kitchen"
 version = "0.1.0"
 description = "Reusable MLOps framework: data ingestion, experiment tracking, serving, and monitoring"
+readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
