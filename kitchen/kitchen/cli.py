@@ -663,6 +663,14 @@ def secrets_export(
 
 @secrets_app.command("db-url")
 def secrets_db_url(
+    menu_file: Annotated[
+        str | None,
+        typer.Option(
+            "--menu",
+            help="Resolve the recipes workspace from this menu.yaml's `project` "
+            "(~/.recipes/tf/<project>) — the seamless path, no --from-terraform needed (S-6)",
+        ),
+    ] = None,
     from_terraform: Annotated[
         str | None,
         typer.Option(
@@ -706,15 +714,35 @@ def secrets_db_url(
     URL embeds a password, so — like ``kitchen secrets export`` — it is masked and **never printed
     to stdout**; pass ``--output`` outside GitHub Actions.
 
-    Two ways to point at the backend:
+    Three ways to point at the backend:
+      * ``--menu <menu.yaml>`` — resolve the workspace from the manifest's ``project``
+        (``~/.recipes/tf/<project>``), so the platform finds it for you (S-6); the seamless path.
       * ``--from-terraform <dir>`` — read the endpoint + secret ARN straight from a recipes
-        Terraform workspace's outputs (where ``recipes apply`` ran); the seamless path.
+        Terraform workspace's outputs (where ``recipes apply`` ran).
       * ``--secret-id <arn> --endpoint <host:port>`` — pass them explicitly.
 
     The endpoint already carries the port (RDS emits ``host:port``); SQLAlchemy infers 5432 if it
     doesn't. Pass ``--db`` if you changed ``db_name`` from the ``mlflow`` default.
     """
     from kitchen import secrets as secrets_mod
+
+    if menu_file:
+        if from_terraform or secret_id or endpoint:
+            typer.echo(
+                "error: --menu resolves the workspace itself — don't combine it with "
+                "--from-terraform/--secret-id/--endpoint",
+                err=True,
+            )
+            raise typer.Exit(1)
+        from kitchen.menu import Menu
+        from kitchen.menu_resolve import recipes_workspace
+
+        try:
+            resolved_menu = Menu.from_yaml(menu_file)
+        except FileNotFoundError:
+            typer.echo(f"error: menu not found: {menu_file}", err=True)
+            raise typer.Exit(1)
+        from_terraform = str(recipes_workspace(resolved_menu.project))
 
     if from_terraform and (secret_id or endpoint):
         typer.echo("error: use either --from-terraform or --secret-id/--endpoint, not both", err=True)
