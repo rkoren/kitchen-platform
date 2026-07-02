@@ -1,6 +1,6 @@
 # kitchen-platform
 
-A two-module portfolio project bridging platform engineering with ML infrastructure.
+A two-module custom platform to deploy ML infrastructure.
 
 ---
 
