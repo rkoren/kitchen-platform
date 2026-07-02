@@ -68,3 +68,6 @@ docs/backlog.md
 docs/secondary-backlog.md
 docs/feedback.md
 docs/architecture.md
+
+# stray MLflow test artifact (SEC-013 — was leaking a local path)
+mlruns_test.db
