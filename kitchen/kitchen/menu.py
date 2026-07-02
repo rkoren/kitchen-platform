@@ -430,6 +430,24 @@ def stage_module_name(stage: str, params: dict[str, Any]) -> str:
     return f"src.{stage}.run"
 
 
+def load_stage_callable(stage: str, func: str, params: dict[str, Any]):
+    """Import ``func`` from a stage's module (S-8, INT-019) — byte-identical to
+    ``from <module> import <func>``.
+
+    ``__import__(..., fromlist=[func])`` is a package import (intra-``src`` imports resolve) and
+    goes through the ``builtins.__import__`` hook the missing-module tests mock. Missing module →
+    ``ModuleNotFoundError``; missing attribute → ``ImportError`` (the ``AttributeError`` from the
+    explicit getattr is converted, so it matches what the ``from`` statement itself would raise —
+    not ``AttributeError``, which broke `test_train_flow`'s missing-module assertions).
+    """
+    module_name = stage_module_name(stage, params)
+    module = __import__(module_name, fromlist=[func])
+    try:
+        return getattr(module, func)
+    except AttributeError as exc:
+        raise ImportError(f"cannot import name {func!r} from {module_name!r}") from exc
+
+
 class VariantNotFound(KeyError):
     """A ``--variant`` name has no entry in the menu's ``variants:`` map."""
 
