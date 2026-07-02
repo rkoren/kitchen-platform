@@ -33,6 +33,6 @@ Kaggle data
 
 ## Dataset
 
-kitchen supports any tabular Kaggle competition — the showcase projects use healthcare and sci-fi datasets.
+kitchen aims to support any tabular Kaggle competition
 
 <!-- TODO: document the specific dataset(s) used -->
