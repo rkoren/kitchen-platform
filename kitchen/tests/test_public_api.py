@@ -27,3 +27,55 @@ def test_new_helpers_surfaced_at_top_level():
     assert cached_fetch is _cf
     assert require_external is _re
     assert score_run_holdout is _srh
+
+
+# --- REL-002: guard the public surface against accidental drift ---
+
+# The frozen public API (`kitchen.__all__`). Changing this set is a deliberate API change —
+# update it here so an accidental re-export never silently joins the compatibility surface.
+PUBLIC_API: frozenset[str] = frozenset(
+    {
+        # pipeline building blocks
+        "DataStore", "DriftReport", "Evaluator", "FeatureBuilder", "KitchenConfig",
+        "Tracker", "Trainer",
+        # experiment tracking
+        "experiment", "init_run", "load_params",
+        # modeling — metrics / CV / ensembling / calibration / utils
+        "classification_metrics", "regression_metrics",
+        "cross_validate", "time_series_cv", "loto_cv",
+        "blend_predictions", "make_stack_features", "rank_average", "voting_predict",
+        "calibrate_model", "clip_predictions", "clip_proba", "compute_calibration_curve",
+        "set_seed", "train_val_split",
+        # hyperparameter search
+        "grid_search", "random_search", "bayes_search",
+        # data ingestion
+        "cached_fetch", "require_external",
+        # holdout scoring
+        "score_run_holdout",
+        # submodules
+        "tracking", "evaluate", "registry", "search",
+    }
+)
+
+
+def test_public_api_is_frozen():
+    """`kitchen.__all__` matches the pinned surface — no accidental additions/removals slip into
+    the 1.x compatibility promise."""
+    actual = set(kitchen.__all__)
+    assert actual == set(PUBLIC_API), (
+        "kitchen.__all__ changed. If intentional, update PUBLIC_API here (and note it in the "
+        "release changelog).\n"
+        f"  added:   {sorted(actual - PUBLIC_API)}\n"
+        f"  removed: {sorted(PUBLIC_API - actual)}"
+    )
+
+
+def test_all_is_free_of_duplicates():
+    """No duplicate exports (a duplicate hints at a merge slip)."""
+    assert len(kitchen.__all__) == len(set(kitchen.__all__))
+
+
+def test_provisioning_is_not_a_python_import_surface():
+    """Provisioning is a CLI/schema surface (`kitchen recipes`, `kitchen menu schema`), not a
+    top-level import — so `kitchen.recipes` internals stay out of the public contract (REL-002)."""
+    assert "recipes" not in kitchen.__all__
