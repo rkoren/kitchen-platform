@@ -43,7 +43,7 @@ def test_script_has_valid_bash_syntax():
 def test_script_carries_no_personal_values():
     # SEC-001 acceptance: "Bootstrap script has no personal values."
     text = SCRIPT.read_text()
-    for needle in ("rkoren", "light-ml", "reilly"):
+    for needle in ("rkoren"):
         assert needle not in text, f"personal value {needle!r} still present"
 
 

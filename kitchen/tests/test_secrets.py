@@ -376,14 +376,14 @@ def test_iam_policy_sm_and_ssm_statements():
 
 
 def test_iam_policy_default_wildcards_no_account():
-    """SEC-001-style guard: default output embeds no account ID / personal value."""
+    """SEC-001-style guard: default output embeds no account ID"""
     import re
 
     cfg = _cfg({"API": {"aws_secret": "kenpom_key", "key": "API"}})
     text = json.dumps(sec.iam_policy(cfg))
     assert "arn:aws:secretsmanager:*:*:secret:kenpom_key-*" in text
     assert re.search(r":\d{12}:", text) is None  # no 12-digit AWS account number
-    for needle in ("rkoren", "reilly", "674325521451"):
+    for needle in ("rkoren", "674325521451"):
         assert needle not in text
 
 

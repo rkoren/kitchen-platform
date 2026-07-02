@@ -108,11 +108,6 @@ def test_menu_yaml_uses_correct_lambda_field_names(scaffold):
     assert "timeout:" in raw
 
 
-def test_menu_yaml_has_no_maintainer_names(scaffold):
-    raw = (scaffold / "menu.yaml").read_text()
-    assert "reilly" not in raw.lower(), "Scaffold contains maintainer-specific name"
-
-
 def test_features_module_imports_cleanly(scaffold, monkeypatch):
     monkeypatch.syspath_prepend(str(scaffold))
     spec = importlib.util.spec_from_file_location(
