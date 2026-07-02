@@ -407,6 +407,47 @@ def load_params(path: str) -> dict[str, Any]:
     return raw
 
 
+def stage_module_name(stage: str, params: dict[str, Any]) -> str:
+    """The importable module for a ``stage``'s code (S-8, INT-019).
+
+    Honors a menu recipe's declared ``source`` (INT-006) — e.g. ``source: src/training/main.py``
+    → ``src.training.main`` — so a project's stage code can live anywhere; falls back to the
+    convention ``src.<stage>.run`` when no source is declared (a ``params.yaml`` project, or a
+    menu that follows the convention).
+
+    Import-based on purpose (not path-based file loading): scaffolded stage modules import each
+    other (``from src.features.run import …``), which only resolves as a package import.
+    """
+    source = None
+    recipes = params.get("recipes")
+    if isinstance(recipes, dict):
+        entry = recipes.get(stage)
+        if isinstance(entry, dict):
+            source = entry.get("source")
+    if source:
+        stem = source[:-3] if source.endswith(".py") else source
+        return stem.strip("/").replace("/", ".")
+    return f"src.{stage}.run"
+
+
+def load_stage_callable(stage: str, func: str, params: dict[str, Any]):
+    """Import ``func`` from a stage's module (S-8, INT-019) — byte-identical to
+    ``from <module> import <func>``.
+
+    ``__import__(..., fromlist=[func])`` is a package import (intra-``src`` imports resolve) and
+    goes through the ``builtins.__import__`` hook the missing-module tests mock. Missing module →
+    ``ModuleNotFoundError``; missing attribute → ``ImportError`` (the ``AttributeError`` from the
+    explicit getattr is converted, so it matches what the ``from`` statement itself would raise —
+    not ``AttributeError``, which broke `test_train_flow`'s missing-module assertions).
+    """
+    module_name = stage_module_name(stage, params)
+    module = __import__(module_name, fromlist=[func])
+    try:
+        return getattr(module, func)
+    except AttributeError as exc:
+        raise ImportError(f"cannot import name {func!r} from {module_name!r}") from exc
+
+
 class VariantNotFound(KeyError):
     """A ``--variant`` name has no entry in the menu's ``variants:`` map."""
 
