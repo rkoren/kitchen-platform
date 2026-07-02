@@ -29,10 +29,10 @@ def test_new_helpers_surfaced_at_top_level():
     assert score_run_holdout is _srh
 
 
-# --- REL-002: freeze the public surface for 1.0 (see docs/kitchen/api-stability.md) ---
+# --- REL-002: guard the public surface against accidental drift ---
 
-# The frozen public API. Changing this set is a deliberate API change — update it together with
-# docs/kitchen/api-stability.md and the CHANGELOG (MINOR bump to add a name, MAJOR to remove one).
+# The frozen public API (`kitchen.__all__`). Changing this set is a deliberate API change —
+# update it here so an accidental re-export never silently joins the compatibility surface.
 PUBLIC_API: frozenset[str] = frozenset(
     {
         # pipeline building blocks
@@ -63,8 +63,8 @@ def test_public_api_is_frozen():
     the 1.x compatibility promise."""
     actual = set(kitchen.__all__)
     assert actual == set(PUBLIC_API), (
-        "kitchen.__all__ changed. If intentional, update PUBLIC_API here + "
-        "docs/kitchen/api-stability.md + the CHANGELOG.\n"
+        "kitchen.__all__ changed. If intentional, update PUBLIC_API here (and note it in the "
+        "release changelog).\n"
         f"  added:   {sorted(actual - PUBLIC_API)}\n"
         f"  removed: {sorted(PUBLIC_API - actual)}"
     )
