@@ -26,8 +26,9 @@ dependencies = [
     # CLI
     "typer>=0.12",
     # Provisioning (recipes → Terraform); folded in at the INT-013 package merge.
-    # NOTE: pandas/numpy/mlflow/… below stay in base for now — the base-vs-[ml] split is
-    # INT-013b (needs a lazy-import refactor of kitchen/__init__.py, not a mechanical move).
+    # The full ML stack (pandas/numpy/mlflow/… below) ships in base by decision (2026-07-02):
+    # this project is ML-focused, so functionality/UX takes priority over a lightweight
+    # provisioning-only install. There is no `[ml]` extra (see docs/decisions/unified-package.md).
     "pydantic>=2.0",
     "jinja2>=3.1",
     "rich>=13.0",
