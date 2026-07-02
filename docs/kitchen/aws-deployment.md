@@ -155,7 +155,7 @@ deploy:
 
 Use OIDC (`role-to-assume`) rather than long-lived access keys — it requires no stored secrets and automatically scopes permissions to the workflow run.
 
-### Production environment protection (SEC-007 / SEC-008)
+### Production environment protection
 
 The deploy jobs (`infra-apply`, `docker-build`, `lambda-deploy`) run under a GitHub
 Environment named `production`. The CI role's trust policy (created by
