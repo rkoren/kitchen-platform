@@ -35,10 +35,11 @@ class SpaceshipTrainer(Trainer):
         X_val, y_val = val_df[features], val_df[target]
 
         model = xgb.XGBClassifier(
-            n_estimators=model_cfg.get("n_estimators", 200),
+            n_estimators=model_cfg.get("n_estimators", 400),
             max_depth=model_cfg.get("max_depth", 4),
-            learning_rate=model_cfg.get("eta", 0.1),
+            learning_rate=model_cfg.get("eta", 0.05),
             subsample=model_cfg.get("subsample", 0.9),
+            colsample_bytree=model_cfg.get("colsample_bytree", 0.8),
             eval_metric="logloss",
             random_state=seed,
         )

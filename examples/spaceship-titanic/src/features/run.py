@@ -29,6 +29,8 @@ FEATURES: list[str] = [
     "VIP",
     *SPEND_COLS,
     "total_spend",
+    "has_spent",
+    "luxury",
     "deck",
     "side",
     "group_size",
@@ -49,9 +51,12 @@ class SpaceshipFeatures(FeatureBuilder):
         group = df["PassengerId"].astype("string").str.split("_", expand=True)[0]
         df["group_size"] = group.map(group.value_counts())
 
-        # Spend: fill missing with 0, then total across amenities.
+        # Spend: fill missing with 0, then engineer totals. `has_spent` (awake spenders were
+        # less likely to be transported) and `luxury` (cabin services vs food/shopping) both help.
         df[SPEND_COLS] = df[SPEND_COLS].fillna(0.0)
         df["total_spend"] = df[SPEND_COLS].sum(axis=1)
+        df["has_spent"] = (df["total_spend"] > 0).astype(int)
+        df["luxury"] = df[["Spa", "VRDeck", "RoomService"]].sum(axis=1)
 
         # Booleans → 0/1 (missing = not-in-cryo / not-VIP).
         for col in ("CryoSleep", "VIP"):

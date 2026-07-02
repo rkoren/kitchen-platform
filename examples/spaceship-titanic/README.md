@@ -21,7 +21,11 @@ That executes the `pipeline` in `menu.yaml`:
 2. **evaluate** (`src/evaluate/run.py`) — loads `models:/spaceship-titanic-model@champion` and
    scores it on the held-out split.
 
-Expected: `val_accuracy ≈ 0.73` — a genuine PASS against the `0.70` threshold in `menu.yaml`.
+Expected: `val_accuracy ≈ 0.83` (f1 ≈ 0.83, roc_auc ≈ 0.88) — a genuine PASS against the `0.78`
+threshold in `menu.yaml`, right where real Spaceship Titanic baselines land (~0.80). The
+synthetic data is generated with a realistic signal strength (see `data/make_sample.py`), so
+the feature engineering and tuning actually matter — the engineered **`has_spent`** feature
+(awake-and-spending, which cryosleep rules out) turns out to be the single biggest driver.
 
 Run individual stages too:
 
@@ -40,7 +44,7 @@ gitignored.
 | File | Role |
 |------|------|
 | `menu.yaml` | The whole project as one manifest — pipeline, stage sources, model knobs, MLflow, thresholds. |
-| `src/features/run.py` | Real SST feature engineering — split `Cabin` into deck/side, `total_spend`, `group_size` from the `PassengerId`, fill missing values, integer-encode categoricals. |
+| `src/features/run.py` | Real SST feature engineering — split `Cabin` into deck/side, `total_spend` + `has_spent` + `luxury`, `group_size` from the `PassengerId`, fill missing values, integer-encode categoricals. |
 | `src/train/run.py` | An XGBoost baseline (`model_flavour = "xgboost"`); tune it in `menu.yaml` or with `--override`. |
 | `src/evaluate/run.py` | Scores the champion on the same held-out split. |
 | `data/make_sample.py` | The deterministic generator for the synthetic `train.csv` (seeded → reproducible). |
