@@ -39,8 +39,9 @@ def _apply_overrides(params: dict, overrides: dict) -> None:
 
 
 def _build(params: dict) -> None:
-    from src.features.run import build  # project-provided
+    from kitchen.menu import stage_module_name
 
+    build = __import__(stage_module_name("features", params), fromlist=["build"]).build
     build(params, DataStore())
 
 
@@ -121,8 +122,9 @@ def _holdout_lines(results: dict[str, float]) -> list[str]:
 
 
 def _train(params: dict, overrides: dict | None = None, variant: str | None = None) -> str | None:
-    from src.train.run import train  # project-provided
+    from kitchen.menu import stage_module_name
 
+    train = __import__(stage_module_name("train", params), fromlist=["train"]).train
     configure_from_env()
     experiment = params.get("experiment", EXPERIMENT)
     init_experiment(experiment)
