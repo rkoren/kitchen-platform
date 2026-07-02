@@ -113,8 +113,8 @@ jobs:
 
       - name: Install kitchen (provides the recipes CLI)
         # INT-013: recipes is now the kitchen.recipes sub-package; the `recipes` console
-        # script ships with rkoren-kitchen. (INT-013b's [ml] extra will let provision-only
-        # jobs install the light base instead of the full ML stack.)
+        # script ships with rkoren-kitchen (one package, full ML stack included — the base+[ml]
+        # split was dropped: this project is ML-focused, so functionality/UX > install weight).
         run: pip install -e kitchen/
 
       - name: Generate Terraform
@@ -163,8 +163,8 @@ jobs:
 
       - name: Install kitchen (provides the recipes CLI)
         # INT-013: recipes is now the kitchen.recipes sub-package; the `recipes` console
-        # script ships with rkoren-kitchen. (INT-013b's [ml] extra will let provision-only
-        # jobs install the light base instead of the full ML stack.)
+        # script ships with rkoren-kitchen (one package, full ML stack included — the base+[ml]
+        # split was dropped: this project is ML-focused, so functionality/UX > install weight).
         run: pip install -e kitchen/
 
       - name: Generate Terraform
@@ -218,8 +218,8 @@ jobs:
 
       - name: Install kitchen (provides the recipes CLI)
         # INT-013: recipes is now the kitchen.recipes sub-package; the `recipes` console
-        # script ships with rkoren-kitchen. (INT-013b's [ml] extra will let provision-only
-        # jobs install the light base instead of the full ML stack.)
+        # script ships with rkoren-kitchen (one package, full ML stack included — the base+[ml]
+        # split was dropped: this project is ML-focused, so functionality/UX > install weight).
         run: pip install -e kitchen/
 
       - name: Generate Terraform
