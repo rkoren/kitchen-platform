@@ -407,6 +407,29 @@ def load_params(path: str) -> dict[str, Any]:
     return raw
 
 
+def stage_module_name(stage: str, params: dict[str, Any]) -> str:
+    """The importable module for a ``stage``'s code (S-8, INT-019).
+
+    Honors a menu recipe's declared ``source`` (INT-006) — e.g. ``source: src/training/main.py``
+    → ``src.training.main`` — so a project's stage code can live anywhere; falls back to the
+    convention ``src.<stage>.run`` when no source is declared (a ``params.yaml`` project, or a
+    menu that follows the convention).
+
+    Import-based on purpose (not path-based file loading): scaffolded stage modules import each
+    other (``from src.features.run import …``), which only resolves as a package import.
+    """
+    source = None
+    recipes = params.get("recipes")
+    if isinstance(recipes, dict):
+        entry = recipes.get(stage)
+        if isinstance(entry, dict):
+            source = entry.get("source")
+    if source:
+        stem = source[:-3] if source.endswith(".py") else source
+        return stem.strip("/").replace("/", ".")
+    return f"src.{stage}.run"
+
+
 class VariantNotFound(KeyError):
     """A ``--variant`` name has no entry in the menu's ``variants:`` map."""
 
