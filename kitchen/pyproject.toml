@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Reusable MLOps framework: data ingestion, experiment tracking, serving, and monitoring"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {text = "Unlicense"}
 authors = [
     {name = "rkoren", email = "167029178+rkoren@users.noreply.github.com"},
 ]
@@ -17,7 +17,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: The Unlicense (Unlicense)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
