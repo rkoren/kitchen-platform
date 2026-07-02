@@ -1,0 +1,442 @@
+PassengerId,HomePlanet,CryoSleep,Cabin,Destination,Age,VIP,RoomService,FoodCourt,ShoppingMall,Spa,VRDeck,Name,Transported
+0001_01,Mars,False,D/1/S,55 Cancri e,1.0,False,310.0,687.0,17.0,230.0,15.0,Test Passenger11,False
+0002_01,Europa,True,C/2/P,PSO J318.5-22,,False,0.0,0.0,0.0,0.0,0.0,Test Passenger21,True
+0002_02,Europa,False,C/2/P,TRAPPIST-1e,22.0,False,100.0,17.0,40.0,151.0,86.0,Test Passenger22,True
+0003_01,Earth,False,C/3/P,TRAPPIST-1e,16.0,False,293.0,306.0,238.0,16.0,249.0,Test Passenger31,False
+0004_01,Earth,True,B/4/S,TRAPPIST-1e,32.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger41,False
+0005_01,Earth,False,B/5/S,TRAPPIST-1e,42.0,False,1168.0,463.0,362.0,230.0,130.0,Test Passenger51,False
+0005_02,Earth,,B/5/S,TRAPPIST-1e,10.0,False,11.0,203.0,562.0,181.0,469.0,Test Passenger52,False
+0006_01,Earth,True,C/6/S,TRAPPIST-1e,11.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger61,True
+0007_01,Earth,True,D/7/S,PSO J318.5-22,27.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger71,True
+0007_02,Earth,False,D/7/S,TRAPPIST-1e,15.0,False,246.0,407.0,160.0,235.0,84.0,Test Passenger72,False
+0008_01,Europa,True,D/8/P,TRAPPIST-1e,8.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger81,True
+0008_02,Europa,,D/8/P,TRAPPIST-1e,25.0,False,88.0,16.0,201.0,214.0,65.0,Test Passenger82,True
+0009_01,Earth,False,,TRAPPIST-1e,25.0,False,148.0,308.0,54.0,216.0,63.0,Test Passenger91,False
+0010_01,Europa,False,D/10/P,55 Cancri e,26.0,False,552.0,128.0,749.0,37.0,613.0,Test Passenger101,False
+0010_02,Europa,True,D/10/P,TRAPPIST-1e,21.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger102,True
+0010_03,Europa,False,D/10/P,TRAPPIST-1e,40.0,False,,67.0,469.0,,295.0,Test Passenger103,True
+0011_01,Europa,False,G/11/S,PSO J318.5-22,26.0,False,240.0,496.0,621.0,146.0,20.0,Test Passenger111,True
+0011_02,Europa,True,G/11/S,TRAPPIST-1e,51.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger112,True
+0011_03,Europa,False,G/11/S,TRAPPIST-1e,48.0,False,98.0,455.0,240.0,43.0,2.0,Test Passenger113,True
+0011_04,Europa,True,G/11/S,,27.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger114,True
+0012_01,Earth,True,F/12/S,TRAPPIST-1e,35.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger121,True
+0013_01,Mars,True,D/13/S,TRAPPIST-1e,31.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger131,True
+0014_01,Mars,False,E/14/S,55 Cancri e,8.0,False,13.0,8.0,409.0,142.0,133.0,Test Passenger141,False
+0015_01,Earth,False,D/15/S,TRAPPIST-1e,27.0,False,587.0,66.0,226.0,113.0,377.0,Test Passenger151,True
+0015_02,Earth,True,D/15/S,TRAPPIST-1e,52.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger152,False
+0015_03,Earth,True,D/15/S,TRAPPIST-1e,26.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger153,True
+0016_01,Europa,False,E/16/P,TRAPPIST-1e,33.0,False,645.0,120.0,17.0,24.0,109.0,Test Passenger161,True
+0016_02,Europa,True,E/16/P,TRAPPIST-1e,12.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger162,False
+0016_03,Europa,False,E/16/P,55 Cancri e,34.0,False,701.0,304.0,380.0,241.0,42.0,Test Passenger163,False
+0017_01,Europa,True,D/17/P,TRAPPIST-1e,23.0,False,,0.0,0.0,0.0,0.0,Test Passenger171,True
+0017_02,Europa,False,D/17/P,55 Cancri e,23.0,False,132.0,88.0,257.0,89.0,211.0,Test Passenger172,True
+0017_03,Europa,False,D/17/P,TRAPPIST-1e,40.0,False,33.0,102.0,287.0,225.0,52.0,Test Passenger173,False
+0018_01,Mars,True,B/18/S,55 Cancri e,12.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger181,True
+0018_02,Mars,False,B/18/S,55 Cancri e,28.0,False,13.0,1179.0,182.0,65.0,129.0,Test Passenger182,False
+0019_01,Europa,,E/19/S,55 Cancri e,36.0,False,65.0,434.0,50.0,280.0,500.0,Test Passenger191,False
+0019_02,Europa,True,E/19/S,PSO J318.5-22,16.0,False,0.0,0.0,,0.0,0.0,Test Passenger192,True
+0019_03,Europa,False,E/19/S,PSO J318.5-22,26.0,False,296.0,957.0,477.0,107.0,146.0,Test Passenger193,False
+0019_04,Europa,True,E/19/S,TRAPPIST-1e,61.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger194,True
+0020_01,Mars,True,E/20/P,55 Cancri e,6.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger201,False
+0020_02,Mars,True,E/20/P,TRAPPIST-1e,0.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger202,False
+0021_01,Europa,True,F/21/S,55 Cancri e,31.0,False,0.0,0.0,,0.0,0.0,Test Passenger211,True
+0021_02,Europa,True,F/21/S,TRAPPIST-1e,22.0,False,0.0,0.0,0.0,,0.0,Test Passenger212,True
+0022_01,,False,F/22/S,TRAPPIST-1e,19.0,False,437.0,488.0,495.0,362.0,19.0,Test Passenger221,False
+0022_02,Earth,False,F/22/S,TRAPPIST-1e,29.0,False,55.0,243.0,63.0,327.0,43.0,Test Passenger222,False
+0022_03,,False,F/22/S,TRAPPIST-1e,35.0,False,145.0,78.0,44.0,160.0,306.0,Test Passenger223,False
+0023_01,Mars,True,B/23/S,TRAPPIST-1e,7.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger231,False
+0023_02,Mars,False,B/23/S,TRAPPIST-1e,33.0,False,13.0,6.0,6.0,84.0,80.0,Test Passenger232,False
+0023_03,Mars,False,B/23/S,55 Cancri e,6.0,False,176.0,12.0,59.0,57.0,17.0,Test Passenger233,False
+0023_04,Mars,False,B/23/S,55 Cancri e,31.0,False,689.0,69.0,155.0,135.0,280.0,Test Passenger234,False
+0024_01,Europa,False,,TRAPPIST-1e,34.0,False,141.0,,4.0,343.0,21.0,Test Passenger241,True
+0025_01,Earth,False,F/25/P,TRAPPIST-1e,7.0,False,91.0,500.0,118.0,214.0,455.0,Test Passenger251,False
+0025_02,Earth,False,F/25/P,PSO J318.5-22,6.0,False,388.0,3.0,82.0,50.0,72.0,Test Passenger252,False
+0025_03,Earth,False,F/25/P,TRAPPIST-1e,16.0,False,73.0,123.0,143.0,60.0,213.0,Test Passenger253,False
+0026_01,Earth,True,G/26/P,TRAPPIST-1e,37.0,,0.0,0.0,0.0,0.0,0.0,Test Passenger261,True
+0027_01,Europa,False,F/27/P,55 Cancri e,24.0,False,21.0,55.0,146.0,129.0,178.0,Test Passenger271,False
+0028_01,Europa,False,G/28/S,TRAPPIST-1e,11.0,False,101.0,32.0,185.0,570.0,35.0,Test Passenger281,True
+0029_01,Earth,,G/29/P,TRAPPIST-1e,8.0,True,0.0,0.0,0.0,0.0,0.0,Test Passenger291,True
+0030_01,Earth,False,E/30/S,TRAPPIST-1e,33.0,False,966.0,118.0,758.0,25.0,200.0,Test Passenger301,False
+0030_02,Earth,False,E/30/S,PSO J318.5-22,11.0,False,,196.0,162.0,127.0,5.0,Test Passenger302,False
+0031_01,Earth,False,G/31/P,TRAPPIST-1e,46.0,False,259.0,604.0,533.0,9.0,388.0,Test Passenger311,True
+0031_02,Earth,False,G/31/P,TRAPPIST-1e,34.0,False,121.0,203.0,1.0,51.0,247.0,Test Passenger312,False
+0031_03,,True,G/31/P,55 Cancri e,21.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger313,True
+0031_04,Earth,True,G/31/P,TRAPPIST-1e,64.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger314,True
+0032_01,Earth,True,C/32/S,TRAPPIST-1e,7.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger321,True
+0032_02,Earth,True,C/32/S,TRAPPIST-1e,37.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger322,True
+0033_01,Earth,False,E/33/S,TRAPPIST-1e,13.0,False,13.0,74.0,478.0,85.0,59.0,Test Passenger331,False
+0033_02,Earth,True,E/33/S,,27.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger332,False
+0034_01,Europa,True,E/34/S,TRAPPIST-1e,10.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger341,True
+0034_02,Europa,False,E/34/S,TRAPPIST-1e,33.0,False,39.0,289.0,170.0,1125.0,751.0,Test Passenger342,False
+0034_03,Europa,False,E/34/S,TRAPPIST-1e,22.0,False,348.0,5.0,1625.0,23.0,333.0,Test Passenger343,False
+0034_04,Europa,True,E/34/S,TRAPPIST-1e,25.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger344,True
+0035_01,Earth,False,D/35/P,55 Cancri e,28.0,False,263.0,0.0,105.0,154.0,66.0,Test Passenger351,False
+0035_02,Earth,True,D/35/P,TRAPPIST-1e,44.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger352,False
+0036_01,Earth,False,,TRAPPIST-1e,34.0,,19.0,147.0,345.0,7.0,16.0,Test Passenger361,True
+0036_02,Earth,True,G/36/P,,45.0,False,0.0,0.0,0.0,0.0,,Test Passenger362,True
+0036_03,Earth,False,G/36/P,55 Cancri e,35.0,False,738.0,150.0,440.0,456.0,166.0,Test Passenger363,False
+0037_01,Europa,True,F/37/P,TRAPPIST-1e,37.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger371,True
+0038_01,Europa,False,C/38/P,PSO J318.5-22,52.0,,656.0,253.0,10.0,58.0,238.0,Test Passenger381,False
+0039_01,Mars,False,A/39/P,TRAPPIST-1e,28.0,False,338.0,253.0,94.0,38.0,17.0,Test Passenger391,False
+0040_01,Europa,True,A/40/S,TRAPPIST-1e,42.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger401,True
+0040_02,Europa,False,A/40/S,TRAPPIST-1e,46.0,False,260.0,315.0,353.0,365.0,4.0,Test Passenger402,False
+0040_03,Europa,True,A/40/S,PSO J318.5-22,32.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger403,True
+0040_04,Europa,True,A/40/S,TRAPPIST-1e,48.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger404,True
+0041_01,Earth,False,G/41/S,TRAPPIST-1e,45.0,False,321.0,72.0,33.0,476.0,120.0,Test Passenger411,True
+0041_02,Earth,False,G/41/S,TRAPPIST-1e,23.0,False,41.0,85.0,428.0,241.0,192.0,Test Passenger412,True
+0041_03,,False,G/41/S,PSO J318.5-22,23.0,False,49.0,37.0,102.0,48.0,103.0,Test Passenger413,True
+0041_04,Earth,True,G/41/S,TRAPPIST-1e,8.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger414,True
+0042_01,Earth,True,E/42/P,TRAPPIST-1e,32.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger421,True
+0042_02,Earth,True,E/42/P,PSO J318.5-22,28.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger422,False
+0042_03,Earth,False,E/42/P,TRAPPIST-1e,12.0,False,,39.0,139.0,81.0,20.0,Test Passenger423,False
+0042_04,Earth,True,E/42/P,55 Cancri e,29.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger424,True
+0043_01,Earth,False,D/43/P,TRAPPIST-1e,26.0,False,289.0,89.0,455.0,33.0,32.0,Test Passenger431,False
+0043_02,Earth,False,D/43/P,55 Cancri e,,False,172.0,142.0,164.0,279.0,79.0,Test Passenger432,False
+0043_03,Earth,False,D/43/P,TRAPPIST-1e,54.0,False,354.0,203.0,87.0,7.0,433.0,Test Passenger433,False
+0044_01,Earth,False,A/44/P,PSO J318.5-22,40.0,False,195.0,96.0,87.0,4.0,345.0,Test Passenger441,False
+0045_01,Earth,False,B/45/P,TRAPPIST-1e,59.0,,312.0,160.0,339.0,241.0,310.0,Test Passenger451,False
+0045_02,Earth,True,B/45/P,TRAPPIST-1e,41.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger452,True
+0046_01,Europa,False,D/46/S,55 Cancri e,22.0,False,190.0,66.0,64.0,505.0,18.0,Test Passenger461,False
+0047_01,Europa,True,E/47/S,TRAPPIST-1e,49.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger471,True
+0048_01,Mars,False,E/48/S,TRAPPIST-1e,27.0,False,70.0,28.0,241.0,176.0,176.0,Test Passenger481,False
+0049_01,Mars,False,C/49/P,TRAPPIST-1e,13.0,False,11.0,140.0,81.0,213.0,147.0,Test Passenger491,True
+0049_02,Mars,False,C/49/P,TRAPPIST-1e,23.0,False,56.0,313.0,227.0,236.0,248.0,Test Passenger492,True
+0049_03,Mars,False,C/49/P,TRAPPIST-1e,42.0,False,646.0,184.0,171.0,153.0,15.0,Test Passenger493,False
+0049_04,Mars,False,C/49/P,TRAPPIST-1e,36.0,False,207.0,375.0,136.0,172.0,60.0,Test Passenger494,False
+0050_01,Europa,False,C/50/P,55 Cancri e,48.0,False,202.0,186.0,4.0,109.0,508.0,Test Passenger501,True
+0050_02,Europa,True,C/50/P,,25.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger502,True
+0051_01,Mars,True,G/51/S,TRAPPIST-1e,,False,0.0,0.0,0.0,0.0,0.0,Test Passenger511,False
+0052_01,,False,F/52/P,TRAPPIST-1e,20.0,False,286.0,141.0,415.0,10.0,86.0,Test Passenger521,False
+0052_02,Earth,False,F/52/P,55 Cancri e,13.0,False,288.0,261.0,246.0,214.0,307.0,Test Passenger522,False
+0053_01,Earth,True,G/53/P,TRAPPIST-1e,33.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger531,True
+0054_01,Europa,False,A/54/S,TRAPPIST-1e,27.0,False,1114.0,265.0,159.0,410.0,24.0,Test Passenger541,False
+0054_02,Europa,False,A/54/S,TRAPPIST-1e,27.0,False,,,44.0,61.0,297.0,Test Passenger542,True
+0054_03,Europa,True,A/54/S,TRAPPIST-1e,42.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger543,True
+0055_01,Mars,False,D/55/P,55 Cancri e,0.0,False,38.0,626.0,238.0,393.0,191.0,Test Passenger551,False
+0056_01,Europa,False,A/56/P,TRAPPIST-1e,26.0,False,122.0,477.0,96.0,164.0,120.0,Test Passenger561,True
+0056_02,Europa,False,A/56/P,PSO J318.5-22,,True,117.0,170.0,285.0,118.0,137.0,Test Passenger562,True
+0057_01,Europa,True,C/57/P,TRAPPIST-1e,15.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger571,True
+0057_02,Europa,True,C/57/P,TRAPPIST-1e,27.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger572,True
+0058_01,Europa,True,C/58/P,TRAPPIST-1e,25.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger581,True
+0058_02,Europa,False,C/58/P,55 Cancri e,11.0,False,236.0,367.0,380.0,305.0,208.0,Test Passenger582,False
+0059_01,Earth,False,G/59/P,TRAPPIST-1e,0.0,False,279.0,290.0,29.0,123.0,75.0,Test Passenger591,False
+0059_02,Earth,False,G/59/P,TRAPPIST-1e,21.0,False,397.0,136.0,266.0,122.0,66.0,Test Passenger592,False
+0059_03,Earth,False,G/59/P,TRAPPIST-1e,18.0,False,215.0,350.0,71.0,86.0,288.0,Test Passenger593,True
+0059_04,Earth,False,G/59/P,TRAPPIST-1e,26.0,False,384.0,22.0,281.0,41.0,430.0,Test Passenger594,False
+0060_01,Europa,False,A/60/P,TRAPPIST-1e,25.0,False,492.0,94.0,294.0,4.0,29.0,Test Passenger601,False
+0060_02,Europa,False,A/60/P,TRAPPIST-1e,30.0,False,883.0,174.0,117.0,379.0,1201.0,Test Passenger602,False
+0060_03,Europa,False,A/60/P,55 Cancri e,0.0,,294.0,264.0,120.0,565.0,125.0,Test Passenger603,False
+0060_04,Europa,True,A/60/P,TRAPPIST-1e,36.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger604,True
+0061_01,Europa,False,C/61/S,PSO J318.5-22,,False,35.0,48.0,75.0,121.0,125.0,Test Passenger611,True
+0061_02,Europa,False,C/61/S,TRAPPIST-1e,34.0,False,30.0,184.0,110.0,369.0,145.0,Test Passenger612,True
+0062_01,Earth,False,G/62/S,TRAPPIST-1e,,False,37.0,596.0,910.0,70.0,25.0,Test Passenger621,True
+0063_01,Earth,False,E/63/S,55 Cancri e,41.0,False,30.0,26.0,67.0,165.0,40.0,Test Passenger631,False
+0064_01,Mars,True,F/64/S,PSO J318.5-22,33.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger641,False
+0065_01,Earth,,E/65/S,TRAPPIST-1e,3.0,False,62.0,81.0,316.0,447.0,902.0,Test Passenger651,True
+0065_02,Earth,True,E/65/S,PSO J318.5-22,54.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger652,False
+0066_01,Earth,True,A/66/P,TRAPPIST-1e,20.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger661,True
+0067_01,Europa,False,F/67/P,TRAPPIST-1e,46.0,False,80.0,63.0,191.0,89.0,85.0,Test Passenger671,False
+0067_02,Europa,True,F/67/P,55 Cancri e,31.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger672,True
+0067_03,Europa,True,F/67/P,TRAPPIST-1e,24.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger673,True
+0068_01,Mars,False,D/68/S,55 Cancri e,44.0,False,25.0,644.0,58.0,608.0,11.0,Test Passenger681,True
+0069_01,Mars,False,B/69/P,TRAPPIST-1e,22.0,False,194.0,392.0,271.0,262.0,422.0,Test Passenger691,False
+0070_01,Europa,False,F/70/P,TRAPPIST-1e,9.0,False,405.0,15.0,52.0,186.0,425.0,Test Passenger701,True
+0070_02,Europa,False,F/70/P,TRAPPIST-1e,23.0,False,21.0,146.0,89.0,450.0,278.0,Test Passenger702,False
+0071_01,Earth,True,D/71/P,55 Cancri e,19.0,False,,0.0,0.0,0.0,0.0,Test Passenger711,True
+0071_02,Earth,False,D/71/P,55 Cancri e,38.0,False,699.0,113.0,242.0,38.0,61.0,Test Passenger712,True
+0071_03,Earth,True,D/71/P,TRAPPIST-1e,30.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger713,True
+0072_01,Mars,False,F/72/P,TRAPPIST-1e,24.0,False,491.0,738.0,247.0,114.0,35.0,Test Passenger721,False
+0072_02,Mars,False,F/72/P,55 Cancri e,32.0,False,855.0,49.0,200.0,350.0,1023.0,Test Passenger722,False
+0072_03,Mars,True,F/72/P,TRAPPIST-1e,31.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger723,False
+0072_04,Mars,False,F/72/P,TRAPPIST-1e,36.0,False,40.0,19.0,809.0,70.0,159.0,Test Passenger724,False
+0073_01,Mars,True,C/73/S,PSO J318.5-22,17.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger731,True
+0074_01,Earth,True,D/74/P,TRAPPIST-1e,25.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger741,False
+0074_02,Earth,True,D/74/P,TRAPPIST-1e,42.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger742,True
+0075_01,Earth,False,B/75/S,TRAPPIST-1e,0.0,False,204.0,134.0,158.0,280.0,199.0,Test Passenger751,False
+0075_02,Earth,False,B/75/S,TRAPPIST-1e,31.0,False,228.0,392.0,65.0,323.0,71.0,Test Passenger752,False
+0075_03,Earth,False,B/75/S,55 Cancri e,25.0,False,198.0,250.0,78.0,6.0,292.0,Test Passenger753,True
+0076_01,Earth,False,A/76/P,TRAPPIST-1e,39.0,False,175.0,,31.0,548.0,467.0,Test Passenger761,False
+0076_02,Earth,False,A/76/P,TRAPPIST-1e,43.0,False,189.0,185.0,76.0,242.0,30.0,Test Passenger762,False
+0077_01,Europa,False,E/77/S,55 Cancri e,18.0,False,17.0,273.0,327.0,83.0,39.0,Test Passenger771,False
+0078_01,Earth,False,G/78/S,55 Cancri e,53.0,False,79.0,12.0,1675.0,110.0,1019.0,Test Passenger781,False
+0078_02,Earth,True,G/78/S,55 Cancri e,25.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger782,True
+0078_03,Earth,True,G/78/S,TRAPPIST-1e,7.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger783,True
+0079_01,Earth,False,G/79/P,55 Cancri e,40.0,False,128.0,52.0,146.0,349.0,235.0,Test Passenger791,False
+0079_02,Earth,True,G/79/P,TRAPPIST-1e,4.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger792,False
+0080_01,Earth,False,E/80/S,PSO J318.5-22,32.0,,152.0,719.0,204.0,222.0,,Test Passenger801,False
+0081_01,Earth,True,C/81/P,TRAPPIST-1e,8.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger811,True
+0081_02,Earth,False,C/81/P,TRAPPIST-1e,21.0,False,382.0,151.0,297.0,162.0,835.0,Test Passenger812,False
+0081_03,Earth,True,C/81/P,55 Cancri e,17.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger813,True
+0082_01,Mars,True,F/82/P,PSO J318.5-22,32.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger821,True
+0082_02,Mars,True,F/82/P,TRAPPIST-1e,20.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger822,True
+0083_01,Europa,False,B/83/S,55 Cancri e,19.0,False,243.0,55.0,90.0,86.0,236.0,Test Passenger831,True
+0084_01,Earth,False,F/84/S,PSO J318.5-22,44.0,False,157.0,202.0,191.0,65.0,5.0,Test Passenger841,False
+0084_02,Earth,False,F/84/S,55 Cancri e,45.0,False,260.0,39.0,,18.0,0.0,Test Passenger842,False
+0085_01,Earth,False,E/85/P,55 Cancri e,22.0,False,,227.0,211.0,,81.0,Test Passenger851,False
+0085_02,Earth,False,E/85/P,PSO J318.5-22,1.0,False,177.0,293.0,66.0,473.0,392.0,Test Passenger852,False
+0086_01,Mars,True,E/86/P,55 Cancri e,40.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger861,False
+0087_01,Europa,False,D/87/P,TRAPPIST-1e,29.0,False,60.0,183.0,54.0,98.0,76.0,Test Passenger871,False
+0087_02,Europa,True,D/87/P,TRAPPIST-1e,28.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger872,True
+0087_03,Europa,False,D/87/P,TRAPPIST-1e,24.0,False,21.0,284.0,7.0,341.0,39.0,Test Passenger873,False
+0087_04,Europa,True,D/87/P,PSO J318.5-22,42.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger874,True
+0088_01,Earth,False,C/88/S,TRAPPIST-1e,19.0,False,317.0,270.0,128.0,212.0,90.0,Test Passenger881,True
+0089_01,Earth,False,A/89/S,TRAPPIST-1e,13.0,False,1373.0,431.0,66.0,405.0,566.0,Test Passenger891,False
+0089_02,Earth,False,A/89/S,TRAPPIST-1e,34.0,False,276.0,470.0,19.0,70.0,3.0,Test Passenger892,False
+0090_01,Mars,False,G/90/S,TRAPPIST-1e,35.0,False,176.0,42.0,1041.0,141.0,56.0,Test Passenger901,False
+0090_02,Mars,False,G/90/S,TRAPPIST-1e,1.0,False,240.0,179.0,135.0,113.0,15.0,Test Passenger902,True
+0090_03,Mars,False,G/90/S,TRAPPIST-1e,46.0,False,86.0,345.0,439.0,33.0,514.0,Test Passenger903,False
+0090_04,Mars,False,G/90/S,55 Cancri e,23.0,,230.0,171.0,69.0,131.0,323.0,Test Passenger904,False
+0091_01,Earth,False,F/91/S,TRAPPIST-1e,24.0,False,388.0,67.0,27.0,23.0,114.0,Test Passenger911,True
+0091_02,Earth,False,F/91/S,TRAPPIST-1e,39.0,False,44.0,61.0,263.0,118.0,300.0,Test Passenger912,True
+0091_03,Earth,False,F/91/S,TRAPPIST-1e,30.0,False,27.0,79.0,179.0,22.0,215.0,Test Passenger913,False
+0092_01,Earth,False,G/92/S,TRAPPIST-1e,29.0,False,37.0,331.0,145.0,121.0,68.0,Test Passenger921,True
+0093_01,Earth,False,A/93/S,TRAPPIST-1e,37.0,False,432.0,180.0,61.0,24.0,119.0,Test Passenger931,False
+0094_01,Europa,False,G/94/P,TRAPPIST-1e,30.0,False,277.0,257.0,34.0,312.0,99.0,Test Passenger941,False
+0094_02,Europa,True,G/94/P,TRAPPIST-1e,22.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger942,True
+0095_01,Earth,True,C/95/S,TRAPPIST-1e,55.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger951,False
+0095_02,Earth,True,C/95/S,TRAPPIST-1e,29.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger952,True
+0096_01,Earth,False,F/96/P,TRAPPIST-1e,21.0,False,100.0,373.0,519.0,36.0,143.0,Test Passenger961,True
+0096_02,Earth,True,F/96/P,TRAPPIST-1e,35.0,False,0.0,,0.0,0.0,0.0,Test Passenger962,True
+0096_03,Earth,True,F/96/P,TRAPPIST-1e,29.0,False,,0.0,0.0,0.0,0.0,Test Passenger963,True
+0096_04,Earth,True,F/96/P,PSO J318.5-22,34.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger964,False
+0097_01,Europa,True,E/97/S,TRAPPIST-1e,35.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger971,True
+0098_01,Earth,False,F/98/S,55 Cancri e,3.0,False,321.0,33.0,134.0,27.0,,Test Passenger981,False
+0099_01,Earth,True,D/99/P,55 Cancri e,41.0,False,,0.0,0.0,0.0,0.0,Test Passenger991,True
+0100_01,Earth,True,G/100/P,TRAPPIST-1e,29.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1001,True
+0101_01,Earth,False,E/101/P,TRAPPIST-1e,29.0,False,247.0,2094.0,82.0,32.0,20.0,Test Passenger1011,False
+0101_02,Earth,False,E/101/P,TRAPPIST-1e,66.0,False,214.0,56.0,297.0,347.0,32.0,Test Passenger1012,False
+0101_03,Earth,True,E/101/P,TRAPPIST-1e,13.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1013,True
+0102_01,Earth,True,D/102/S,TRAPPIST-1e,46.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1021,True
+0103_01,Earth,False,G/103/S,TRAPPIST-1e,13.0,False,108.0,230.0,27.0,265.0,26.0,Test Passenger1031,False
+0103_02,Earth,False,G/103/S,TRAPPIST-1e,2.0,False,403.0,610.0,22.0,94.0,41.0,Test Passenger1032,True
+0104_01,Earth,True,C/104/P,TRAPPIST-1e,25.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1041,True
+0104_02,Earth,False,C/104/P,PSO J318.5-22,29.0,False,649.0,533.0,913.0,314.0,23.0,Test Passenger1042,False
+0105_01,Europa,True,B/105/P,TRAPPIST-1e,28.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1051,False
+0105_02,Europa,False,B/105/P,TRAPPIST-1e,29.0,False,770.0,1.0,1064.0,47.0,388.0,Test Passenger1052,False
+0105_03,Europa,True,B/105/P,55 Cancri e,50.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1053,False
+0106_01,Mars,False,D/106/P,55 Cancri e,8.0,False,70.0,7.0,399.0,24.0,5.0,Test Passenger1061,False
+0107_01,Earth,True,E/107/P,PSO J318.5-22,33.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1071,False
+0108_01,Earth,False,D/108/P,TRAPPIST-1e,39.0,False,850.0,,463.0,3.0,23.0,Test Passenger1081,True
+0108_02,Earth,False,D/108/P,TRAPPIST-1e,10.0,False,83.0,275.0,60.0,83.0,212.0,Test Passenger1082,False
+0108_03,Earth,False,D/108/P,55 Cancri e,60.0,False,40.0,40.0,8.0,297.0,147.0,Test Passenger1083,True
+0109_01,Earth,True,B/109/S,55 Cancri e,16.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1091,True
+0109_02,Earth,False,B/109/S,TRAPPIST-1e,28.0,False,10.0,331.0,1.0,44.0,529.0,Test Passenger1092,False
+0110_01,Europa,False,D/110/P,55 Cancri e,46.0,False,64.0,211.0,,1087.0,59.0,Test Passenger1101,False
+0110_02,Europa,True,D/110/P,PSO J318.5-22,32.0,True,0.0,0.0,0.0,,0.0,Test Passenger1102,True
+0110_03,Europa,True,D/110/P,TRAPPIST-1e,43.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1103,True
+0111_01,Mars,True,E/111/P,55 Cancri e,18.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1111,True
+0111_02,Mars,False,E/111/P,TRAPPIST-1e,31.0,False,140.0,1064.0,65.0,142.0,430.0,Test Passenger1112,False
+0112_01,Earth,True,E/112/S,TRAPPIST-1e,23.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1121,True
+0113_01,Mars,False,B/113/S,PSO J318.5-22,35.0,False,237.0,242.0,657.0,278.0,731.0,Test Passenger1131,False
+0113_02,Mars,False,B/113/S,TRAPPIST-1e,37.0,False,225.0,288.0,207.0,415.0,109.0,Test Passenger1132,False
+0113_03,Mars,False,B/113/S,TRAPPIST-1e,22.0,False,72.0,953.0,578.0,385.0,517.0,Test Passenger1133,False
+0114_01,Earth,False,F/114/S,TRAPPIST-1e,4.0,False,352.0,253.0,177.0,48.0,280.0,Test Passenger1141,False
+0114_02,Earth,False,F/114/S,55 Cancri e,22.0,False,51.0,100.0,462.0,144.0,171.0,Test Passenger1142,False
+0114_03,Earth,False,F/114/S,TRAPPIST-1e,25.0,False,41.0,207.0,159.0,94.0,6.0,Test Passenger1143,False
+0114_04,Earth,False,F/114/S,PSO J318.5-22,38.0,False,383.0,11.0,582.0,616.0,56.0,Test Passenger1144,True
+0115_01,,False,E/115/S,TRAPPIST-1e,20.0,False,131.0,39.0,930.0,123.0,73.0,Test Passenger1151,True
+0115_02,Europa,False,E/115/S,TRAPPIST-1e,37.0,False,899.0,29.0,47.0,791.0,380.0,Test Passenger1152,False
+0116_01,Europa,False,G/116/P,PSO J318.5-22,27.0,True,85.0,51.0,304.0,243.0,81.0,Test Passenger1161,True
+0116_02,Europa,True,G/116/P,TRAPPIST-1e,39.0,False,0.0,0.0,0.0,,0.0,Test Passenger1162,True
+0117_01,Europa,True,D/117/S,TRAPPIST-1e,31.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1171,True
+0117_02,Europa,False,D/117/S,55 Cancri e,33.0,,72.0,14.0,11.0,404.0,608.0,Test Passenger1172,False
+0117_03,Europa,False,D/117/S,TRAPPIST-1e,4.0,False,94.0,207.0,,13.0,169.0,Test Passenger1173,True
+0118_01,Earth,False,D/118/P,PSO J318.5-22,,False,555.0,310.0,,59.0,1395.0,Test Passenger1181,False
+0118_02,Earth,False,D/118/P,TRAPPIST-1e,34.0,False,27.0,400.0,17.0,169.0,458.0,Test Passenger1182,False
+0119_01,Earth,False,F/119/S,PSO J318.5-22,23.0,False,131.0,588.0,374.0,82.0,103.0,Test Passenger1191,True
+0120_01,Europa,True,D/120/S,55 Cancri e,35.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1201,True
+0120_02,Europa,False,D/120/S,55 Cancri e,33.0,False,146.0,21.0,225.0,65.0,468.0,Test Passenger1202,False
+0120_03,Europa,True,D/120/S,55 Cancri e,29.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1203,True
+0120_04,Europa,False,D/120/S,55 Cancri e,35.0,False,246.0,230.0,262.0,40.0,206.0,Test Passenger1204,True
+0121_01,Earth,False,D/121/P,TRAPPIST-1e,,False,17.0,112.0,164.0,26.0,,Test Passenger1211,False
+0121_02,Earth,False,D/121/P,55 Cancri e,41.0,False,70.0,287.0,264.0,86.0,59.0,Test Passenger1212,False
+0122_01,Earth,False,F/122/P,55 Cancri e,14.0,False,334.0,393.0,336.0,122.0,220.0,Test Passenger1221,False
+0123_01,Earth,,E/123/S,TRAPPIST-1e,15.0,False,440.0,166.0,160.0,171.0,125.0,Test Passenger1231,False
+0123_02,Earth,False,E/123/S,55 Cancri e,16.0,False,805.0,194.0,173.0,180.0,55.0,Test Passenger1232,False
+0123_03,Earth,False,E/123/S,TRAPPIST-1e,30.0,False,489.0,0.0,99.0,47.0,37.0,Test Passenger1233,False
+0124_01,Europa,True,F/124/S,55 Cancri e,34.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1241,True
+0125_01,Earth,True,C/125/P,55 Cancri e,,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1251,True
+0126_01,Europa,False,G/126/S,55 Cancri e,30.0,False,183.0,39.0,381.0,18.0,253.0,Test Passenger1261,False
+0127_01,Mars,False,C/127/S,TRAPPIST-1e,38.0,False,328.0,90.0,109.0,20.0,36.0,Test Passenger1271,True
+0127_02,Mars,False,C/127/S,PSO J318.5-22,4.0,False,,,173.0,,103.0,Test Passenger1272,False
+0127_03,,False,C/127/S,TRAPPIST-1e,22.0,False,47.0,380.0,128.0,33.0,226.0,Test Passenger1273,False
+0128_01,Earth,True,C/128/S,TRAPPIST-1e,38.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1281,True
+0128_02,Earth,False,C/128/S,TRAPPIST-1e,11.0,False,16.0,172.0,24.0,467.0,334.0,Test Passenger1282,False
+0129_01,Earth,False,F/129/S,TRAPPIST-1e,39.0,False,271.0,113.0,311.0,385.0,104.0,Test Passenger1291,False
+0129_02,Earth,False,F/129/S,55 Cancri e,49.0,False,14.0,54.0,2.0,461.0,83.0,Test Passenger1292,False
+0129_03,Earth,True,F/129/S,55 Cancri e,26.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1293,True
+0130_01,Europa,True,D/130/P,TRAPPIST-1e,19.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1301,True
+0131_01,Europa,False,A/131/S,TRAPPIST-1e,32.0,,95.0,64.0,298.0,138.0,187.0,Test Passenger1311,True
+0132_01,Europa,True,D/132/S,TRAPPIST-1e,32.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1321,True
+0133_01,Europa,False,E/133/S,TRAPPIST-1e,15.0,False,17.0,302.0,100.0,65.0,369.0,Test Passenger1331,False
+0133_02,Europa,False,E/133/S,TRAPPIST-1e,43.0,False,661.0,89.0,720.0,30.0,189.0,Test Passenger1332,False
+0133_03,Europa,True,E/133/S,TRAPPIST-1e,47.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1333,False
+0133_04,Europa,True,E/133/S,TRAPPIST-1e,23.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1334,True
+0134_01,Europa,True,F/134/P,TRAPPIST-1e,49.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1341,True
+0134_02,Europa,True,F/134/P,55 Cancri e,1.0,True,0.0,0.0,0.0,0.0,0.0,Test Passenger1342,True
+0135_01,Earth,True,D/135/P,55 Cancri e,39.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1351,True
+0135_02,Earth,True,D/135/P,TRAPPIST-1e,22.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1352,True
+0135_03,Earth,True,D/135/P,TRAPPIST-1e,19.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1353,True
+0135_04,Earth,True,D/135/P,TRAPPIST-1e,16.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1354,True
+0136_01,Earth,,F/136/P,TRAPPIST-1e,28.0,False,77.0,335.0,326.0,278.0,352.0,Test Passenger1361,True
+0137_01,Earth,False,C/137/P,TRAPPIST-1e,31.0,False,902.0,253.0,81.0,60.0,119.0,Test Passenger1371,False
+0138_01,Mars,False,B/138/S,55 Cancri e,0.0,False,37.0,430.0,509.0,47.0,8.0,Test Passenger1381,False
+0138_02,Mars,False,B/138/S,TRAPPIST-1e,50.0,False,444.0,686.0,16.0,21.0,67.0,Test Passenger1382,False
+0138_03,Mars,False,B/138/S,TRAPPIST-1e,35.0,False,174.0,640.0,,331.0,301.0,Test Passenger1383,False
+0139_01,Europa,True,F/139/S,55 Cancri e,42.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1391,False
+0140_01,Mars,False,F/140/P,TRAPPIST-1e,26.0,False,68.0,430.0,42.0,196.0,301.0,Test Passenger1401,False
+0140_02,Mars,True,F/140/P,TRAPPIST-1e,50.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1402,True
+0141_01,Earth,False,D/141/S,TRAPPIST-1e,11.0,False,34.0,9.0,245.0,192.0,87.0,Test Passenger1411,False
+0142_01,Earth,True,E/142/S,TRAPPIST-1e,61.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1421,True
+0143_01,Europa,False,E/143/P,TRAPPIST-1e,0.0,False,340.0,2.0,25.0,200.0,152.0,Test Passenger1431,False
+0143_02,Europa,False,E/143/P,55 Cancri e,32.0,False,273.0,113.0,172.0,83.0,209.0,Test Passenger1432,True
+0143_03,Europa,False,E/143/P,TRAPPIST-1e,46.0,False,33.0,107.0,174.0,94.0,14.0,Test Passenger1433,True
+0143_04,Europa,True,E/143/P,PSO J318.5-22,15.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1434,True
+0144_01,Earth,True,G/144/P,55 Cancri e,44.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1441,True
+0145_01,Earth,False,D/145/P,TRAPPIST-1e,16.0,False,164.0,247.0,162.0,208.0,200.0,Test Passenger1451,False
+0146_01,Earth,True,C/146/P,PSO J318.5-22,21.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1461,False
+0146_02,Earth,True,C/146/P,TRAPPIST-1e,42.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1462,True
+0146_03,Earth,True,C/146/P,PSO J318.5-22,12.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1463,True
+0147_01,Mars,False,A/147/S,TRAPPIST-1e,27.0,False,629.0,114.0,156.0,60.0,1.0,Test Passenger1471,False
+0147_02,Mars,True,A/147/S,TRAPPIST-1e,19.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1472,True
+0148_01,,True,E/148/P,TRAPPIST-1e,36.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1481,False
+0148_02,Earth,False,E/148/P,TRAPPIST-1e,19.0,True,31.0,51.0,16.0,30.0,178.0,Test Passenger1482,False
+0148_03,Earth,False,E/148/P,55 Cancri e,17.0,True,109.0,44.0,196.0,560.0,126.0,Test Passenger1483,True
+0149_01,Europa,False,C/149/S,TRAPPIST-1e,17.0,False,174.0,18.0,205.0,110.0,361.0,Test Passenger1491,True
+0149_02,Europa,False,C/149/S,PSO J318.5-22,16.0,False,388.0,58.0,152.0,213.0,94.0,Test Passenger1492,True
+0149_03,Europa,False,C/149/S,TRAPPIST-1e,30.0,False,24.0,457.0,19.0,,219.0,Test Passenger1493,True
+0149_04,Europa,True,C/149/S,55 Cancri e,23.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1494,True
+0150_01,Mars,False,B/150/S,TRAPPIST-1e,25.0,False,204.0,120.0,194.0,81.0,230.0,Test Passenger1501,False
+0151_01,Earth,False,B/151/P,TRAPPIST-1e,27.0,False,15.0,49.0,250.0,374.0,111.0,Test Passenger1511,False
+0152_01,Mars,True,,TRAPPIST-1e,27.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1521,True
+0152_02,Mars,,A/152/P,TRAPPIST-1e,49.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1522,False
+0152_03,Mars,False,A/152/P,55 Cancri e,38.0,False,230.0,7.0,27.0,186.0,3.0,Test Passenger1523,False
+0152_04,Mars,False,A/152/P,TRAPPIST-1e,40.0,False,67.0,72.0,237.0,399.0,93.0,Test Passenger1524,True
+0153_01,Mars,True,E/153/P,TRAPPIST-1e,33.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1531,True
+0154_01,Mars,False,F/154/S,TRAPPIST-1e,23.0,False,11.0,22.0,8.0,221.0,174.0,Test Passenger1541,False
+0154_02,Mars,False,F/154/S,TRAPPIST-1e,20.0,False,50.0,143.0,200.0,138.0,156.0,Test Passenger1542,False
+0155_01,Earth,False,G/155/P,PSO J318.5-22,34.0,False,371.0,4.0,637.0,129.0,233.0,Test Passenger1551,False
+0156_01,Europa,False,C/156/S,TRAPPIST-1e,21.0,False,133.0,55.0,70.0,610.0,23.0,Test Passenger1561,False
+0156_02,Europa,True,C/156/S,TRAPPIST-1e,24.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1562,True
+0157_01,Mars,False,G/157/S,TRAPPIST-1e,28.0,False,130.0,628.0,50.0,300.0,44.0,Test Passenger1571,True
+0157_02,Mars,False,G/157/S,55 Cancri e,39.0,False,526.0,189.0,315.0,24.0,5.0,Test Passenger1572,True
+0158_01,Europa,False,F/158/S,TRAPPIST-1e,0.0,False,20.0,84.0,173.0,617.0,3.0,Test Passenger1581,False
+0158_02,Europa,True,F/158/S,55 Cancri e,10.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1582,True
+0159_01,Europa,False,F/159/P,TRAPPIST-1e,28.0,False,212.0,513.0,282.0,2.0,304.0,Test Passenger1591,False
+0160_01,Mars,False,F/160/P,55 Cancri e,21.0,False,550.0,433.0,150.0,132.0,110.0,Test Passenger1601,False
+0161_01,Europa,False,G/161/S,TRAPPIST-1e,43.0,False,112.0,275.0,,199.0,315.0,Test Passenger1611,True
+0161_02,Europa,True,G/161/S,55 Cancri e,0.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1612,True
+0162_01,Mars,False,D/162/S,PSO J318.5-22,45.0,True,88.0,174.0,192.0,139.0,491.0,Test Passenger1621,True
+0162_02,Mars,False,D/162/S,55 Cancri e,6.0,False,275.0,341.0,101.0,41.0,295.0,Test Passenger1622,False
+0162_03,Mars,True,D/162/S,TRAPPIST-1e,29.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1623,True
+0163_01,Earth,True,E/163/S,TRAPPIST-1e,6.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1631,True
+0164_01,Earth,False,C/164/S,TRAPPIST-1e,39.0,False,121.0,63.0,158.0,101.0,440.0,Test Passenger1641,False
+0164_02,Earth,True,C/164/S,PSO J318.5-22,,False,0.0,0.0,0.0,0.0,,Test Passenger1642,True
+0165_01,Europa,False,E/165/S,TRAPPIST-1e,21.0,False,226.0,226.0,40.0,31.0,43.0,Test Passenger1651,False
+0165_02,Europa,True,E/165/S,TRAPPIST-1e,15.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1652,True
+0166_01,Mars,False,B/166/S,TRAPPIST-1e,25.0,False,241.0,1223.0,26.0,209.0,108.0,Test Passenger1661,False
+0166_02,Mars,False,B/166/S,PSO J318.5-22,8.0,False,168.0,201.0,205.0,193.0,42.0,Test Passenger1662,True
+0166_03,Mars,True,B/166/S,TRAPPIST-1e,24.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1663,True
+0167_01,Mars,False,E/167/P,TRAPPIST-1e,25.0,False,11.0,121.0,176.0,26.0,47.0,Test Passenger1671,False
+0168_01,Europa,False,G/168/S,TRAPPIST-1e,19.0,False,76.0,39.0,288.0,22.0,350.0,Test Passenger1681,False
+0169_01,Mars,True,A/169/P,TRAPPIST-1e,38.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1691,True
+0169_02,Mars,False,A/169/P,TRAPPIST-1e,38.0,False,120.0,82.0,23.0,53.0,104.0,Test Passenger1692,True
+0170_01,Europa,True,G/170/S,TRAPPIST-1e,37.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1701,True
+0170_02,Europa,False,G/170/S,55 Cancri e,14.0,False,169.0,808.0,954.0,38.0,73.0,Test Passenger1702,True
+0170_03,Europa,True,G/170/S,TRAPPIST-1e,20.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1703,True
+0170_04,Europa,False,G/170/S,TRAPPIST-1e,48.0,False,18.0,114.0,24.0,408.0,431.0,Test Passenger1704,True
+0171_01,Mars,True,D/171/P,TRAPPIST-1e,40.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1711,True
+0171_02,Mars,False,D/171/P,TRAPPIST-1e,19.0,False,548.0,365.0,420.0,215.0,22.0,Test Passenger1712,False
+0172_01,Mars,False,,TRAPPIST-1e,47.0,False,328.0,130.0,320.0,131.0,475.0,Test Passenger1721,False
+0173_01,Earth,False,G/173/P,,32.0,False,132.0,121.0,507.0,297.0,41.0,Test Passenger1731,False
+0173_02,Earth,True,G/173/P,55 Cancri e,22.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1732,True
+0173_03,Earth,False,G/173/P,55 Cancri e,4.0,False,31.0,59.0,70.0,1192.0,25.0,Test Passenger1733,True
+0173_04,Earth,False,G/173/P,55 Cancri e,19.0,False,178.0,133.0,162.0,252.0,1019.0,Test Passenger1734,False
+0174_01,Mars,True,F/174/P,PSO J318.5-22,46.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1741,True
+0174_02,Mars,False,F/174/P,TRAPPIST-1e,27.0,False,111.0,32.0,71.0,7.0,73.0,Test Passenger1742,False
+0175_01,Earth,True,D/175/S,TRAPPIST-1e,17.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1751,True
+0175_02,Earth,False,D/175/S,TRAPPIST-1e,29.0,False,96.0,143.0,117.0,258.0,118.0,Test Passenger1752,True
+0176_01,Mars,False,F/176/P,,29.0,False,6.0,190.0,296.0,158.0,189.0,Test Passenger1761,False
+0177_01,Earth,True,D/177/S,TRAPPIST-1e,18.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1771,True
+0178_01,Europa,False,E/178/S,TRAPPIST-1e,26.0,False,261.0,130.0,150.0,44.0,182.0,Test Passenger1781,True
+0179_01,Earth,False,F/179/P,TRAPPIST-1e,22.0,False,7.0,442.0,27.0,162.0,168.0,Test Passenger1791,True
+0180_01,Earth,True,D/180/P,PSO J318.5-22,54.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1801,True
+0180_02,Earth,True,D/180/P,TRAPPIST-1e,21.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1802,True
+0181_01,Mars,False,A/181/S,TRAPPIST-1e,40.0,False,50.0,237.0,276.0,358.0,111.0,Test Passenger1811,False
+0182_01,Earth,False,C/182/P,TRAPPIST-1e,21.0,False,147.0,601.0,260.0,138.0,116.0,Test Passenger1821,False
+0182_02,Earth,False,C/182/P,TRAPPIST-1e,27.0,False,251.0,92.0,64.0,248.0,159.0,Test Passenger1822,False
+0182_03,Earth,False,C/182/P,TRAPPIST-1e,17.0,False,205.0,183.0,69.0,277.0,154.0,Test Passenger1823,False
+0182_04,Earth,False,C/182/P,TRAPPIST-1e,29.0,False,187.0,63.0,37.0,37.0,43.0,Test Passenger1824,False
+0183_01,Earth,,C/183/S,TRAPPIST-1e,22.0,False,322.0,612.0,236.0,32.0,337.0,Test Passenger1831,False
+0184_01,Earth,False,D/184/P,TRAPPIST-1e,21.0,False,96.0,953.0,82.0,154.0,16.0,Test Passenger1841,False
+0185_01,Earth,True,B/185/P,TRAPPIST-1e,29.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1851,True
+0185_02,Earth,False,B/185/P,TRAPPIST-1e,8.0,False,13.0,48.0,90.0,465.0,259.0,Test Passenger1852,False
+0185_03,Earth,True,B/185/P,55 Cancri e,5.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1853,True
+0186_01,Earth,False,G/186/P,TRAPPIST-1e,10.0,False,23.0,49.0,289.0,69.0,67.0,Test Passenger1861,True
+0187_01,Earth,True,C/187/S,PSO J318.5-22,8.0,False,0.0,0.0,,0.0,0.0,Test Passenger1871,True
+0188_01,Europa,False,G/188/S,55 Cancri e,45.0,False,310.0,91.0,141.0,261.0,18.0,Test Passenger1881,True
+0188_02,Europa,False,G/188/S,TRAPPIST-1e,46.0,False,415.0,63.0,169.0,220.0,124.0,Test Passenger1882,True
+0188_03,Europa,False,G/188/S,55 Cancri e,17.0,False,181.0,142.0,363.0,586.0,120.0,Test Passenger1883,False
+0189_01,Earth,False,F/189/S,TRAPPIST-1e,6.0,False,107.0,321.0,179.0,4.0,175.0,Test Passenger1891,False
+0189_02,Earth,True,F/189/S,TRAPPIST-1e,24.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1892,True
+0190_01,Europa,True,D/190/P,TRAPPIST-1e,32.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1901,True
+0191_01,Mars,False,B/191/P,TRAPPIST-1e,10.0,False,217.0,124.0,,86.0,456.0,Test Passenger1911,False
+0191_02,Mars,True,B/191/P,PSO J318.5-22,33.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1912,True
+0192_01,Mars,False,D/192/S,55 Cancri e,28.0,False,74.0,323.0,152.0,167.0,147.0,Test Passenger1921,False
+0192_02,Mars,False,D/192/S,TRAPPIST-1e,11.0,False,993.0,102.0,146.0,336.0,90.0,Test Passenger1922,False
+0193_01,Europa,False,A/193/S,TRAPPIST-1e,15.0,False,198.0,189.0,27.0,236.0,26.0,Test Passenger1931,True
+0194_01,Earth,False,D/194/P,55 Cancri e,40.0,False,24.0,3.0,38.0,221.0,175.0,Test Passenger1941,True
+0194_02,Earth,False,D/194/P,TRAPPIST-1e,27.0,False,10.0,117.0,431.0,201.0,1002.0,Test Passenger1942,False
+0194_03,Earth,False,D/194/P,PSO J318.5-22,21.0,False,220.0,387.0,306.0,289.0,39.0,Test Passenger1943,False
+0195_01,Earth,True,B/195/S,55 Cancri e,11.0,False,,0.0,0.0,0.0,0.0,Test Passenger1951,True
+0195_02,Earth,True,B/195/S,TRAPPIST-1e,25.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1952,True
+0195_03,Earth,True,B/195/S,55 Cancri e,39.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1953,True
+0195_04,Earth,True,B/195/S,TRAPPIST-1e,36.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1954,True
+0196_01,Europa,True,B/196/P,TRAPPIST-1e,19.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1961,True
+0197_01,Earth,True,D/197/P,TRAPPIST-1e,14.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1971,True
+0198_01,Europa,False,A/198/S,TRAPPIST-1e,14.0,False,212.0,111.0,156.0,151.0,250.0,Test Passenger1981,True
+0198_02,Europa,False,A/198/S,55 Cancri e,26.0,False,7.0,150.0,305.0,105.0,88.0,Test Passenger1982,False
+0198_03,Europa,True,A/198/S,PSO J318.5-22,34.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger1983,True
+0199_01,Mars,False,D/199/S,TRAPPIST-1e,27.0,False,595.0,557.0,495.0,264.0,265.0,Test Passenger1991,True
+0199_02,Mars,False,D/199/S,TRAPPIST-1e,17.0,False,5.0,363.0,171.0,107.0,243.0,Test Passenger1992,False
+0199_03,Mars,,,TRAPPIST-1e,42.0,False,41.0,25.0,58.0,271.0,27.0,Test Passenger1993,False
+0200_01,Europa,False,E/200/S,TRAPPIST-1e,47.0,True,12.0,147.0,231.0,273.0,437.0,Test Passenger2001,False
+0201_01,Europa,False,A/201/S,TRAPPIST-1e,35.0,False,139.0,104.0,131.0,175.0,21.0,Test Passenger2011,False
+0201_02,Europa,False,A/201/S,TRAPPIST-1e,,False,8.0,377.0,36.0,202.0,213.0,Test Passenger2012,True
+0201_03,Europa,False,A/201/S,TRAPPIST-1e,37.0,False,16.0,197.0,34.0,365.0,148.0,Test Passenger2013,False
+0202_01,Earth,False,C/202/S,TRAPPIST-1e,22.0,False,252.0,868.0,136.0,554.0,44.0,Test Passenger2021,False
+0202_02,Earth,False,C/202/S,TRAPPIST-1e,21.0,False,85.0,30.0,144.0,112.0,8.0,Test Passenger2022,True
+0203_01,Earth,False,F/203/P,55 Cancri e,39.0,False,44.0,35.0,202.0,174.0,696.0,Test Passenger2031,True
+0204_01,Mars,False,C/204/S,TRAPPIST-1e,22.0,False,233.0,51.0,308.0,40.0,239.0,Test Passenger2041,False
+0205_01,Europa,False,E/205/P,TRAPPIST-1e,28.0,False,6.0,42.0,11.0,150.0,63.0,Test Passenger2051,False
+0205_02,Europa,True,E/205/P,TRAPPIST-1e,28.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2052,True
+0206_01,Earth,True,E/206/P,PSO J318.5-22,30.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2061,True
+0207_01,Europa,False,D/207/S,TRAPPIST-1e,49.0,False,201.0,168.0,15.0,45.0,347.0,Test Passenger2071,True
+0207_02,Europa,False,D/207/S,TRAPPIST-1e,21.0,False,9.0,757.0,567.0,278.0,171.0,Test Passenger2072,False
+0207_03,Europa,False,D/207/S,TRAPPIST-1e,14.0,False,189.0,126.0,266.0,269.0,6.0,Test Passenger2073,True
+0208_01,Mars,True,C/208/S,TRAPPIST-1e,26.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2081,True
+0208_02,Mars,True,C/208/S,55 Cancri e,40.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2082,True
+0208_03,Mars,True,C/208/S,TRAPPIST-1e,55.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2083,True
+0208_04,Mars,False,C/208/S,TRAPPIST-1e,24.0,False,175.0,14.0,29.0,241.0,240.0,Test Passenger2084,False
+0209_01,Earth,True,E/209/P,TRAPPIST-1e,21.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2091,True
+0209_02,Earth,False,E/209/P,TRAPPIST-1e,31.0,False,127.0,47.0,39.0,297.0,163.0,Test Passenger2092,True
+0210_01,Mars,False,F/210/P,TRAPPIST-1e,39.0,False,672.0,71.0,54.0,483.0,114.0,Test Passenger2101,False
+0210_02,Mars,,F/210/P,TRAPPIST-1e,35.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2102,True
+0211_01,Earth,False,G/211/P,TRAPPIST-1e,33.0,False,140.0,661.0,59.0,78.0,261.0,Test Passenger2111,False
+0212_01,Europa,True,F/212/S,55 Cancri e,36.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2121,True
+0213_01,,True,F/213/P,TRAPPIST-1e,19.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2131,False
+0214_01,Earth,False,F/214/P,TRAPPIST-1e,53.0,False,37.0,268.0,171.0,246.0,372.0,Test Passenger2141,False
+0214_02,Earth,False,F/214/P,TRAPPIST-1e,31.0,False,111.0,346.0,226.0,122.0,28.0,Test Passenger2142,True
+0215_01,Europa,False,D/215/P,TRAPPIST-1e,0.0,False,206.0,186.0,342.0,232.0,66.0,Test Passenger2151,False
+0215_02,Europa,False,,TRAPPIST-1e,15.0,False,41.0,151.0,253.0,225.0,113.0,Test Passenger2152,False
+0215_03,Europa,False,D/215/P,TRAPPIST-1e,4.0,False,189.0,57.0,3.0,161.0,44.0,Test Passenger2153,True
+0215_04,Europa,True,D/215/P,TRAPPIST-1e,48.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2154,True
+0216_01,Earth,True,E/216/P,TRAPPIST-1e,13.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2161,True
+0217_01,Earth,True,F/217/S,TRAPPIST-1e,24.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2171,True
+0218_01,Mars,False,F/218/P,TRAPPIST-1e,51.0,False,284.0,202.0,,809.0,144.0,Test Passenger2181,False
+0218_02,Mars,True,F/218/P,TRAPPIST-1e,35.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2182,True
+0219_01,Earth,False,G/219/S,55 Cancri e,51.0,False,186.0,180.0,169.0,339.0,431.0,Test Passenger2191,False
+0219_02,Earth,False,G/219/S,TRAPPIST-1e,23.0,False,86.0,324.0,509.0,89.0,362.0,Test Passenger2192,True
+0219_03,Earth,True,G/219/S,TRAPPIST-1e,40.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2193,True
+0220_01,Europa,False,C/220/S,TRAPPIST-1e,33.0,False,262.0,28.0,192.0,118.0,172.0,Test Passenger2201,True
+0220_02,Europa,True,C/220/S,TRAPPIST-1e,12.0,False,0.0,0.0,0.0,0.0,0.0,Test Passenger2202,True
