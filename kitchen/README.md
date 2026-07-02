@@ -45,4 +45,5 @@ See the [project repository](https://github.com/rkoren/kitchen-platform) for ful
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Public domain — released under [The Unlicense](LICENSE). Feel free to use, modify, and
+contribute to this platform, however you like.
