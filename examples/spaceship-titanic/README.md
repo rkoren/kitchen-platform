@@ -13,6 +13,12 @@ cd examples/spaceship-titanic
 kitchen menu run
 ```
 
+Or from anywhere (the repo root, say), point at the project with `-C`:
+
+```bash
+kitchen menu run -C examples/spaceship-titanic
+```
+
 That executes the `pipeline` in `menu.yaml`:
 
 1. **train** (`src/train/run.py`) — runs feature engineering internally, fits an `XGBClassifier`,

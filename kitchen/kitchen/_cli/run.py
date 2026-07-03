@@ -220,6 +220,25 @@ def _reproduced_params_file(params_file: str, run_id: str) -> str:
 run_app = typer.Typer(help="Run pipeline stages.", no_args_is_help=True)
 
 
+@run_app.callback()
+def _run_callback(
+    project: Annotated[
+        str | None,
+        typer.Option(
+            "--project",
+            "-C",
+            metavar="DIR",
+            help="Run from this project directory (loads menu.yaml / params.yaml and src/<stage> "
+            "there) — like `git -C`. Default: the current directory.",
+        ),
+    ] = None,
+) -> None:
+    """Stage runners load the manifest and import `src/<stage>` relative to the working dir, so
+    `-C <dir>` lets you run them from anywhere (DX-012)."""
+    if project:
+        os.chdir(project)
+
+
 @run_app.command("features")
 def run_features(
     params_file: Annotated[
