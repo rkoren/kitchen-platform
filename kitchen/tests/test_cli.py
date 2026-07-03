@@ -4355,6 +4355,18 @@ def test_menu_run_dry_run_prints_plan(tmp_path, monkeypatch):
     assert "monitor" in result.output
 
 
+def test_menu_run_project_flag_runs_from_dir(tmp_path, monkeypatch):
+    """DX-012: `-C/--project` loads the menu from the given dir, even when cwd is elsewhere.
+    (monkeypatch.chdir restores cwd at teardown, undoing the command's internal chdir.)"""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "menu.yaml").write_text(_MENU_PIPELINE_YAML)
+    monkeypatch.chdir(tmp_path)  # deliberately NOT in the project dir
+    result = runner.invoke(app, ["menu", "run", "-C", str(proj), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "train: kitchen run train" in result.output
+
+
 def test_menu_run_provision_needs_state_bucket(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("RECIPES_STATE_BUCKET", raising=False)

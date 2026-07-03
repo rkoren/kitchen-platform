@@ -2892,6 +2892,15 @@ def menu_materialize(
 @menu_app.command("run")
 def menu_run(
     menu_file: Annotated[str, typer.Option("--menu", help="Path to menu.yaml")] = "menu.yaml",
+    project: Annotated[
+        str | None,
+        typer.Option(
+            "--project",
+            "-C",
+            metavar="DIR",
+            help="Run from this project directory (like `git -C`). Default: the current directory.",
+        ),
+    ] = None,
     state_bucket: Annotated[
         str | None,
         typer.Option(
@@ -2917,6 +2926,9 @@ def menu_run(
 
     from kitchen import menu_run as _menu_run
     from kitchen.menu import Menu
+
+    if project:
+        os.chdir(project)  # load the menu + import src/<stage> from the project dir (DX-012)
 
     try:
         menu = Menu.from_yaml(menu_file)
