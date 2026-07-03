@@ -1,5 +1,4 @@
-"""Generate a Kaggle submission from the champion, then validate it — stopping just
-short of the upload.
+"""Generate a Kaggle submission from the champion, then validate it.
 
 This is the filled-in twin of the `flows/generate_submission.py` that `kitchen init`
 scaffolds (with the flavour/feature TODOs resolved for this competition). It:
@@ -11,9 +10,9 @@ scaffolds (with the flavour/feature TODOs resolved for this competition). It:
 4. validates it against `sample_submission.csv` with the platform's own
    `validate_submission` (the exact check `kitchen submit` runs before uploading).
 
-It deliberately **stops before uploading**. The synthetic bundle's PassengerIds are
-fabricated, so it validates but can't be sent to the real competition — the closing
-message spells out the real-data path that can. Run it from anywhere:
+Spaceship Titanic is a Getting Started *sandbox* (unlimited submissions, no stakes),
+so the resulting file is real and submittable — `kitchen submit` uploads it under
+your own Kaggle account. Fetch the data first with `kitchen ingest`. Run from anywhere:
 
     python examples/spaceship-titanic/flows/generate_submission.py
 """
@@ -83,13 +82,10 @@ def generate(menu_file: str = "menu.yaml") -> Path:
     print(f"Validated {len(submission)} rows against sample_submission — submission is well-formed.")
     print(f"Transported rate: {submission[target_col].mean():.2f}")
     print(
-        "\nStopping before upload. This synthetic bundle uses fabricated PassengerIds, so it\n"
-        f"is well-formed but NOT submittable to the real '{competition}' competition.\n"
-        "To exercise the full upload path, swap in the real data first:\n"
-        f"  kitchen init --source kaggle --competition {competition}   # accept the rules first\n"
-        "  kitchen menu run -C examples/spaceship-titanic\n"
-        "  python examples/spaceship-titanic/flows/generate_submission.py\n"
-        "  kitchen submit --file submissions/submission.csv          # run from the project dir"
+        f"\nReady to submit to the '{competition}' sandbox (unlimited submissions, no stakes).\n"
+        "It uploads under your own Kaggle account — from the project directory run:\n"
+        "  kitchen submit --file submissions/submission.csv\n"
+        "Add --wait to poll for the public leaderboard score."
     )
     return out
 

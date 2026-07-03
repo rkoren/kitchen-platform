@@ -6,13 +6,12 @@ Each has a docstring (or README) with what it shows and how to run it; this inde
 ## Complete projects (start here)
 
 Full `kitchen` projects — features → train → evaluate → promote a champion — driven by one
-`menu.yaml` and run with `kitchen menu run`. Both run **offline, no credentials, no network**,
-using tiny bundled data and local SQLite tracking.
+`menu.yaml` and run with `kitchen menu run`, with local SQLite tracking.
 
 | Project | What it is |
 |---|---|
-| [`spaceship-titanic/`](spaceship-titanic/) | The whole loop on a **real Kaggle problem** (predict `Transported`), with an XGBoost baseline and genuine feature engineering on a synthetic sample of the real schema. The flagship "here's the whole thing" reference — see its [README](spaceship-titanic/README.md). |
-| [`offline-quickstart/`](offline-quickstart/) | The **smallest** honest end-to-end project (a toy "did the student pass?" set, logistic-regression baseline). Start here if you just want the `FeatureBuilder` / `Trainer` / `Evaluator` contract at a glance. |
+| [`spaceship-titanic/`](spaceship-titanic/) | The whole loop on a **real Kaggle competition** (predict `Transported`), end to end through a real submission — XGBoost baseline, genuine feature engineering, `kitchen ingest` → `menu run` → submit. Needs a Kaggle account (it's the free Getting Started sandbox); the flagship "here's the whole thing" reference — see its [README](spaceship-titanic/README.md). |
+| [`offline-quickstart/`](offline-quickstart/) | The **smallest** honest end-to-end project (a toy "did the student pass?" set, logistic-regression baseline), **offline with no credentials**. Start here if you just want the `FeatureBuilder` / `Trainer` / `Evaluator` contract at a glance. |
 
 ## Run anywhere (synthetic data, no project setup)
 

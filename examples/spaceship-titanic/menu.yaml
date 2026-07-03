@@ -1,9 +1,9 @@
 # Unified manifest (menu.yaml) — the Spaceship Titanic showcase as one file.
 #
-# The whole project in a single manifest: no infra recipes (local SQLite, zero
-# credentials), so there's no `provision` step. `kitchen menu run` executes the
-# `pipeline` in order — `train` runs features internally and promotes a champion,
-# then `evaluate` scores that champion.
+# The whole project in a single manifest: no infra recipes (local SQLite), so
+# there's no `provision` step. Fetch the data once with `kitchen ingest`, then
+# `kitchen menu run` executes the `pipeline` in order — `train` runs features
+# internally and promotes a champion, then `evaluate` scores that champion.
 
 project: spaceship-titanic   # experiment defaults to this
 
@@ -24,13 +24,13 @@ recipes:
 # --- ML settings ---
 
 data:
-  source: local          # bundled synthetic CSV in data/raw — no Kaggle, no network
-  path: data/raw
+  source: kaggle              # `kitchen ingest` pulls the real files into data/raw (needs creds)
+  competition: spaceship-titanic
   raw_file: train.csv
 
 features:
   raw_file: train.csv
-  test_file: test.csv               # held-out set for flows/generate_submission.py
+  test_file: test.csv               # the competition's held-out set (for flows/generate_submission.py)
   processed_file: features.parquet
 
 model:
@@ -59,7 +59,7 @@ thresholds:
 # `flows/generate_submission.py` writes submissions/submission.csv from the champion;
 # `kitchen submit` validates it against sample_submission.csv and (with credentials) uploads.
 submission:
-  competition: spaceship-titanic   # the real Kaggle slug (upload needs accepted rules + creds)
+  competition: spaceship-titanic   # Getting Started sandbox — unlimited submissions, no stakes
   id_col: PassengerId
   target_col: Transported
   sample_submission: sample_submission.csv
