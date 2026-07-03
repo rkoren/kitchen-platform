@@ -27,10 +27,11 @@ kitchen ingest        # pull train.csv / test.csv / sample_submission.csv → da
 kitchen menu run      # features → train → evaluate → promote a champion
 ```
 
-Or from anywhere (the repo root, say), point at the project with `-C`:
+Or from anywhere (the repo root, say). `menu run` takes `-C`; `ingest` writes to the current
+directory's `data/raw`, so point it at the project with `--out`:
 
 ```bash
-kitchen ingest  --params examples/spaceship-titanic/menu.yaml
+kitchen ingest   --params examples/spaceship-titanic/menu.yaml --out examples/spaceship-titanic/data/raw
 kitchen menu run -C examples/spaceship-titanic
 ```
 
