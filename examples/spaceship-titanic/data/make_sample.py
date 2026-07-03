@@ -1,4 +1,4 @@
-"""Generate a small **synthetic** Spaceship Titanic sample (data/raw/train.csv).
+"""Generate the synthetic **Spaceship Titanic** sample (train + test + sample submission).
 
 The real competition data lives on Kaggle (accept the rules, then
 `kitchen init --source kaggle --competition spaceship-titanic`). To keep this
@@ -10,9 +10,18 @@ just under the ~0.83 information ceiling (so feature work + tuning still move it
 
 `Transported` is driven by several features at once — CryoSleep, total spend,
 HomePlanet, Cabin deck/side, Age, VIP — plus Gaussian noise, so no single column
-gives it away. Deterministic (seeded), so the committed CSV is reproducible:
+gives it away. Deterministic (seeded), so the committed CSVs are reproducible:
 
     python examples/spaceship-titanic/data/make_sample.py
+
+Writes three files under `data/raw/`, mirroring a real Kaggle competition bundle:
+
+* `train.csv`             — labelled rows (has `Transported`);
+* `test.csv`              — held-out rows with `Transported` withheld (the "leaderboard" set);
+* `sample_submission.csv` — the submission template (`PassengerId,Transported`).
+
+`flows/generate_submission.py` turns the champion's predictions on `test.csv` into a
+submission CSV that validates against `sample_submission.csv`.
 """
 from __future__ import annotations
 
@@ -21,10 +30,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-N_GROUPS = 600
+N_GROUPS = 600  # training groups
+N_TEST_GROUPS = 200  # held-out "leaderboard" groups (a fresh, independent draw)
 NOISE = 1.6  # sets the difficulty: bigger → lower ceiling (see the module docstring)
 SEED = 42
-OUT = Path(__file__).resolve().parent / "raw" / "train.csv"
+RAW = Path(__file__).resolve().parent / "raw"
 
 HOME_PLANETS = ["Earth", "Europa", "Mars"]
 DESTINATIONS = ["TRAPPIST-1e", "55 Cancri e", "PSO J318.5-22"]
@@ -33,11 +43,16 @@ DECK_EFFECT = {"A": 0.5, "B": 0.6, "C": 0.5, "D": 0.1, "E": -0.2, "F": -0.3, "G"
 SPEND_COLS = ["RoomService", "FoodCourt", "ShoppingMall", "Spa", "VRDeck"]
 
 
-def main() -> None:
-    rng = np.random.default_rng(SEED)
+def _generate(n_groups: int, rng: np.random.Generator) -> pd.DataFrame:
+    """Draw ``n_groups`` passenger groups into a fully labelled DataFrame.
+
+    The exact draw sequence (group attrs → per-member attrs → post-loop labelling
+    → NaN sprinkle) is what makes the committed CSVs reproducible: same seed and
+    ``n_groups`` → byte-identical output.
+    """
     rows = []
     pid = 0
-    while len({r["PassengerId"].split("_")[0] for r in rows}) < N_GROUPS:
+    while len({r["PassengerId"].split("_")[0] for r in rows}) < n_groups:
         pid += 1
         group = f"{pid:04d}"
         size = int(rng.choice([1, 1, 1, 2, 2, 3, 4]))
@@ -85,10 +100,30 @@ def main() -> None:
     for col in ["HomePlanet", "CryoSleep", "Cabin", "Destination", "Age", "VIP", *SPEND_COLS]:
         mask = rng.random(len(df)) < 0.02
         df.loc[mask, col] = np.nan
+    return df
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(OUT, index=False)
-    print(f"wrote {len(df)} rows → {OUT}  (Transported rate: {df['Transported'].mean():.2f})")
+
+def main() -> None:
+    RAW.mkdir(parents=True, exist_ok=True)
+
+    # Training set — the committed train.csv (unchanged: same SEED, same N_GROUPS).
+    train = _generate(N_GROUPS, np.random.default_rng(SEED))
+    train.to_csv(RAW / "train.csv", index=False)
+    print(
+        f"wrote {len(train)} rows → {RAW / 'train.csv'}  "
+        f"(Transported rate: {train['Transported'].mean():.2f})"
+    )
+
+    # Held-out "leaderboard" set — a fresh, independent draw. test.csv withholds the
+    # label (as Kaggle does); sample_submission.csv is the template you fill in.
+    test = _generate(N_TEST_GROUPS, np.random.default_rng(SEED + 1))
+    test_public = test.drop(columns="Transported")
+    test_public.to_csv(RAW / "test.csv", index=False)
+    print(f"wrote {len(test_public)} rows → {RAW / 'test.csv'}  (Transported withheld)")
+
+    sample = pd.DataFrame({"PassengerId": test["PassengerId"], "Transported": False})
+    sample.to_csv(RAW / "sample_submission.csv", index=False)
+    print(f"wrote {len(sample)} rows → {RAW / 'sample_submission.csv'}  (submission template)")
 
 
 if __name__ == "__main__":

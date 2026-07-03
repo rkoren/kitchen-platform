@@ -30,6 +30,7 @@ data:
 
 features:
   raw_file: train.csv
+  test_file: test.csv               # held-out set for flows/generate_submission.py
   processed_file: features.parquet
 
 model:
@@ -53,3 +54,13 @@ metrics_file: metrics.json
 # Primary metric for the leaderboard + --auto-promote (plain float = higher-is-better lower bound).
 thresholds:
   val_accuracy: 0.78
+
+# --- Kaggle submission ---
+# `flows/generate_submission.py` writes submissions/submission.csv from the champion;
+# `kitchen submit` validates it against sample_submission.csv and (with credentials) uploads.
+submission:
+  competition: spaceship-titanic   # the real Kaggle slug (upload needs accepted rules + creds)
+  id_col: PassengerId
+  target_col: Transported
+  sample_submission: sample_submission.csv
+  message: "kitchen showcase — tuned XGBoost baseline"

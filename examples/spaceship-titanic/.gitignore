@@ -4,5 +4,6 @@ mlruns/
 mlartifacts/
 metrics.json
 calibration.json
+submissions/
 data/processed/*
 !data/processed/.gitkeep

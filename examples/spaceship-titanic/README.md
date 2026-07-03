@@ -42,8 +42,35 @@ kitchen leaderboard                        # compare runs; [C] marks the champio
 kitchen ui                                 # open the MLflow UI
 ```
 
-Everything under `mlruns*`, `metrics.json`, and `data/processed/` is regenerated on each run and
-gitignored.
+Everything under `mlruns*`, `metrics.json`, `submissions/`, and `data/processed/` is regenerated
+on each run and gitignored.
+
+## Generating a Kaggle submission
+
+The pipeline promotes a champion; `flows/generate_submission.py` turns its predictions on the
+held-out `data/raw/test.csv` into a submission CSV and validates it — the same
+`validate_submission` check `kitchen submit` runs before uploading:
+
+```bash
+kitchen menu run -C examples/spaceship-titanic          # train + promote a champion first
+python examples/spaceship-titanic/flows/generate_submission.py
+```
+
+It writes `submissions/submission.csv` (`PassengerId,Transported`), validates it against
+`sample_submission.csv` (row count, columns, no nulls, no duplicate IDs), and **stops before
+uploading**.
+
+> **The synthetic bundle can't be submitted for real.** `test.csv` uses fabricated
+> `PassengerId`s, so the CSV is well-formed but Kaggle would reject it. To exercise the actual
+> upload, fetch the real competition data first (below), then `kitchen submit --file
+> submissions/submission.csv` from the project directory. `submission:` in `menu.yaml` supplies
+> the competition slug, ID/target columns, and message.
+
+`generate_submission.py` shares one `_engineer()` with `src/features/run.py`, so training and
+inference apply identical feature engineering (the surest guard against train/serve skew). One
+honest simplification: the categorical encoders are fit per-frame rather than persisted from
+training — fine for this showcase's aligned synthetic data, but a real project should save the
+fitted encoders and re-apply them at inference.
 
 ## What's in here
 
@@ -53,7 +80,8 @@ gitignored.
 | `src/features/run.py` | Real SST feature engineering — split `Cabin` into deck/side, `total_spend` + `has_spent` + `luxury`, `group_size` from the `PassengerId`, fill missing values, integer-encode categoricals. |
 | `src/train/run.py` | An XGBoost baseline (`model_flavour = "xgboost"`); tune it in `menu.yaml` or with `--override`. |
 | `src/evaluate/run.py` | Scores the champion on the same held-out split. |
-| `data/make_sample.py` | The deterministic generator for the synthetic `train.csv` (seeded → reproducible). |
+| `flows/generate_submission.py` | Predicts the champion on `test.csv` → `submissions/submission.csv`, validates it, stops before upload. |
+| `data/make_sample.py` | The deterministic generator for the synthetic `train.csv`, `test.csv`, and `sample_submission.csv` (seeded → reproducible). |
 
 ## Using the real competition data
 
