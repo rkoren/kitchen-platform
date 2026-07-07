@@ -166,8 +166,38 @@ def score_run_holdout(
     preds = _predict(
         model, df[features], metric=spec.metric, predict_method=spec.predict_method
     )
-    value = _compute_metric(spec.metric, df[spec.label].to_numpy(), preds)
+    y_true = df[spec.label].to_numpy()
+    value = _compute_metric(spec.metric, y_true, preds)
     results = {f"holdout_{spec.metric}": value, "holdout_n": float(len(df))}
+
+    # CBB-025: score named subpopulations too. `preds` is row-aligned to `df`, so each segment is
+    # a mask over the *same* predictions — never re-predicted — keeping the full-set and segment
+    # numbers exactly consistent.
+    for name, seg in (spec.segments or {}).items():
+        if seg.col not in df.columns:
+            raise ValueError(
+                f"holdout.segments.{name}: column {seg.col!r} not in {path} "
+                f"(columns: {sorted(df.columns)})"
+            )
+        mask = (df[seg.col] == seg.eq).to_numpy()
+        n = int(mask.sum())
+        if n == 0:
+            log.warning(
+                "holdout: segment %r (%s == %r) matched 0 rows — skipping", name, seg.col, seg.eq
+            )
+            continue
+        try:
+            seg_value = _compute_metric(spec.metric, y_true[mask], preds[mask])
+            if not np.isfinite(seg_value):  # e.g. roc_auc on a single-class subset → nan
+                raise ValueError(f"{spec.metric} is undefined on this subset (got {seg_value})")
+        except Exception as exc:  # noqa: BLE001 — skip this segment loudly, keep the rest
+            log.warning(
+                "holdout: segment %r (%s == %r, %d rows) — %s not computable: %s — skipping",
+                name, seg.col, seg.eq, n, spec.metric, exc,
+            )
+            continue
+        results[f"holdout_{spec.metric}_{name}"] = seg_value
+        results[f"holdout_n_{name}"] = float(n)
 
     import mlflow.tracking
 

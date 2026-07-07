@@ -167,6 +167,23 @@ HOLDOUT_PROBA_METRICS: frozenset[str] = frozenset({"brier", "log_loss", "roc_auc
 HOLDOUT_CLASSIFICATION_METRICS: frozenset[str] = HOLDOUT_PROBA_METRICS | {"accuracy"}
 
 
+class HoldoutSegmentSpec(BaseModel):
+    """A named subpopulation of the holdout, scored as its own metric (CBB-025).
+
+    ``col`` is a column that **must be present in the holdout parquet** (the project produces
+    it; the platform does not add it) and ``eq`` is the value to match by equality. The rows
+    where ``col == eq`` are scored with the holdout's ``metric`` and logged as
+    ``holdout_<metric>_<segment>`` (+ ``holdout_n_<segment>``) — the exact name to pass to
+    ``--promote-metric`` when a segment gain would otherwise be averaged away in the full-set
+    number (e.g. a women-only improvement invisible to a combined-gender metric).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    col: str
+    eq: str | int | bool
+
+
 class HoldoutSpec(BaseModel):
     """``holdout:`` — a frozen, never-trained-on evaluation set scored as a distinct metric (CBB-017).
 
@@ -183,6 +200,13 @@ class HoldoutSpec(BaseModel):
     a break **skips** scoring loudly rather than zero-filling — a trusted metric must never be
     silently wrong. ``predict_method`` overrides the default model call (``predict_proba`` for a
     classification metric, ``predict`` for a regression one) for models with a custom interface.
+
+    ``segments`` (optional) scores named subpopulations alongside the full set: each
+    ``segments.<name>.col`` must be a column in the parquet, and the platform logs
+    ``holdout_<metric>_<name>`` (+ ``holdout_n_<name>``) for the rows where ``col == eq``. A
+    segment matching zero rows is skipped with a warning; a metric that can't be computed on a
+    segment (e.g. ``roc_auc`` on a single-class subset) is skipped loudly, leaving the full-set
+    and other segments intact.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -193,6 +217,7 @@ class HoldoutSpec(BaseModel):
     features: list[str] | None = None
     predict_method: str | None = None
     optional: bool = True
+    segments: dict[str, HoldoutSegmentSpec] | None = None
 
 
 class ModelSpec(BaseModel):
