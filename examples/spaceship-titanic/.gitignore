@@ -1,8 +1,14 @@
+# Raw competition data — pulled from Kaggle with `kitchen ingest`, never committed
+# (accepting the competition rules is a precondition of downloading it).
+data/raw/*
+!data/raw/.gitkeep
+
 # Runtime outputs produced by running the pipeline — regenerated on every run.
 mlruns.db
 mlruns/
 mlartifacts/
 metrics.json
 calibration.json
+submissions/
 data/processed/*
 !data/processed/.gitkeep

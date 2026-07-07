@@ -37,40 +37,52 @@ FEATURES: list[str] = [
 ]
 
 
+def _engineer(raw: pd.DataFrame) -> pd.DataFrame:
+    """Turn raw passenger records into the numeric ``FEATURES`` table (no target).
+
+    Shared by the features stage (on ``train.csv``) and
+    ``flows/generate_submission.py`` (on ``test.csv``), so training and inference
+    apply *identical* engineering — the surest guard against train/serve skew.
+    """
+    df = raw.copy()
+
+    # Cabin: deck/num/side → deck + side (the side, port vs starboard, matters).
+    cabin = df["Cabin"].astype("string").str.split("/", expand=True)
+    df["deck"] = cabin[0]
+    df["side"] = cabin[2]
+
+    # Group travel: passengers sharing a gggg_ prefix travelled together.
+    group = df["PassengerId"].astype("string").str.split("_", expand=True)[0]
+    df["group_size"] = group.map(group.value_counts())
+
+    # Spend: fill missing with 0, then engineer totals. `has_spent` (awake spenders were
+    # less likely to be transported) and `luxury` (cabin services vs food/shopping) both help.
+    df[SPEND_COLS] = df[SPEND_COLS].fillna(0.0)
+    df["total_spend"] = df[SPEND_COLS].sum(axis=1)
+    df["has_spent"] = (df["total_spend"] > 0).astype(int)
+    df["luxury"] = df[["Spa", "VRDeck", "RoomService"]].sum(axis=1)
+
+    # Booleans → 0/1 (missing = not-in-cryo / not-VIP).
+    for col in ("CryoSleep", "VIP"):
+        df[col] = df[col].map({True: 1, False: 0}).fillna(0).astype(int)
+
+    # Age: fill with the median.
+    df["Age"] = df["Age"].fillna(df["Age"].median())
+
+    # Categoricals → integer codes (XGBoost needs numbers); NaN → -1. NB: codes are
+    # fit per-frame here for brevity; a production project persists the training
+    # encoders and re-applies them at inference (see the README note).
+    for col in ("HomePlanet", "Destination", "deck", "side"):
+        df[col] = df[col].astype("category").cat.codes
+
+    return df[FEATURES].copy()
+
+
 class SpaceshipFeatures(FeatureBuilder):
     def build(self, raw: pd.DataFrame, params: dict) -> pd.DataFrame:
         target = params["model"]["target"]
-        df = raw.copy()
-
-        # Cabin: deck/num/side → deck + side (the side, port vs starboard, matters).
-        cabin = df["Cabin"].astype("string").str.split("/", expand=True)
-        df["deck"] = cabin[0]
-        df["side"] = cabin[2]
-
-        # Group travel: passengers sharing a gggg_ prefix travelled together.
-        group = df["PassengerId"].astype("string").str.split("_", expand=True)[0]
-        df["group_size"] = group.map(group.value_counts())
-
-        # Spend: fill missing with 0, then engineer totals. `has_spent` (awake spenders were
-        # less likely to be transported) and `luxury` (cabin services vs food/shopping) both help.
-        df[SPEND_COLS] = df[SPEND_COLS].fillna(0.0)
-        df["total_spend"] = df[SPEND_COLS].sum(axis=1)
-        df["has_spent"] = (df["total_spend"] > 0).astype(int)
-        df["luxury"] = df[["Spa", "VRDeck", "RoomService"]].sum(axis=1)
-
-        # Booleans → 0/1 (missing = not-in-cryo / not-VIP).
-        for col in ("CryoSleep", "VIP"):
-            df[col] = df[col].map({True: 1, False: 0}).fillna(0).astype(int)
-
-        # Age: fill with the median.
-        df["Age"] = df["Age"].fillna(df["Age"].median())
-
-        # Categoricals → integer codes (XGBoost needs numbers); NaN → -1.
-        for col in ("HomePlanet", "Destination", "deck", "side"):
-            df[col] = df[col].astype("category").cat.codes
-
-        out = df[FEATURES + [target]].copy()
-        out[target] = out[target].astype(int)  # Transported True/False → 1/0
+        out = _engineer(raw)
+        out[target] = raw[target].astype(int)  # Transported True/False → 1/0
         return out
 
 
