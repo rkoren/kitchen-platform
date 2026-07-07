@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rkoren-kitchen"
-version = "0.1.0"
+version = "1.0.0"
 description = "Reusable MLOps framework: data ingestion, experiment tracking, serving, and monitoring"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Unlicense"}
 keywords = ["mlops", "mlflow", "prefect", "dvc", "kaggle", "machine-learning"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: The Unlicense (Unlicense)",

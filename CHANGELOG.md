@@ -2,12 +2,13 @@
 
 All notable changes to `rkoren-kitchen` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
-[Semantic Versioning](https://semver.org/) (see `docs/kitchen/api-stability.md` for what the
-public surface covers).
+[Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Working toward the first public `1.0.0` release.
+## [1.0.0] - 2026-07-07
+
+First public release.
 
 ### Changed
 - **Unified platform.** `recipes` (the IaC CLI) merged into `rkoren-kitchen` as the
@@ -21,6 +22,13 @@ Working toward the first public `1.0.0` release.
 
 ### Added
 - `kitchen menu schema` — export the `menu.yaml` JSON Schema (draft 2020-12).
+- `-C/--project DIR` (like `git -C`) on `kitchen run`, `kitchen menu run`, `kitchen ingest`, and
+  `kitchen submit` — drive a project from any directory.
+- `kitchen submit --dry-run` — validate a submission and report what would be uploaded, without
+  credentials or an upload.
+- Segment-scoped holdout scoring: `holdout.segments:` logs `holdout_<metric>_<segment>` for named
+  subpopulations, so a segment gain a combined metric averages away is promotable via
+  `--promote-metric` (which ranks on any logged metric).
+- Spaceship Titanic end-to-end example — the whole loop on a real Kaggle competition
+  (ingest → train → evaluate → promote → submit).
 - Packaging metadata for PyPI (long-description README, bundled license).
-
-_This section will be split into a dated `1.0.0` entry when the release is cut._
