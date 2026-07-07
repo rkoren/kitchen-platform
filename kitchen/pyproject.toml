@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rkoren-kitchen"
-version = "1.0.1"
+version = "1.0.2"
 description = "Reusable MLOps framework: data ingestion, experiment tracking, serving, and monitoring"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -92,6 +92,17 @@ recipes = "kitchen.recipes.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["kitchen"]
+
+# Allowlist the sdist so only the package, its tests, and the packaging metadata ship —
+# not the stray project-runtime dirs (docs/, flows/, monitoring/, submissions/) or dev
+# config (.gitignore, .pylintrc, infra.yaml, uv.lock) that sit in the build root (MNT-005).
+[tool.hatch.build.targets.sdist]
+include = [
+    "kitchen",
+    "tests",
+    "README.md",
+    "LICENSE",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

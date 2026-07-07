@@ -29,11 +29,10 @@ A FastAPI inference service running on Lambda that:
 | Git | kitchen promote needs git history |
 | Kaggle account | If your data source is Kaggle |
 
-Install kitchen and recipes:
+Install kitchen (provisioning ships as the `kitchen.recipes` sub-package):
 
 ```bash
-git clone https://github.com/rkoren/kitchen-platform.git
-pip install -e kitchen-platform/kitchen -e kitchen-platform/recipes
+pip install rkoren-kitchen
 ```
 
 ---

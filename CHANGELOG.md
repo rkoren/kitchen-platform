@@ -6,6 +6,24 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-07-07
+
+### Changed
+- Trimmed the sdist to ship only the package, tests, README, and LICENSE — the stray
+  project-runtime dirs (`docs/`, `flows/`, `monitoring/`, `submissions/`) and dev config
+  (`.pylintrc`, `infra.yaml`, `uv.lock`) no longer leak into it (~635 KB → ~327 KB).
+- Bumped all GitHub Actions off the deprecated Node 20 runtime to their first Node 24 major
+  (`checkout@v5`, `setup-python@v6`, `upload-artifact@v6`, `download-artifact@v7`,
+  `configure-aws-credentials@v6`, `setup-terraform@v4`, `gitleaks-action@v3`).
+
+### Fixed
+- Corrected stale pre-merge install instructions in the AWS/Lambda deploy docs — they told
+  users to `pip install -e .../recipes` as a separate package; provisioning ships as the
+  `kitchen.recipes` sub-package of `rkoren-kitchen`.
+- `kitchen version` and the MLflow package-version logging looked up the distribution as
+  `kitchen` instead of `rkoren-kitchen` (`importlib.metadata` on the wrong, unrelated package) —
+  now resolve the correct distribution.
+
 ## [1.0.1] - 2026-07-07
 
 ### Fixed

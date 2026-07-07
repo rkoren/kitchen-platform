@@ -9,7 +9,7 @@ Deploy a `kitchen` model to Lambda in four steps: provision infrastructure with 
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) configured (`aws configure`)
 - [Docker](https://docs.docker.com/get-docker/) installed and running
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) ≥ 1.0
-- `recipes` installed: `pip install -e path/to/kitchen-platform/recipes`
+- `rkoren-kitchen` installed (provisioning ships as the `kitchen.recipes` sub-package): `pip install rkoren-kitchen`
 - A trained champion model in your MLflow registry (`kitchen promote val_accuracy`)
 
 ---

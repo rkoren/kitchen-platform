@@ -119,7 +119,7 @@ app = typer.Typer(
 @app.command()
 def version() -> None:
     """Print the kitchen version."""
-    typer.echo(f"kitchen {_pkg_version('kitchen')}")
+    typer.echo(f"kitchen {_pkg_version('rkoren-kitchen')}")
 
 
 @app.command()
