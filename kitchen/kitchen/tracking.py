@@ -47,7 +47,7 @@ _FLAVOURS: dict[str, Any] = {
 
 
 _TRACKED_PACKAGES = [
-    "kitchen",
+    "rkoren-kitchen",
     "numpy",
     "pandas",
     "scikit-learn",
