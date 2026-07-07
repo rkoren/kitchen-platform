@@ -1555,6 +1555,13 @@ def submit(
             "--wait", help="Poll for leaderboard score after upload and write to metrics.json"
         ),
     ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Validate and report what would be uploaded, then stop — no credentials, no upload.",
+        ),
+    ] = False,
 ) -> None:
     """Validate and upload a submission CSV to Kaggle."""
 
@@ -1593,16 +1600,17 @@ def submit(
         )
         raise typer.Exit(1)
 
-    # Kaggle credential check
-    has_env = os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY")
-    has_json = (Path.home() / ".kaggle" / "kaggle.json").exists()
-    if not has_env and not has_json:
-        typer.echo(
-            "error: Kaggle credentials not found.\n"
-            "  Create ~/.kaggle/kaggle.json  or  set KAGGLE_USERNAME + KAGGLE_KEY.",
-            err=True,
-        )
-        raise typer.Exit(1)
+    # Kaggle credential check — skipped for --dry-run, which never contacts Kaggle.
+    if not dry_run:
+        has_env = os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY")
+        has_json = (Path.home() / ".kaggle" / "kaggle.json").exists()
+        if not has_env and not has_json:
+            typer.echo(
+                "error: Kaggle credentials not found.\n"
+                "  Create ~/.kaggle/kaggle.json  or  set KAGGLE_USERNAME + KAGGLE_KEY.",
+                err=True,
+            )
+            raise typer.Exit(1)
 
     sub_path = Path(file)
     if not sub_path.exists():
@@ -1627,6 +1635,13 @@ def submit(
         for e in errors:
             typer.echo(f"  • {e}", err=True)
         raise typer.Exit(1)
+
+    if dry_run:
+        typer.echo(f"Validated {len(sub_df)} rows — would upload to '{competition}' (dry run).")
+        typer.echo(f"  file    : {sub_path}")
+        typer.echo(f"  message : {submit_msg}")
+        typer.echo("Dry run — nothing uploaded. Re-run without --dry-run to submit.")
+        return
 
     typer.echo(f"Validated {len(sub_df)} rows — uploading to '{competition}' …")
     try:

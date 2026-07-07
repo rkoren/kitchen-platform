@@ -417,6 +417,37 @@ def test_submit_credentials_via_json(tmp_path, monkeypatch):
     assert result.exit_code == 0
 
 
+def test_submit_dry_run_validates_without_uploading(tmp_path, monkeypatch):
+    # --dry-run validates and reports what would be sent, but never uploads and
+    # never needs credentials (env deliberately empty, no ~/.kaggle/kaggle.json).
+    monkeypatch.chdir(tmp_path)
+    _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload") as mock_upload,
+    ):
+        result = runner.invoke(app, ["submit", "--dry-run"], env={})
+    assert result.exit_code == 0
+    assert "would upload" in result.output
+    assert "march-machine-learning-mania-2026" in result.output
+    mock_upload.assert_not_called()
+
+
+def test_submit_dry_run_still_fails_on_invalid_submission(tmp_path, monkeypatch):
+    # Validation still runs under --dry-run: a null + duplicate id must fail.
+    monkeypatch.chdir(tmp_path)
+    bad_sub = [{"Id": 1, "Pred": None}, {"Id": 1, "Pred": 0.5}]
+    _setup(tmp_path, KAGGLE_PARAMS, bad_sub, SAMPLE)
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload") as mock_upload,
+    ):
+        result = runner.invoke(app, ["submit", "--dry-run"], env={})
+    assert result.exit_code != 0
+    assert "validation failed" in result.output
+    mock_upload.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # fetch_score unit tests
 # ---------------------------------------------------------------------------
