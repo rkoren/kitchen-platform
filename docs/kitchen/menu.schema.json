@@ -166,9 +166,39 @@
       "title": "FeatureSchemaSpec",
       "type": "object"
     },
+    "HoldoutSegmentSpec": {
+      "additionalProperties": false,
+      "description": "A named subpopulation of the holdout, scored as its own metric (CBB-025).\n\n``col`` is a column that **must be present in the holdout parquet** (the project produces\nit; the platform does not add it) and ``eq`` is the value to match by equality. The rows\nwhere ``col == eq`` are scored with the holdout's ``metric`` and logged as\n``holdout_<metric>_<segment>`` (+ ``holdout_n_<segment>``) \u2014 the exact name to pass to\n``--promote-metric`` when a segment gain would otherwise be averaged away in the full-set\nnumber (e.g. a women-only improvement invisible to a combined-gender metric).",
+      "properties": {
+        "col": {
+          "title": "Col",
+          "type": "string"
+        },
+        "eq": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "title": "Eq"
+        }
+      },
+      "required": [
+        "col",
+        "eq"
+      ],
+      "title": "HoldoutSegmentSpec",
+      "type": "object"
+    },
     "HoldoutSpec": {
       "additionalProperties": false,
-      "description": "``holdout:`` \u2014 a frozen, never-trained-on evaluation set scored as a distinct metric (CBB-017).\n\nThe project produces a parity-matched parquet (the model's features + the realized\n``label``), leak-free by construction because it lives outside ``data/raw`` where training\ncan't read it. The platform scores **every run's** model against it and logs\n``holdout_<metric>`` \u2014 a trusted generalization number distinct from the in-CV metric, so a\nproject iterating on its CV score can tell CV-overfit from real generalization. Treat it\nlike a Kaggle private leaderboard: iterate on CV, check the holdout sparingly.\n\nAn absent ``path`` is a no-op (the pipeline runs unchanged until results exist) unless\n``optional`` is ``False``. ``features`` defaults to the project's ``feature_candidates``\n(the training feature list); they are parity-checked against the parquet before scoring and\na break **skips** scoring loudly rather than zero-filling \u2014 a trusted metric must never be\nsilently wrong. ``predict_method`` overrides the default model call (``predict_proba`` for a\nclassification metric, ``predict`` for a regression one) for models with a custom interface.",
+      "description": "``holdout:`` \u2014 a frozen, never-trained-on evaluation set scored as a distinct metric (CBB-017).\n\nThe project produces a parity-matched parquet (the model's features + the realized\n``label``), leak-free by construction because it lives outside ``data/raw`` where training\ncan't read it. The platform scores **every run's** model against it and logs\n``holdout_<metric>`` \u2014 a trusted generalization number distinct from the in-CV metric, so a\nproject iterating on its CV score can tell CV-overfit from real generalization. Treat it\nlike a Kaggle private leaderboard: iterate on CV, check the holdout sparingly.\n\nAn absent ``path`` is a no-op (the pipeline runs unchanged until results exist) unless\n``optional`` is ``False``. ``features`` defaults to the project's ``feature_candidates``\n(the training feature list); they are parity-checked against the parquet before scoring and\na break **skips** scoring loudly rather than zero-filling \u2014 a trusted metric must never be\nsilently wrong. ``predict_method`` overrides the default model call (``predict_proba`` for a\nclassification metric, ``predict`` for a regression one) for models with a custom interface.\n\n``segments`` (optional) scores named subpopulations alongside the full set: each\n``segments.<name>.col`` must be a column in the parquet, and the platform logs\n``holdout_<metric>_<name>`` (+ ``holdout_n_<name>``) for the rows where ``col == eq``. A\nsegment matching zero rows is skipped with a warning; a metric that can't be computed on a\nsegment (e.g. ``roc_auc`` on a single-class subset) is skipped loudly, leaving the full-set\nand other segments intact.",
       "properties": {
         "path": {
           "title": "Path",
@@ -223,6 +253,21 @@
           "default": true,
           "title": "Optional",
           "type": "boolean"
+        },
+        "segments": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/HoldoutSegmentSpec"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Segments"
         }
       },
       "required": [

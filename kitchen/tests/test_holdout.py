@@ -138,6 +138,106 @@ def test_no_resolvable_features_raises(logged_clf):
         score_run_holdout(run_id, {"holdout": {"path": str(hp), "label": "Outcome"}})
 
 
+# ── segments: named subpopulations (CBB-025) ────────────────────────────────────
+
+
+def _write_segmented_holdout(path):
+    """40 rows with a ``grp`` column: 20 ``hit`` (label 1) + 20 ``miss`` (label 0), all with the
+    same strongly-positive features → the model predicts ~1 for every row, so the label-1 segment
+    scores far better than the label-0 one. A misaligned mask (or a per-segment re-predict) would
+    not reproduce that clean split."""
+    hit = {"f1": [3.0] * 20, "f2": [0.0] * 20, "Outcome": [1] * 20, "grp": ["hit"] * 20}
+    miss = {"f1": [3.0] * 20, "f2": [0.0] * 20, "Outcome": [0] * 20, "grp": ["miss"] * 20}
+    df = pd.concat([pd.DataFrame(hit), pd.DataFrame(miss)], ignore_index=True)
+    df.to_parquet(path)
+    return df
+
+
+def test_segments_score_and_log(logged_clf):
+    run_id, tmp = logged_clf
+    hp = tmp / "seg.parquet"
+    _write_segmented_holdout(hp)
+    res = score_run_holdout(
+        run_id,
+        _params(
+            {
+                "path": str(hp),
+                "label": "Outcome",
+                "segments": {
+                    "hit": {"col": "grp", "eq": "hit"},
+                    "miss": {"col": "grp", "eq": "miss"},
+                },
+            }
+        ),
+    )
+    # full-set metric plus a metric + count per segment
+    assert "holdout_brier" in res
+    assert res["holdout_n_hit"] == 20.0 and res["holdout_n_miss"] == 20.0
+    # predict-once, sliced-correctly: the label-1 segment beats the label-0 one cleanly.
+    assert res["holdout_brier_hit"] < 0.25 < res["holdout_brier_miss"]
+    # logged onto the run under the exact name --promote-metric would use
+    logged = mlflow.tracking.MlflowClient().get_run(run_id).data.metrics
+    assert logged["holdout_brier_hit"] == pytest.approx(res["holdout_brier_hit"])
+
+
+def test_segment_missing_column_raises(logged_clf):
+    run_id, tmp = logged_clf
+    hp = tmp / "h.parquet"
+    _write_holdout(hp)  # has f1, f2, Outcome — no "grp" column
+    with pytest.raises(ValueError, match=r"holdout\.segments\.women"):
+        score_run_holdout(
+            run_id,
+            _params(
+                {
+                    "path": str(hp),
+                    "label": "Outcome",
+                    "segments": {"women": {"col": "grp", "eq": "W"}},
+                }
+            ),
+        )
+
+
+def test_segment_zero_rows_skipped(logged_clf, caplog):
+    run_id, tmp = logged_clf
+    hp = tmp / "seg.parquet"
+    _write_segmented_holdout(hp)
+    with caplog.at_level(logging.WARNING):
+        res = score_run_holdout(
+            run_id,
+            _params(
+                {
+                    "path": str(hp),
+                    "label": "Outcome",
+                    "segments": {"ghost": {"col": "grp", "eq": "nope"}},
+                }
+            ),
+        )
+    assert "holdout_brier" in res  # full-set intact
+    assert not any(k.startswith("holdout_brier_") for k in res)  # segment not emitted
+    assert "0 rows" in caplog.text and "ghost" in caplog.text
+
+
+def test_segment_uncomputable_metric_skipped(logged_clf, caplog):
+    run_id, tmp = logged_clf
+    hp = tmp / "seg.parquet"
+    _write_segmented_holdout(hp)  # full set has both classes; the "hit" segment is single-class
+    with caplog.at_level(logging.WARNING):
+        res = score_run_holdout(
+            run_id,
+            _params(
+                {
+                    "path": str(hp),
+                    "label": "Outcome",
+                    "metric": "roc_auc",
+                    "segments": {"hit": {"col": "grp", "eq": "hit"}},
+                }
+            ),
+        )
+    assert "holdout_roc_auc" in res  # full-set computes (both classes present)
+    assert "holdout_roc_auc_hit" not in res  # single-class segment skipped
+    assert "hit" in caplog.text and "not computable" in caplog.text
+
+
 # ── regression metric + predict_method override (unit, no MLflow) ────────────────
 
 
