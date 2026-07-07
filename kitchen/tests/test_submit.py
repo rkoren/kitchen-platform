@@ -448,6 +448,24 @@ def test_submit_dry_run_still_fails_on_invalid_submission(tmp_path, monkeypatch)
     mock_upload.assert_not_called()
 
 
+def test_submit_project_flag_runs_from_dir(tmp_path, monkeypatch):
+    """DX-013: `-C/--project` resolves the menu, submission file and sample under the
+    given dir, even when cwd is elsewhere. (Uses --dry-run so no creds/upload needed;
+    monkeypatch.chdir restores cwd at teardown.)"""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _setup(proj, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
+    monkeypatch.chdir(tmp_path)  # deliberately NOT in the project dir
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload") as mock_upload,
+    ):
+        result = runner.invoke(app, ["submit", "-C", str(proj), "--dry-run"], env={})
+    assert result.exit_code == 0, result.output
+    assert "would upload" in result.output
+    mock_upload.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # fetch_score unit tests
 # ---------------------------------------------------------------------------
