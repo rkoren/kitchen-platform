@@ -27,11 +27,11 @@ kitchen ingest        # pull train.csv / test.csv / sample_submission.csv → da
 kitchen menu run      # features → train → evaluate → promote a champion
 ```
 
-Or from anywhere (the repo root, say). `menu run` takes `-C`; `ingest` writes to the current
-directory's `data/raw`, so point it at the project with `--out`:
+Or from anywhere (the repo root, say) — every command takes `-C` to run from the project
+directory, like `git -C`:
 
 ```bash
-kitchen ingest   --params examples/spaceship-titanic/menu.yaml --out examples/spaceship-titanic/data/raw
+kitchen ingest   -C examples/spaceship-titanic
 kitchen menu run -C examples/spaceship-titanic
 ```
 
@@ -72,12 +72,14 @@ python examples/spaceship-titanic/flows/generate_submission.py
 ```
 
 It writes `submissions/submission.csv` (`PassengerId,Transported`) and validates it against
-`sample_submission.csv` (row count, columns, no nulls, no duplicate IDs). Then upload it to the
-sandbox — from the project directory:
+`sample_submission.csv` (row count, columns, no nulls, no duplicate IDs). Preview it first with
+`--dry-run` (validates and reports, no credentials, no upload), then upload it to the sandbox
+(add `-C examples/spaceship-titanic` to run from elsewhere):
 
 ```bash
-kitchen submit --file submissions/submission.csv         # uploads under your Kaggle account
-kitchen submit --file submissions/submission.csv --wait  # also poll for the public LB score
+kitchen submit --file submissions/submission.csv --dry-run  # validate + preview, no upload
+kitchen submit --file submissions/submission.csv            # uploads under your Kaggle account
+kitchen submit --file submissions/submission.csv --wait     # also poll for the public LB score
 ```
 
 `submission:` in `menu.yaml` supplies the competition slug, ID/target columns, and message.

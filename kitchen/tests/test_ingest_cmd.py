@@ -206,6 +206,28 @@ def test_ingest_custom_out_dir(tmp_path, monkeypatch):
     assert str(custom) in result.output
 
 
+def test_ingest_project_flag_runs_from_dir(tmp_path, monkeypatch):
+    """DX-013: `-C/--project` loads the menu and writes data/raw under the given dir,
+    even when cwd is elsewhere. (monkeypatch.chdir restores cwd at teardown.)"""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "params.yaml").write_text(S3_PARAMS)
+    monkeypatch.chdir(tmp_path)  # deliberately NOT in the project dir
+
+    captured: dict = {}
+
+    def _capture(_, out_dir):
+        captured["out_dir"] = out_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return ["file.csv"]
+
+    with patch("kitchen.ingest.S3Source.download", _capture):
+        result = runner.invoke(app, ["ingest", "-C", str(proj)])
+
+    assert result.exit_code == 0, result.output
+    assert captured["out_dir"] == proj / "data" / "raw"
+
+
 # ---------------------------------------------------------------------------
 # Download failure
 # ---------------------------------------------------------------------------

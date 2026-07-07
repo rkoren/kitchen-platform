@@ -1471,12 +1471,24 @@ def ingest(
         str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
     out_dir: Annotated[str | None, typer.Option("--out", help="Override output directory")] = None,
+    project: Annotated[
+        str | None,
+        typer.Option(
+            "--project",
+            "-C",
+            metavar="DIR",
+            help="Run from this project directory (like `git -C`). Default: the current directory.",
+        ),
+    ] = None,
 ) -> None:
     """Download raw competition data as configured in menu.yaml (or legacy params.yaml)."""
 
     from kitchen.config import KitchenConfig
     from kitchen.ingest import source_from_params
     from kitchen.store import DataStore
+
+    if project:
+        os.chdir(project)  # resolve the menu + write data/raw under the project dir (DX-013)
 
     params_file = resolve_params_path(params_file)
     path = Path(params_file)
@@ -1562,6 +1574,15 @@ def submit(
             help="Validate and report what would be uploaded, then stop — no credentials, no upload.",
         ),
     ] = False,
+    project: Annotated[
+        str | None,
+        typer.Option(
+            "--project",
+            "-C",
+            metavar="DIR",
+            help="Run from this project directory (like `git -C`). Default: the current directory.",
+        ),
+    ] = None,
 ) -> None:
     """Validate and upload a submission CSV to Kaggle."""
 
@@ -1570,6 +1591,9 @@ def submit(
     from kitchen.config import KitchenConfig
     from kitchen.store import DataStore
     from kitchen.submit import upload, validate_submission
+
+    if project:
+        os.chdir(project)  # resolve the menu, submission file + sample under the project dir (DX-013)
 
     params_file = resolve_params_path(params_file)
     path = Path(params_file)
