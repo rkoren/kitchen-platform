@@ -123,7 +123,7 @@ version = "0.1.0"
 description = "Kaggle $name — built on kitchen"
 requires-python = ">=3.11"
 dependencies = [
-    "kitchen",
+    "rkoren-kitchen>=1.0",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
 $model_deps]
@@ -2544,7 +2544,7 @@ _DVC_YAML = """\
 # Run `dvc repro` to execute stages in dependency order, skipping unchanged ones.
 #
 # First-time setup:
-#   pip install kitchen[dvc]
+#   pip install rkoren-kitchen[dvc]
 #   dvc remote modify s3remote url s3://YOUR-BUCKET/dvc
 #   dvc push         # upload processed data and models to your S3 remote
 #   dvc pull         # restore on a new machine or CI runner
@@ -2597,7 +2597,7 @@ _DVC_YAML_KAGGLE = """\
 # Run `dvc repro` to execute stages in dependency order, skipping unchanged ones.
 #
 # First-time setup:
-#   pip install kitchen[dvc]
+#   pip install rkoren-kitchen[dvc]
 #   dvc remote modify s3remote url s3://YOUR-BUCKET/dvc
 #   dvc push         # upload processed data and models to your S3 remote
 #   dvc pull         # restore on a new machine or CI runner

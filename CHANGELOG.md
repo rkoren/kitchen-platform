@@ -6,6 +6,17 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-07
+
+### Fixed
+- **Scaffolded projects declared the wrong dependency.** `kitchen init` generated
+  `dependencies = ["kitchen"]`, but the published distribution is `rkoren-kitchen` (and
+  `kitchen` is an unrelated package on PyPI) — so a scaffolded project's `pip install` pulled
+  the wrong package. The scaffold now declares `rkoren-kitchen>=1.0`, and the generated
+  `dvc.yaml` install hints use `rkoren-kitchen[dvc]`.
+- Corrected `rkoren-kitchen[...]` install commands in the README and docs (they said
+  `kitchen[dvc]` / `kitchen[postgres]` / `kitchen @ git+...`).
+
 ## [1.0.0] - 2026-07-07
 
 First public release.

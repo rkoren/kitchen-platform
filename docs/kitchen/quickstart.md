@@ -36,7 +36,7 @@ kitchen init spaceship-titanic \
 | `--competition` | — | Kaggle competition slug (required when `--source kaggle`) |
 | `--template` | `none` | Starter model: `none`, `baseline-xgb`, `baseline-lr`, `baseline-rf`, `binary-cls`, `multiclass-cls`, `regression` |
 | `--ci` | off | Scaffold `.github/workflows/train-evaluate.yml` |
-| `--with-dvc` | off | Scaffold `dvc.yaml`, `.dvcignore`, `.dvc/config` and run `dvc init` (requires `pip install kitchen[dvc]`) |
+| `--with-dvc` | off | Scaffold `dvc.yaml`, `.dvcignore`, `.dvc/config` and run `dvc init` (requires `pip install rkoren-kitchen[dvc]`) |
 | `--here` | off | Scaffold into the current directory instead of a new subdirectory |
 
 ## Set up credentials

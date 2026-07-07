@@ -13,7 +13,7 @@ Choose your path:
 | Skip unchanged stages | ✗ always re-runs | ✓ skips cached stages |
 | Share data with teammates | manual S3 sync | `dvc push` / `dvc pull` |
 | Reproduce exact results | re-run manually | `dvc repro` restores inputs then re-runs |
-| Setup overhead | none | `pip install kitchen[dvc]` + S3 bucket |
+| Setup overhead | none | `pip install rkoren-kitchen[dvc]` + S3 bucket |
 
 ---
 
@@ -46,7 +46,7 @@ This path is sufficient for:
 Pass `--with-dvc` to `kitchen init`:
 
 ```bash
-pip install "kitchen[dvc]"
+pip install "rkoren-kitchen[dvc]"
 
 kitchen init my-project \
   --source kaggle \
@@ -72,7 +72,7 @@ Use `kitchen dvc init` to add DVC to a project that was created without
 
 ```bash
 cd my-existing-project
-pip install "kitchen[dvc]"
+pip install "rkoren-kitchen[dvc]"
 kitchen dvc init
 ```
 
@@ -175,7 +175,7 @@ pipeline:
 ```bash
 git clone https://github.com/you/my-project
 cd my-project
-pip install "kitchen[dvc]"
+pip install "rkoren-kitchen[dvc]"
 dvc pull               # download data/processed/ and models/ from S3
 ```
 
@@ -316,7 +316,7 @@ When using DVC in CI, runners need the versioned data before training.
 
 - name: Pull DVC data
   run: |
-    pip install "kitchen[dvc]"
+    pip install "rkoren-kitchen[dvc]"
     dvc pull
 ```
 
@@ -354,7 +354,7 @@ dvc gc -w                    # clean up old cached data (keep current workspace)
 
 **`dvc: command not found`**
 ```bash
-pip install "kitchen[dvc]"
+pip install "rkoren-kitchen[dvc]"
 ```
 
 **`ERROR: failed to push data to the cloud`** — check credentials and bucket name:
