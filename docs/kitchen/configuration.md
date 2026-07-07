@@ -220,7 +220,7 @@ The default `sqlite:///mlruns.db` is **per-run** in CI: the registry starts empt
 
    Terraform outputs the connection `…_endpoint`, the `…_master_user_secret_arn`, and the bucket.
 
-2. **Install the PostgreSQL driver** alongside kitchen — MLflow needs it to talk to a `postgresql://` store (it is not in the base install): `pip install 'kitchen[postgres]'`. `kitchen check` fails fast with this hint if a postgresql tracking URI is set without it.
+2. **Install the PostgreSQL driver** alongside kitchen — MLflow needs it to talk to a `postgresql://` store (it is not in the base install): `pip install 'rkoren-kitchen[postgres]'`. `kitchen check` fails fast with this hint if a postgresql tracking URI is set without it.
 
 3. **Set the artifact bucket** in `menu.yaml` (the connection URL itself comes from the RDS-managed secret at run time — step 4 — so it is never written to menu.yaml or a second secret):
 

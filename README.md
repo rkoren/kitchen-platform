@@ -65,7 +65,7 @@ resources:
 A reusable Python library that handles the platform concerns (data I/O, experiment tracking, serving, orchestration)
 
 ```bash
-pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
+pip install "rkoren-kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
 ```
 
 #### Components
