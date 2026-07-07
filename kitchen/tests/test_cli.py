@@ -848,6 +848,24 @@ def test_auto_promote_not_set_no_promote(tmp_path, monkeypatch):
     mock_reg.assert_not_called()
 
 
+def test_auto_promote_ranks_on_segment_holdout_metric(tmp_path, monkeypatch):
+    """CBB-026: --promote-metric reads *any* metric logged on the run, so a segment-scoped
+    holdout metric (holdout_<metric>_<segment>) drives promotion just like a CV metric — the
+    exact case CBB-025 needed, proven end-to-end through the CLI."""
+    result, mock_reg, mock_prom = _auto_promote_invoke(
+        tmp_path, monkeypatch,
+        ["--auto-promote", "--promote-metric", "holdout_mae_women", "--lower-is-better"],
+        champion_score=9.85,   # current champion's women-only holdout MAE
+        new_score=9.60,        # new run improves the women segment (lower = better)
+        metric="holdout_mae_women",
+    )
+    assert result.exit_code == 0
+    mock_reg.assert_called_once()
+    mock_prom.assert_called_once()
+    assert "holdout_mae_women" in result.output
+    assert "lower=better" in result.output
+
+
 # ---------------------------------------------------------------------------
 # kitchen run monitor
 # ---------------------------------------------------------------------------

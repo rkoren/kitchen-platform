@@ -70,6 +70,30 @@ mlflow:
 `kitchen promote --model-artifact-path <name>` overrides it for a single run. If the name
 doesn't match, the error lists the names the run actually logged so you know what to set.
 
+### Promoting on any metric — including the holdout and its segments
+
+`--promote-metric` ranks on **any metric logged on the run**, not just a CV/threshold metric.
+The metric is read straight off the run and compared against the champion's, so you can promote
+on a trusted generalization number instead of the in-CV score:
+
+```bash
+# rank promotion on the frozen holdout rather than the CV metric
+kitchen run train --auto-promote --promote-metric holdout_mae --lower-is-better
+```
+
+This extends to **segment-scoped** metrics. When `holdout.segments:` is configured (see
+[configuration](configuration.md)), the platform logs `holdout_<metric>_<segment>` for each
+subpopulation — so a gain a combined metric would average away (e.g. a women-only improvement)
+becomes directly promotable:
+
+```bash
+kitchen run train --auto-promote --promote-metric holdout_mae_women --lower-is-better
+```
+
+Direction is set by `--lower-is-better` / `--higher-is-better`. (When `--promote-metric` is
+omitted, it's auto-detected from the first `thresholds:` key or the selected model's declared
+metric.)
+
 The champion model is loaded with:
 
 ```python
