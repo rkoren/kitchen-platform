@@ -18,10 +18,12 @@ cosmetic, not the S-7 seam, which was the cross-CLI ``recipes`` shell-out now re
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 
-from kitchen.menu import Menu
+from kitchen.menu import Menu, RecipeEntry
 from kitchen.menu_resolve import resolve_mlflow_env
 
 
@@ -32,6 +34,52 @@ class PipelineError(RuntimeError):
 def _run(cmd: list[str]) -> None:
     """Run a subcommand, inheriting the (possibly materialized) environment; raise on failure."""
     subprocess.run(cmd, check=True)
+
+
+def stage_argv(entry: RecipeEntry) -> list[str]:
+    """The argv for a command stage (GEN-002/003).
+
+    ``cmd`` is a list (used verbatim) or a string (``shlex.split``, no shell). When ``python`` is
+    set it is the interpreter and ``cmd`` is the *args* passed to it — a per-stage environment
+    (``python: .venv-track/bin/python``, ``cmd: "-m pipeline.run"`` → that venv's python).
+    """
+    cmd = entry.cmd
+    argv = list(cmd) if isinstance(cmd, list) else shlex.split(cmd or "")
+    if entry.python:
+        argv = [entry.python, *argv]
+    return argv
+
+
+def run_command_stage(
+    name: str,
+    entry: RecipeEntry,
+    *,
+    echo: Callable[[str], None] = lambda _msg: None,
+    run: Callable[[list[str]], None] = _run,
+    dry_run: bool = False,
+) -> None:
+    """Run a command stage as a subprocess (GEN-002/003), inheriting env + cwd.
+
+    The subprocess inherits the environment (including the MLflow vars materialized by
+    ``provision``) and the working directory. Metrics are the stage's own job: call
+    ``kitchen log --store …`` (GEN-001) or write ``metrics.json`` from inside the stage to feed the
+    ranking machinery — this runner only builds the argv, checks declared inputs/outputs, and
+    surfaces the exit status. Declared ``inputs`` must exist before running (fail fast); a missing
+    declared ``output`` warns after (a stage may legitimately produce only a logged metric).
+    """
+    argv = stage_argv(entry)
+    echo(f"→ {name}: {shlex.join(argv)}")  # shlex.join → the echoed line is copy-paste re-runnable
+    if dry_run:
+        return
+    missing_in = [p for p in entry.inputs if not Path(p).exists()]
+    if missing_in:
+        raise PipelineError(
+            f"stage {name!r}: declared input(s) not found: {', '.join(missing_in)}"
+        )
+    run(argv)
+    missing_out = [p for p in entry.outputs if not Path(p).exists()]
+    if missing_out:
+        echo(f"  warning: stage {name!r} declared output(s) not found: {', '.join(missing_out)}")
 
 
 def _provision(menu_path: str, state_bucket: str) -> None:
@@ -77,8 +125,12 @@ def run_pipeline(
                 run(["kitchen", "score", "--params", menu_path])
         elif step in menu.recipes:
             entry = menu.recipes[step]
-            if entry.kind == "stage":
-                # A stage may carry CLI flags via `args:` (e.g. `--auto-promote` on train).
+            if entry.kind == "stage" and entry.cmd is not None:
+                # GEN-002/003: a command stage runs as a subprocess (optionally in its own env).
+                run_command_stage(step, entry, echo=echo, run=run, dry_run=dry_run)
+            elif entry.kind == "stage":
+                # An in-process `source` stage — shell out to `kitchen run <step>`. A stage may
+                # carry CLI flags via `args:` (e.g. `--auto-promote` on train).
                 extra_args = list(entry.fields.get("args") or [])
                 echo(f"→ {step}: kitchen run {step} {' '.join(extra_args)}".rstrip())
                 if not dry_run:

@@ -1982,6 +1982,81 @@ def log(
         typer.echo(f"  {key}: {value:.6f}")
 
 
+@app.command()
+def stage(
+    name: Annotated[str, typer.Argument(help="Name of the command stage (a `recipes:` key) to run")],
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to menu.yaml")
+    ] = "params.yaml",
+    project: Annotated[
+        str | None,
+        typer.Option(
+            "--project",
+            "-C",
+            metavar="DIR",
+            help="Run from this project directory (like `git -C`). Default: the current directory.",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print the argv that would run, without running it")
+    ] = False,
+) -> None:
+    """Run a single command stage from the menu by name (GEN-002/003).
+
+    For iterating on one subprocess stage without the whole pipeline. The named `recipes:` entry
+    must be a `kind: stage` that declares a `cmd:` (a `source:` stage runs in-process via
+    `kitchen run <name>`). The stage inherits this process's environment and working directory.
+    """
+    import subprocess as _sp
+
+    if project:
+        os.chdir(project)
+
+    params_file = resolve_params_path(params_file)
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    from kitchen.menu import Menu
+    from kitchen.menu_run import PipelineError, run_command_stage
+
+    try:
+        menu = Menu.from_yaml(str(path))
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    entry = menu.recipes.get(name)
+    if entry is None or entry.kind != "stage":
+        available = sorted(k for k, e in menu.recipes.items() if e.kind == "stage" and e.cmd)
+        typer.echo(
+            f"error: no command stage named {name!r} in {path}."
+            + (f" Command stages: {', '.join(available)}." if available else ""),
+            err=True,
+        )
+        raise typer.Exit(1)
+    if entry.cmd is None:
+        typer.echo(
+            f"error: stage {name!r} declares `source:`, not `cmd:` — run it with "
+            f"`kitchen run {name}`.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    def _runner(argv: list[str]) -> None:
+        _sp.run(argv, check=True)
+
+    try:
+        run_command_stage(name, entry, echo=typer.echo, run=_runner, dry_run=dry_run)
+    except PipelineError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    except _sp.CalledProcessError as exc:
+        typer.echo(f"error: stage {name!r} exited {exc.returncode}", err=True)
+        raise typer.Exit(exc.returncode or 1)
+
+
 app.add_typer(run_app, name="run")
 app.command(name="sweep")(run_sweep)
 

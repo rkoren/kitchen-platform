@@ -86,6 +86,15 @@ class RecipeEntry(BaseModel):
     kind: Literal["rds", "s3", "security_group", "iam_role", "ecr", "lambda", "stage"]
     role: str | None = None  # discovery marker; what `{from_role}` references resolve to
     source: str | None = None  # where this recipe's code lives (stage/serve)
+    # GEN-002/003: a command stage runs a subprocess instead of an in-process `source` callable.
+    # `cmd` is the argv (a list, used verbatim; or a string, shlex-split — no shell). `python`,
+    # when set, is the interpreter and `cmd` is the *args* passed to it (e.g. python: a venv, cmd:
+    # "-m pipeline.run") — a per-stage environment. `inputs`/`outputs` are declared paths: inputs
+    # are checked to exist before running (fail fast); missing outputs warn after.
+    cmd: str | list[str] | None = None
+    python: str | None = None
+    inputs: list[str] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
 
     @property
     def fields(self) -> dict[str, Any]:
@@ -187,10 +196,19 @@ class Menu(BaseModel):
                     f"({', '.join(sorted(PLATFORM_VERBS))}) nor a recipe in `recipes:`."
                 )
 
-        # A stage recipe is pure code — the manifest must say where it lives (INT-006).
+        # A stage recipe is pure code — the manifest must say where it lives: an in-process
+        # `source` callable (INT-006) or a `cmd` subprocess (GEN-002), exactly one.
         for name, entry in self.recipes.items():
-            if entry.kind == "stage" and not entry.source:
-                errors.append(f"stage recipe '{name}' must declare a `source` (where its code lives).")
+            if entry.kind == "stage" and not entry.source and entry.cmd is None:
+                errors.append(
+                    f"stage recipe '{name}' must declare a `source` (in-process code) or a `cmd` "
+                    "(subprocess command)."
+                )
+            if entry.kind == "stage" and entry.source and entry.cmd is not None:
+                errors.append(
+                    f"stage recipe '{name}' declares both `source` and `cmd` — pick one "
+                    "(in-process callable or subprocess command)."
+                )
 
         # Every `{from_role}` reference resolves to some recipe's `role`.
         roles = {r.role for r in self.recipes.values() if r.role is not None}

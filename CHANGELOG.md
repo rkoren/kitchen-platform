@@ -7,6 +7,7 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+<<<<<<< HEAD
 - `kitchen score` + a `scorer:` menu section (GEN-006) — register a project's scoring callable
   (any `{name: value}`-returning function, taking `(params, store)` or no args) as the metric
   source, so `thresholds`/`leaderboard`/`promote` ride on the real domain score **without** the
@@ -19,6 +20,15 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   contract (a mlflow-free venv can append directly); `kitchen log` stamps id/timestamp/git-sha and
   takes a file lock so concurrent sweep writers serialize instead of corrupting the store. MLflow
   stays the default rich backend.
+- Command / subprocess stages + per-stage environments (GEN-002/003). A `kind: stage` recipe can
+  declare a `cmd:` (a subprocess argv — a list used verbatim, or a shlex-split string, no shell)
+  instead of an in-process `source:` callable, with an optional `python:` interpreter (the stage's
+  own venv — `cmd:` is then the args to it) and declared `inputs:`/`outputs:` (inputs checked
+  before, missing outputs warn after). `kitchen menu run` runs command stages in the pipeline;
+  `kitchen stage <name>` runs one in isolation (`--dry-run` previews the argv, `-C` runs from a
+  dir). Metrics are the stage's job (`kitchen log` / `metrics.json`). Fits inference-only /
+  non-tabular / separate-interpreter pipelines without the `FeatureBuilder`/`Trainer`/`Evaluator`
+  ABCs.
 
 ## [1.0.2] - 2026-07-07
 

@@ -252,6 +252,41 @@ The default `sqlite:///mlruns.db` is **per-run** in CI: the registry starts empt
 
 **Validate it:** deploy the throwaway `recipes/examples/mlflow-backend-validation.yaml` (tiny instance, `deletion_protection: false` for clean teardown), point `MLFLOW_TRACKING_URI` at it, and run `examples/validate_persistent_backend.py` **twice** — run 2 finding run 1's champion confirms the backend persists champions across runs. Then `recipes destroy`.
 
+### `recipes:` — stages, including command stages
+
+A `pipeline:` step runs a `recipes:` entry. A `kind: stage` recipe is either an **in-process**
+Python callable (`source:`, the tabular default — `kitchen run <stage>` imports and calls it) or a
+**command stage** (`cmd:`) that runs as a subprocess. Command stages fit pipelines that aren't
+single-table supervised — inference-only, non-Python, or needing a different interpreter.
+
+```yaml
+pipeline: [detect, track]
+recipes:
+  detect:
+    kind: stage
+    cmd: ["./scripts/detect.sh", "--fast"]   # a list is the argv, used verbatim (no shell)
+
+  track:
+    kind: stage
+    python: .venv-track/bin/python           # per-stage interpreter (GEN-003)
+    cmd: -m pipeline.run --thresh 0.5        # when `python:` is set, `cmd:` is the ARGS to it
+    inputs: [data/frames]                    # must exist before the stage runs (fail fast)
+    outputs: [tracks.parquet]                # a missing declared output warns after
+```
+
+- **`cmd`** — a list (the argv, used verbatim) or a string (`shlex`-split, **no shell**; wrap
+  pipes/globs in a `.sh` and call that). A stage declares **either** `source` **or** `cmd`.
+- **`python`** — an interpreter path; when set, `cmd` is the *args* passed to it (so
+  `python: .venv/bin/python`, `cmd: -m pipeline.run`). Omit it to run any other program directly.
+- **`inputs` / `outputs`** — declared paths (relative to the project dir); inputs are checked to
+  exist before running, a missing output warns after.
+
+A command stage inherits the process environment and working directory. **Metrics are the stage's
+job** — call `kitchen log` (framework-agnostic tracking) or write `metrics.json` from inside it to
+feed `leaderboard`/`thresholds`. Run one stage in isolation with `kitchen stage <name>` (add
+`--dry-run` to preview the exact argv, or `-C <dir>` to run from elsewhere); `kitchen menu run`
+runs the whole pipeline.
+
 ### What belongs in `menu.yaml`
 
 - Data source and file names
