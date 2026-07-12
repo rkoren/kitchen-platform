@@ -1910,7 +1910,9 @@ def score(
         run_id = active_run.info.run_id
 
     # Write metrics.json (+ run_id) so `thresholds`/`kitchen report`/`kitchen push` read them.
-    metrics_path = Path(cfg.metrics_file or "metrics.json")
+    # KITCHEN_METRICS_FILE lets an orchestrator (e.g. `kitchen sweep --run`) point each run's
+    # metrics at a per-combo path, so the sweep reads the right file with no cwd race (GEN-004).
+    metrics_path = Path(os.environ.get("KITCHEN_METRICS_FILE") or cfg.metrics_file or "metrics.json")
     payload = dict(metrics)
     payload["run_id"] = run_id
     metrics_path.write_text(_json.dumps(payload, indent=2) + "\n", encoding="utf-8")

@@ -514,6 +514,164 @@ def run_train(
         )
 
 
+def _generic_sweep(
+    *,
+    param: list[str],
+    run_template: str,
+    metric: str,
+    lower_is_better: bool,
+    store: str | None,
+    metrics_file_tmpl: str,
+    max_combos: int,
+    dry_run: bool = False,
+) -> None:
+    """Run an arbitrary command per param combination, collect a metric, rank (GEN-004).
+
+    Each combo runs ``run_template`` with ``{key}`` placeholders substituted from the grid, its
+    metrics read from a per-combo file (``KITCHEN_METRICS_FILE`` points the child there — no cwd
+    race), and a record logged to the run store (GEN-001). This is the generic complement to the
+    train-loop sweep: no MLflow, no ABCs — the fit for command/inference pipelines.
+    """
+    import itertools
+    import json
+    import shlex
+    import string
+    import subprocess
+
+    from kitchen.runstore import log_run, make_record, new_run_id
+
+    # Parse each --param key=v1,v2,... into a grid, coercing values so numerics sort numerically.
+    grid: dict[str, list] = {}
+    for item in param:
+        if "=" not in item:
+            typer.echo(f"error: --param {item!r} must be key=v1,v2,...", err=True)
+            raise typer.Exit(1)
+        key, _, raw = item.partition("=")
+        values = [_coerce_override_value(v.strip()) for v in raw.split(",") if v.strip()]
+        if not values:
+            typer.echo(f"error: --param {item!r} has no values", err=True)
+            raise typer.Exit(1)
+        grid[key.strip()] = values
+    keys = list(grid)
+    combos = [dict(zip(keys, vals)) for vals in itertools.product(*(grid[k] for k in keys))]
+    if len(combos) > max_combos:
+        typer.echo(
+            f"error: sweep would launch {len(combos)} runs (limit {max_combos}); "
+            "narrow the grid or raise --max-combos.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Lint the template up front: every {placeholder} must be a --param key (fail before combo 1).
+    template_tokens = shlex.split(run_template)
+    placeholders = {
+        field
+        for tok in template_tokens
+        for _, field, _, _ in string.Formatter().parse(tok)
+        if field
+    }
+    unknown = placeholders - set(keys)
+    if unknown:
+        typer.echo(
+            f"error: --run references {{{', '.join(sorted(unknown))}}} not in --param "
+            f"(params: {', '.join(keys) or 'none'})",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    store_path = store or "sweep.jsonl"
+    direction = "lower=better" if lower_is_better else "higher=better"
+
+    if dry_run:
+        typer.echo(
+            f"\nSweep (dry run): {len(combos)} combos over {', '.join(keys)}  |  "
+            f"metric={metric} ({direction})\n"
+        )
+        for i, combo in enumerate(combos):
+            argv = [tok.format(**combo) for tok in template_tokens]
+            typer.echo(f"[{i + 1}/{len(combos)}] {shlex.join(argv)}")
+        return
+
+    typer.echo(
+        f"\nSweep: {len(combos)} runs over {', '.join(keys)}  |  metric={metric} ({direction})\n"
+    )
+
+    results: list[tuple[dict, dict]] = []  # (combo, metrics)
+    for i, combo in enumerate(combos):
+        combo_str = ", ".join(f"{k}={v}" for k, v in combo.items())
+        typer.echo(f"[{i + 1}/{len(combos)}] {combo_str}")
+        combo_id = new_run_id()
+        metrics_path = Path(metrics_file_tmpl.format(combo_id=combo_id)).resolve()
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        argv = [tok.format(**combo) for tok in template_tokens]
+        env = {**os.environ, "KITCHEN_METRICS_FILE": str(metrics_path)}
+        try:
+            subprocess.run(argv, check=True, env=env)
+        except FileNotFoundError as exc:
+            # A missing program is a setup problem for every combo — always abort.
+            typer.echo(f"error: cannot run {argv[0]!r}: {exc}", err=True)
+            raise typer.Exit(1)
+        except subprocess.CalledProcessError as exc:
+            if i == 0:
+                typer.echo(
+                    f"error: first sweep run failed (exit {exc.returncode}) — aborting", err=True
+                )
+                raise typer.Exit(1)
+            typer.echo(f"  ! combo failed (exit {exc.returncode}), skipping", err=True)
+            log_run(store_path, make_record(combo_id, params={k: str(v) for k, v in combo.items()}))
+            results.append((combo, {}))
+            continue
+
+        metrics: dict[str, float] = {}
+        if metrics_path.exists():
+            try:
+                raw_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+                metrics = {
+                    k: float(v)
+                    for k, v in raw_metrics.items()
+                    if isinstance(v, (int, float)) and not isinstance(v, bool)
+                }
+            except (json.JSONDecodeError, OSError, AttributeError) as exc:
+                typer.echo(f"  ! could not read metrics from {metrics_path}: {exc}", err=True)
+        if metric not in metrics:
+            typer.echo(
+                f"  ! combo produced no {metric!r} metric "
+                "(the command must write it to $KITCHEN_METRICS_FILE)",
+                err=True,
+            )
+        # Record every combo (even metric-less ones) so `sweep.jsonl` shows the full run history.
+        log_run(
+            store_path,
+            make_record(combo_id, params={k: str(v) for k, v in combo.items()}, metrics=metrics),
+        )
+        results.append((combo, metrics))
+
+    scored = [(c, m[metric]) for c, m in results if metric in m]
+    if not scored:
+        typer.echo(
+            f"\nNo combo produced metric {metric!r} — nothing to rank. Store: {store_path}",
+            err=True,
+        )
+        raise typer.Exit(1)
+    scored.sort(key=lambda row: row[1], reverse=not lower_is_better)
+
+    typer.echo(f"\nSweep results ({metric}, {direction}):")
+    for j, (combo, value) in enumerate(scored):
+        marker = "★" if j == 0 else " "
+        combo_str = ", ".join(f"{k}={v}" for k, v in combo.items())
+        typer.echo(f"  {marker} {value:>12.6f}  {combo_str}")
+    for combo, metrics in results:  # surface metric-less combos rather than dropping them
+        if metric not in metrics:
+            combo_str = ", ".join(f"{k}={v}" for k, v in combo.items())
+            typer.echo(f"    {'—':>12}  {combo_str}")
+
+    best_combo, best_value = scored[0]
+    best_str = ", ".join(f"{k}={v}" for k, v in best_combo.items())
+    typer.echo(f"\nBest: {metric}={best_value:.6f}  ({best_str})")
+    higher_flag = "" if lower_is_better else " --higher-is-better"
+    typer.echo(f"Full store: kitchen leaderboard --store {store_path} --metric {metric}{higher_flag}")
+
+
 def run_sweep(
     params_file: Annotated[
         str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
@@ -542,6 +700,41 @@ def run_sweep(
         int,
         typer.Option("--max-combos", help="Refuse to launch a sweep larger than this"),
     ] = 50,
+    run: Annotated[
+        str | None,
+        typer.Option(
+            "--run",
+            help="Generic sweep: run this command per combo instead of `kitchen run train`, with "
+            "{key} placeholders from --param. e.g. --run 'python x.py --a {a}'",
+        ),
+    ] = None,
+    param: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--param",
+            help="Grid for a --run sweep: key=v1,v2,... (repeatable; Cartesian product).",
+        ),
+    ] = None,
+    store: Annotated[
+        str | None,
+        typer.Option("--store", help="Run store for a --run sweep (default: sweep.jsonl)"),
+    ] = None,
+    metrics_file: Annotated[
+        str,
+        typer.Option(
+            "--metrics-file",
+            help="Per-combo metrics file for a --run sweep ({combo_id} is substituted); "
+            "the command writes its metric JSON here via $KITCHEN_METRICS_FILE.",
+        ),
+    ] = "sweep-runs/{combo_id}/metrics.json",
+    project: Annotated[
+        str | None,
+        typer.Option("--project", "-C", metavar="DIR", help="Run from this project directory."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="For a --run sweep: print the combos + argvs without running"),
+    ] = False,
 ) -> None:
     """Run a hyperparameter sweep: train one run per param combination, rank, report.
 
@@ -559,6 +752,35 @@ def run_sweep(
     import itertools
     import sys
     import uuid
+
+    # GEN-004: generic mode — run an arbitrary command per combo and rank via the run store,
+    # instead of `kitchen run train` + MLflow. `--run` and `--override` are mutually exclusive.
+    if run is not None:
+        if override:
+            typer.echo(
+                "error: --run (generic sweep) and --override (train sweep) are mutually exclusive.",
+                err=True,
+            )
+            raise typer.Exit(1)
+        if not param:
+            typer.echo("error: --run needs at least one --param key=v1,v2,...", err=True)
+            raise typer.Exit(1)
+        if metric is None:
+            typer.echo("error: --metric is required with --run.", err=True)
+            raise typer.Exit(1)
+        if project:
+            os.chdir(project)
+        _generic_sweep(
+            param=param,
+            run_template=run,
+            metric=metric,
+            lower_is_better=lower_is_better,
+            store=store,
+            metrics_file_tmpl=metrics_file,
+            max_combos=max_combos,
+            dry_run=dry_run,
+        )
+        return
 
     params_file = _resolve_params_path(params_file)
 

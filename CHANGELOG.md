@@ -7,7 +7,12 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-<<<<<<< HEAD
+- Generic command sweeps — `kitchen sweep --run "<cmd with {a} {b}>" --param a=… --param b=… --metric <m>`
+  (GEN-004). Sweeps a param grid over an arbitrary command (not just the train loop), pointing each
+  combo at a per-combo metrics file via `KITCHEN_METRICS_FILE`, logging every combo to the run store
+  (GEN-001), and ranking them. Composes with `kitchen leaderboard --store`. `kitchen score` and other
+  metric writers honor `KITCHEN_METRICS_FILE`. The train-loop sweep (`--override`, MLflow-ranked)
+  stays the default.
 - `kitchen score` + a `scorer:` menu section (GEN-006) — register a project's scoring callable
   (any `{name: value}`-returning function, taking `(params, store)` or no args) as the metric
   source, so `thresholds`/`leaderboard`/`promote` ride on the real domain score **without** the
