@@ -101,3 +101,42 @@ mlflow.sklearn.load_model("models:/my-competition-model@champion")
 ```
 
 Promotion uses the `champion` alias rather than deprecated MLflow stages.
+
+## Tracking a custom score without the Trainer/Evaluator ABCs
+
+When a project's real metric comes from its own code or an external library — an
+inference-only, non-tabular, or otherwise ABC-averse pipeline — register a **scorer**: any
+callable returning a flat `{name: value}` dict. `kitchen score` runs it, logs the metrics to a
+new MLflow run (so `leaderboard`/`promote` rank on them — promotion works on any logged metric,
+see [Promoting on any metric](#promoting-on-any-metric--including-the-holdout-and-its-segments))
+and writes `metrics.json` (so `thresholds`/`kitchen report` read them). No `FeatureBuilder`/
+`Trainer`/`Evaluator` required.
+
+```yaml
+# menu.yaml
+scorer:
+  source: src/score/run.py     # a path (or a dotted module); same rule as a stage's `source`
+  function: score              # defaults to "score"
+thresholds:
+  track_score: 0.5             # leaderboard/report ride on the scorer's metric
+```
+
+```python
+# src/score/run.py — takes (params, store) or no arguments; returns scalar metrics
+def score(params, store):
+    return {"track_score": 0.842, "n_tracks": 1200}
+```
+
+```bash
+kitchen score                  # → logs a run + writes metrics.json
+kitchen leaderboard            # ranks runs by track_score (direction from thresholds)
+kitchen score -C path/to/proj  # run from elsewhere, like `git -C`
+```
+
+`score` is also a `menu.yaml` pipeline verb, so `pipeline: [score]` runs it under
+`kitchen menu run` alongside `provision`/`monitor` and your stage recipes.
+
+Each `kitchen score` opens a **distinct** MLflow run — so a project that *also* trains gets a
+separate leaderboard row per score (attaching a score to an existing run is a future
+tracking-store concern, not this command's job). Metric values must be numeric scalars; a
+non-numeric value is rejected (naming the key) before any run is opened.

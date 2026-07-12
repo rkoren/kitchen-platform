@@ -6,6 +6,14 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `kitchen score` + a `scorer:` menu section (GEN-006) — register a project's scoring callable
+  (any `{name: value}`-returning function, taking `(params, store)` or no args) as the metric
+  source, so `thresholds`/`leaderboard`/`promote` ride on the real domain score **without** the
+  `Trainer`/`Evaluator` ABCs. Fits inference-only / non-tabular pipelines. Logs a distinct MLflow
+  run + writes `metrics.json`; non-scalar returns are rejected before a run is opened. `score` is
+  also a `menu.yaml` pipeline verb (`pipeline: [score]`).
+
 ## [1.0.2] - 2026-07-07
 
 ### Changed

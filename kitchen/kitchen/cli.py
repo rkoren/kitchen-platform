@@ -1689,6 +1689,140 @@ def submit(
             typer.echo("Score not yet available — check the Kaggle leaderboard.")
 
 
+@app.command()
+def score(
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
+    ] = "params.yaml",
+    run_name: Annotated[
+        str | None, typer.Option("--run-name", help="MLflow run name (default: menu run_name)")
+    ] = None,
+    project: Annotated[
+        str | None,
+        typer.Option(
+            "--project",
+            "-C",
+            metavar="DIR",
+            help="Run from this project directory (like `git -C`). Default: the current directory.",
+        ),
+    ] = None,
+) -> None:
+    """Run the project's registered `scorer:` and log its metrics as the run's metric source (GEN-006).
+
+    For projects whose real score comes from their own code (or an external library) rather than
+    the `Trainer`/`Evaluator` ABCs. Imports the `scorer:` callable, calls it for a `{name: value}`
+    dict, logs those to a new MLflow run (so `leaderboard`/`promote` rank on them) and writes
+    `metrics.json` (so `thresholds`/`kitchen report` read them). This is a *distinct* run from any
+    `train` run — a project that also trains gets a separate leaderboard row.
+    """
+    import inspect
+    import json as _json
+    import sys
+
+    if project:
+        os.chdir(project)
+
+    # Make the project's `src/` importable so a `source: src/score/run.py` scorer resolves.
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    params_file = resolve_params_path(params_file)
+    path = Path(params_file)
+    if not path.exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+
+    from kitchen.config import KitchenConfig
+    from kitchen.menu import load_params, load_scorer_callable
+    from kitchen.store import DataStore
+    from kitchen.tracking import Tracker, configure_from_env
+
+    try:
+        cfg = KitchenConfig.from_yaml(str(path))
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    if cfg.scorer is None:
+        typer.echo(
+            "error: no 'scorer:' configured — add a scorer section naming the source + function\n"
+            "  scorer:\n    source: src/score/run.py\n    function: score",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        scorer = load_scorer_callable(cfg.scorer)
+    except (ModuleNotFoundError, ImportError) as exc:
+        typer.echo(
+            f"error: could not load scorer {cfg.scorer.function!r} from {cfg.scorer.source!r}: {exc}\n"
+            "  (run from the project root so the module is importable)",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    params = load_params(str(path))
+    store = DataStore()
+
+    # Call with (params, store) or no args — a self-contained pipeline resolves its own inputs.
+    n_args = len(inspect.signature(scorer).parameters)
+    try:
+        if n_args >= 2:
+            raw_metrics = scorer(params, store)
+        elif n_args == 0:
+            raw_metrics = scorer()
+        else:
+            typer.echo(
+                f"error: scorer {cfg.scorer.function!r} must take (params, store) or no arguments "
+                f"(got {n_args})",
+                err=True,
+            )
+            raise typer.Exit(1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"error while scoring: {exc}", err=True)
+        raise typer.Exit(1)
+
+    if not isinstance(raw_metrics, dict) or not raw_metrics:
+        typer.echo(
+            f"error: scorer must return a non-empty dict of {{name: value}}, got {type(raw_metrics).__name__}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Coerce every value to a float up front — reject non-scalars naming the offending key, before
+    # opening the MLflow run (so a bad return never leaves a half-logged run behind).
+    metrics: dict[str, float] = {}
+    for key, value in raw_metrics.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            typer.echo(
+                f"error: scorer metric {key!r} is {type(value).__name__} ({value!r}) — "
+                "scores must be numeric scalars",
+                err=True,
+            )
+            raise typer.Exit(1)
+        metrics[key] = float(value)
+
+    configure_from_env()
+    tracker = Tracker(cfg.experiment)
+    typer.echo(f"Scoring into experiment {cfg.experiment!r} …")
+    with tracker.run(run_name=run_name or cfg.run_name, params=params) as active_run:
+        tracker.log_metrics(metrics)
+        run_id = active_run.info.run_id
+
+    # Write metrics.json (+ run_id) so `thresholds`/`kitchen report`/`kitchen push` read them.
+    metrics_path = Path(cfg.metrics_file or "metrics.json")
+    payload = dict(metrics)
+    payload["run_id"] = run_id
+    metrics_path.write_text(_json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    typer.echo(f"\nScored run {run_id[:8]} → {metrics_path}:")
+    for k, v in metrics.items():
+        typer.echo(f"  {k}: {v:.6f}")
+
+
 app.add_typer(run_app, name="run")
 app.command(name="sweep")(run_sweep)
 
