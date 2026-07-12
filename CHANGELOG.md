@@ -13,6 +13,12 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   `Trainer`/`Evaluator` ABCs. Fits inference-only / non-tabular pipelines. Logs a distinct MLflow
   run + writes `metrics.json`; non-scalar returns are rejected before a run is opened. `score` is
   also a `menu.yaml` pipeline verb (`pipeline: [score]`).
+- `kitchen log` + `kitchen leaderboard --store <path>` (GEN-001) — framework-agnostic run tracking.
+  Log `{params → metrics}` to a dependency-light local JSON Lines store from **any** process, env,
+  or venv (no MLflow, no `Trainer` ABC), then rank the runs. The JSONL line format is the cross-env
+  contract (a mlflow-free venv can append directly); `kitchen log` stamps id/timestamp/git-sha and
+  takes a file lock so concurrent sweep writers serialize instead of corrupting the store. MLflow
+  stays the default rich backend.
 
 ## [1.0.2] - 2026-07-07
 

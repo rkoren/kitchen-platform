@@ -923,6 +923,90 @@ def _fmt_metric(value: float | None) -> str:
     return "-" if value is None else f"{value:.4f}"
 
 
+def _iso_ago(timestamp: str) -> str:
+    """Format an ISO-8601 timestamp as a relative age (reusing :func:`_time_ago`)."""
+    from datetime import datetime
+
+    if not timestamp:
+        return "-"
+    try:
+        dt = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return timestamp
+    return _time_ago(int(dt.timestamp() * 1000))
+
+
+def _leaderboard_from_store(
+    store_path: str,
+    metric: str | None,
+    higher_is_better: bool,
+    limit: int,
+    show_params: str | None,
+) -> None:
+    """Rank runs from a framework-agnostic JSONL store (GEN-001) — no MLflow.
+
+    The generic view for the generic record: rank + run id + metric columns + optional param
+    columns + age. Model-registry concepts (champion, holdout) don't apply to a plain store.
+    """
+    from kitchen.runstore import read_runs
+
+    try:
+        records = read_runs(store_path)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    if not records:
+        typer.echo(f"No runs in store {store_path!r} (does it exist yet?).")
+        return
+
+    all_metrics = sorted({k for r in records for k in r.metrics})
+    if metric is None:
+        typer.echo(
+            "error: --metric is required with --store.\n"
+            f"  Metrics present in the store: {', '.join(all_metrics) or '(none)'}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    ranked = [r for r in records if metric in r.metrics]
+    if not ranked:
+        typer.echo(
+            f"No runs with metric {metric!r} in {store_path!r}."
+            f"  Present: {', '.join(all_metrics) or '(none)'}."
+        )
+        return
+    ranked.sort(key=lambda r: r.metrics[metric], reverse=higher_is_better)
+    ranked = ranked[:limit]
+
+    param_keys = [p.strip() for p in show_params.split(",") if p.strip()] if show_params else []
+    metric_cols = [metric, *[m for m in all_metrics if m != metric]]
+    metric_widths = [max(len(m), 8) for m in metric_cols]
+    param_widths = [
+        max(len(k), max((len(r.params.get(k, "-")) for r in ranked), default=0), 6)
+        for k in param_keys
+    ]
+    id_w = 12
+
+    direction = "higher=better" if higher_is_better else "lower=better"
+    typer.echo(f"\nStore: {store_path}  |  {metric} ({direction})\n")
+    metric_header = "".join(f"  {m:>{w}}" for m, w in zip(metric_cols, metric_widths))
+    param_header = "".join(f"  {k:>{w}}" for k, w in zip(param_keys, param_widths))
+    header = f"{'#':<4}  {'RUN ID':<{id_w}}{metric_header}{param_header}  STARTED"
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    for i, record in enumerate(ranked):
+        rank = "★" if i == 0 else str(i + 1)
+        metric_vals = "".join(
+            f"  {_fmt_metric(record.metrics.get(m)):>{w}}"
+            for m, w in zip(metric_cols, metric_widths)
+        )
+        param_vals = "".join(
+            f"  {record.params.get(k, '-'):>{w}}" for k, w in zip(param_keys, param_widths)
+        )
+        typer.echo(f"{rank:<4}  {record.id:<{id_w}}{metric_vals}{param_vals}  {_iso_ago(record.timestamp)}")
+    typer.echo()
+
+
 def _warn_metric_collisions(collisions: dict[str, list[float]], run_id: str) -> None:
     """Print a loud stderr warning for metric-name collisions within a run (CBB-019).
 
@@ -1072,6 +1156,13 @@ def leaderboard(
     params_file: Annotated[
         str, typer.Option("--params", help="menu.yaml (or legacy params.yaml) to read experiment from")
     ] = "params.yaml",
+    store: Annotated[
+        str | None,
+        typer.Option(
+            "--store",
+            help="Rank a framework-agnostic JSONL run store (from `kitchen log`) instead of MLflow",
+        ),
+    ] = None,
     higher_is_better: Annotated[
         bool, typer.Option("--higher-is-better", help="Rank highest first (default: lowest first)")
     ] = False,
@@ -1136,6 +1227,12 @@ def leaderboard(
             err=True,
         )
         raise typer.Exit(1)
+
+    # GEN-001: a framework-agnostic JSONL store is a distinct, MLflow-free path — the generic view
+    # for a generic record (no champion/holdout/registry concepts). Branch before any mlflow import.
+    if store is not None:
+        _leaderboard_from_store(store, metric, higher_is_better, limit, show_params)
+        return
 
     import mlflow.tracking
 
@@ -1821,6 +1918,68 @@ def score(
     typer.echo(f"\nScored run {run_id[:8]} → {metrics_path}:")
     for k, v in metrics.items():
         typer.echo(f"  {k}: {v:.6f}")
+
+
+def _parse_kv(items: list[str] | None, flag: str, *, numeric: bool = False) -> dict:
+    """Parse repeatable ``key=value`` options; coerce values to float when ``numeric``."""
+    out: dict = {}
+    for item in items or []:
+        if "=" not in item:
+            typer.echo(f"error: --{flag} {item!r} must be key=value", err=True)
+            raise typer.Exit(1)
+        key, value = item.split("=", 1)
+        if numeric:
+            try:
+                out[key] = float(value)
+            except ValueError:
+                typer.echo(f"error: --{flag} {key}={value!r} is not a number", err=True)
+                raise typer.Exit(1)
+        else:
+            out[key] = value
+    return out
+
+
+@app.command()
+def log(
+    store: Annotated[
+        str | None, typer.Option("--store", help="JSONL run store path (default: runs.jsonl)")
+    ] = None,
+    run: Annotated[
+        str | None, typer.Option("--run", help="Run id (default: a generated one)")
+    ] = None,
+    param: Annotated[
+        list[str] | None, typer.Option("--param", help="Param key=value (repeatable)")
+    ] = None,
+    metric: Annotated[
+        list[str] | None,
+        typer.Option("--metric", help="Metric key=value; value must be a number (repeatable)"),
+    ] = None,
+    tag: Annotated[
+        list[str] | None, typer.Option("--tag", help="Tag key=value (repeatable)")
+    ] = None,
+) -> None:
+    """Append a run record (params, metrics, tags) to a local run store (GEN-001).
+
+    Framework-agnostic tracking callable from any process/env — no MLflow, no `Trainer` ABC. Read
+    it back with `kitchen leaderboard --store <path>`. The store is JSON Lines; a separate venv
+    without kitchen can append a record directly. Concurrent `kitchen log` writers serialize on a
+    file lock, so a parallel sweep won't corrupt the store.
+    """
+    from kitchen.runstore import DEFAULT_STORE, log_run, make_record
+
+    params = _parse_kv(param, "param")
+    metrics = _parse_kv(metric, "metric", numeric=True)
+    tags = _parse_kv(tag, "tag")
+    if not params and not metrics:
+        typer.echo("error: nothing to log — pass at least one --param or --metric", err=True)
+        raise typer.Exit(1)
+
+    store_path = store or DEFAULT_STORE
+    record = make_record(run, params=params, metrics=metrics, tags=tags)
+    log_run(store_path, record)
+    typer.echo(f"logged run {record.id} → {store_path}")
+    for key, value in record.metrics.items():
+        typer.echo(f"  {key}: {value:.6f}")
 
 
 app.add_typer(run_app, name="run")
