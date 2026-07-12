@@ -47,6 +47,51 @@ with tracker.run(run_name="baseline", params=params) as run:
     tracker.log_model(model, "model", flavour="xgboost")
 ```
 
+## Framework-agnostic run tracking (no MLflow)
+
+`kitchen log` records a run to a **local JSON Lines store** from *any* process, env, or venv — no
+MLflow, no `Trainer` ABC, no shared interpreter. It's the fit when the work happens in a separate
+environment (a CV/torch stack on an older Python, a solver venv) and you still want to rank and
+compare runs.
+
+```bash
+kitchen log --metric track_score=0.87 --param linker=ilp --param thresh=0.6
+kitchen log --metric track_score=0.81 --param linker=greedy --store runs.jsonl
+kitchen leaderboard --store runs.jsonl --metric track_score --higher-is-better --show-params linker,thresh
+```
+
+```
+Store: runs.jsonl  |  track_score (higher=better)
+
+#     RUN ID        track_score  linker  thresh  STARTED
+--------------------------------------------------------
+★     bdd7c0814e45       0.8700     ilp     0.6  3s ago
+2     c78ef3f93b00       0.8100  greedy     0.5  4s ago
+```
+
+**The store format is the cross-env contract.** Each line is one record — a separate venv that
+doesn't have kitchen installed can append one directly with nothing but `json`:
+
+```python
+import json
+rec = {"schema_version": 1, "id": "abc123", "params": {"linker": "ilp"},
+       "metrics": {"track_score": 0.87}, "tags": {},
+       "timestamp": "2026-07-12T00:00:00+00:00", "git_sha": None}
+open("runs.jsonl", "a").write(json.dumps(rec) + "\n")
+```
+
+Every line carries a `schema_version` (currently `1`) so future readers can evolve the format; a
+line without it is read as version 1.
+
+`kitchen log` is the convenience writer for envs that have kitchen — it stamps the id, timestamp,
+and git sha, and takes an exclusive file lock so **concurrent writers (a parallel sweep) serialize
+rather than corrupt the store**. (Importing `kitchen` still pulls the ML stack today; the JSONL
+*format* is what needs nothing but `json`.)
+
+This is the lightweight tracking backend. MLflow (above) remains the default rich backend with the
+model registry, champion aliases, and holdout columns; the store view is the generic ranking for a
+generic record.
+
 ## Model registry and promotion
 
 Models are registered and promoted via `kitchen.registry`:
