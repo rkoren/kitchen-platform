@@ -92,6 +92,36 @@ This is the lightweight tracking backend. MLflow (above) remains the default ric
 model registry, champion aliases, and holdout columns; the store view is the generic ranking for a
 generic record.
 
+### Generic sweeps over a command
+
+`kitchen sweep --run` sweeps a param grid over an **arbitrary command** (not the train loop),
+collecting each combo's metric into the run store and ranking them:
+
+```bash
+kitchen sweep \
+  --param thresh=0.4,0.5,0.6 \
+  --param linker=greedy,ilp \
+  --run "python -m pipeline.run --thresh {thresh} --linker {linker}" \
+  --metric track_score --higher-is-better
+```
+
+Each combo runs the command with its `{key}` placeholders substituted (the grid is the Cartesian
+product; values are type-coerced so numerics sort numerically). The sweep points the command at a
+per-combo metrics file via the **`KITCHEN_METRICS_FILE`** environment variable — the command writes
+its metric JSON there (kitchen commands like `kitchen score` do this automatically; a custom command
+does `json.dump({"track_score": x}, open(os.environ["KITCHEN_METRICS_FILE"], "w"))`). No cwd race,
+no clobbering between combos.
+
+Every combo is logged to the store (default `sweep.jsonl`), and the sweep prints a ranked summary
+plus a `kitchen leaderboard --store …` command for the full view. The summary ranks *this*
+invocation's combos; the store may accumulate across runs (each sweep appends), and
+`kitchen leaderboard --store` reads all of it. Use `--dry-run` to print the combos and resolved
+commands without running anything. A first-combo failure aborts (a
+setup problem); a later failure is reported and the sweep continues. Unknown `{placeholders}` in the
+command are caught before combo 1. This is the generic complement to the train-loop sweep
+(`kitchen sweep --override …`, which ranks via MLflow) — no ABCs, no MLflow, the fit for
+command / inference pipelines.
+
 ## Model registry and promotion
 
 Models are registered and promoted via `kitchen.registry`:

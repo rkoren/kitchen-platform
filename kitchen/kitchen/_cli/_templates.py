@@ -107,6 +107,9 @@ dist/
 # outputs
 metrics.json
 submissions/
+runs.jsonl
+sweep.jsonl
+sweep-runs/
 
 # infra (generated)
 infra/tf/

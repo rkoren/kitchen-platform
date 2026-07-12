@@ -10,5 +10,8 @@ mlartifacts/
 metrics.json
 calibration.json
 submissions/
+sweep.jsonl
+sweep-runs/
+runs.jsonl
 data/processed/*
 !data/processed/.gitkeep
