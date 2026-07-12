@@ -71,6 +71,10 @@ def run_pipeline(
             echo("→ monitor: kitchen run monitor")
             if not dry_run:
                 run(["kitchen", "run", "monitor", "--params", menu_path])
+        elif step == "score":
+            echo("→ score: kitchen score")
+            if not dry_run:
+                run(["kitchen", "score", "--params", menu_path])
         elif step in menu.recipes:
             entry = menu.recipes[step]
             if entry.kind == "stage":

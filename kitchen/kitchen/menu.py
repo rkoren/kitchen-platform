@@ -27,6 +27,7 @@ from kitchen.config import (
     HoldoutSpec,
     ModelSpec,
     MonitorConfig,
+    ScorerConfig,
     SecretSpec,
     SubmissionConfig,
     ThresholdSpec,
@@ -48,7 +49,7 @@ INFRA_KINDS: tuple[str, ...] = tuple(
 # Pipeline steps that are platform actions rather than references into ``recipes``:
 #   provision — apply the infra recipes (recipes/Terraform resolves their internal order)
 #   monitor   — run the drift-monitoring step
-PLATFORM_VERBS: frozenset[str] = frozenset({"provision", "monitor"})
+PLATFORM_VERBS: frozenset[str] = frozenset({"provision", "monitor", "score"})
 
 
 class NetworkSpec(BaseModel):
@@ -161,6 +162,7 @@ class Menu(BaseModel):
     secrets: dict[str, SecretSpec] = Field(default_factory=dict)
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
     holdout: HoldoutSpec | None = None  # CBB-017: frozen-holdout generalization metric
+    scorer: ScorerConfig | None = None  # GEN-006: project scoring callable as the metric source
     feature_schema: FeatureSchemaSpec | None = None  # KG-014: processed-feature schema contract
     models: dict[str, ModelSpec] = Field(default_factory=dict)  # CBB-020: multi-model map
     metrics_file: str = "metrics.json"
@@ -301,6 +303,7 @@ class Menu(BaseModel):
             secrets=self.secrets,
             thresholds=self.thresholds,
             holdout=self.holdout,
+            scorer=self.scorer,
             feature_schema=self.feature_schema,
             models=self.models,
             metrics_file=self.metrics_file,
@@ -446,6 +449,22 @@ def load_stage_callable(stage: str, func: str, params: dict[str, Any]):
         return getattr(module, func)
     except AttributeError as exc:
         raise ImportError(f"cannot import name {func!r} from {module_name!r}") from exc
+
+
+def load_scorer_callable(scorer: ScorerConfig):
+    """Import a scorer's ``function`` from its ``source`` (GEN-006).
+
+    ``scorer.source`` follows the same rule as a stage's ``source`` — a path (``src/score/run.py``)
+    or a dotted module (``src.score.run``). Missing module → ``ModuleNotFoundError``; missing
+    attribute → ``ImportError`` (mirroring :func:`load_stage_callable`).
+    """
+    stem = scorer.source[:-3] if scorer.source.endswith(".py") else scorer.source
+    module_name = stem.strip("/").replace("/", ".")
+    module = __import__(module_name, fromlist=[scorer.function])
+    try:
+        return getattr(module, scorer.function)
+    except AttributeError as exc:
+        raise ImportError(f"cannot import name {scorer.function!r} from {module_name!r}") from exc
 
 
 class VariantNotFound(KeyError):

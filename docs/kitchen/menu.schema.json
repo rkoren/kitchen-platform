@@ -551,6 +551,26 @@
       "title": "RoleRef",
       "type": "object"
     },
+    "ScorerConfig": {
+      "additionalProperties": false,
+      "description": "``scorer:`` section \u2014 register a project scoring callable as the metric source (GEN-006).\n\nLets a project whose real score comes from its own code (or an external library) feed\n``thresholds`` / ``leaderboard`` / ``promote`` **without** the ``Trainer``/``Evaluator`` ABCs \u2014\nthe fit for inference-only or non-tabular pipelines. ``kitchen score`` imports ``function``\nfrom ``source`` and calls it to get a flat ``{name: value}`` dict of scalar metrics, logs them\nto an MLflow run (so ``leaderboard``/``promote`` rank on them, like any logged metric) and\nwrites ``metrics.json`` (so ``thresholds``/``kitchen report`` read them).\n\nThe callable takes either ``(params, store)`` (like ``FeatureBuilder.build``) or no arguments\n\u2014 a truly self-contained pipeline that resolves its own inputs \u2014 and returns\n``dict[str, float]``. ``source`` follows the same rule as a stage's ``source`` (a path like\n``src/score/run.py`` or a dotted module); ``function`` defaults to ``score``.",
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "function": {
+          "default": "score",
+          "title": "Function",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "ScorerConfig",
+      "type": "object"
+    },
     "SecretSpec": {
       "additionalProperties": true,
       "description": "One entry in the ``secrets:`` manifest \u2014 declares where a secret resolves from.\n\nPick one source (or none, for env-only):\n  - **SM JSON bundle:** ``aws_secret`` (bundle name/ARN) + ``key`` (field within the JSON)\n  - **SSM Parameter Store:** ``ssm`` (parameter path)\n  - **omit both:** the secret must come from the environment / ``.env``\n\n``required`` (default True) gates ``kitchen check``. This manifest is the single\ndeclarative source of truth the resolver (SECR-002) reads; it supersedes the deprecated\n``check.required_env`` list.",
@@ -843,6 +863,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/HoldoutSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "scorer": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ScorerConfig"
         },
         {
           "type": "null"

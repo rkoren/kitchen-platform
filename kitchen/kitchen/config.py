@@ -140,6 +140,28 @@ class SubmissionConfig(BaseModel):
     sample_submission: str = "sample_submission.csv"
 
 
+class ScorerConfig(BaseModel):
+    """``scorer:`` section — register a project scoring callable as the metric source (GEN-006).
+
+    Lets a project whose real score comes from its own code (or an external library) feed
+    ``thresholds`` / ``leaderboard`` / ``promote`` **without** the ``Trainer``/``Evaluator`` ABCs —
+    the fit for inference-only or non-tabular pipelines. ``kitchen score`` imports ``function``
+    from ``source`` and calls it to get a flat ``{name: value}`` dict of scalar metrics, logs them
+    to an MLflow run (so ``leaderboard``/``promote`` rank on them, like any logged metric) and
+    writes ``metrics.json`` (so ``thresholds``/``kitchen report`` read them).
+
+    The callable takes either ``(params, store)`` (like ``FeatureBuilder.build``) or no arguments
+    — a truly self-contained pipeline that resolves its own inputs — and returns
+    ``dict[str, float]``. ``source`` follows the same rule as a stage's ``source`` (a path like
+    ``src/score/run.py`` or a dotted module); ``function`` defaults to ``score``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    function: str = "score"
+
+
 class ThresholdSpec(BaseModel):
     """Explicit min/max threshold for a single metric.
 
@@ -415,6 +437,7 @@ class KitchenConfig(BaseModel):
     metrics_file: str = "metrics.json"
     thresholds: dict[str, float | ThresholdSpec] = Field(default_factory=dict)
     holdout: HoldoutSpec | None = None
+    scorer: ScorerConfig | None = None
     feature_schema: FeatureSchemaSpec | None = None
     models: dict[str, ModelSpec] = Field(default_factory=dict)
 
