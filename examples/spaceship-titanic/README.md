@@ -68,7 +68,8 @@ competition's `test.csv` into a submission CSV and validates it — the same `va
 check `kitchen submit` runs before uploading:
 
 ```bash
-python examples/spaceship-titanic/flows/generate_submission.py
+cd examples/spaceship-titanic
+python flows/generate_submission.py   # run from the project directory
 ```
 
 It writes `submissions/submission.csv` (`PassengerId,Transported`) and validates it against
@@ -83,6 +84,19 @@ kitchen submit --file submissions/submission.csv --wait     # also poll for the 
 ```
 
 `submission:` in `menu.yaml` supplies the competition slug, ID/target columns, and message.
+
+**Code-competition variant.** For competitions that require a *notebook* submission,
+`kitchen submit --notebook` wraps `flows/generate_submission.py` into a runnable `submission.ipynb`
+(a header + the generator + a validation cell); `--execute` smoke-tests it locally:
+
+```bash
+kitchen submit --notebook --execute   # → submission.ipynb, run + validated locally
+```
+
+`generate_submission.py` is written notebook-safe (its `generate()` imports project modules itself
+and uses cwd-relative paths; the `__file__`/`sys.path` bootstrap lives in `if __name__ == "__main__"`,
+excluded from the notebook). Bundling offline dependencies for an internet-off competition is a
+separate step.
 
 `generate_submission.py` shares one `_engineer()` with `src/features/run.py`, so training and
 inference apply identical feature engineering (the surest guard against train/serve skew). One

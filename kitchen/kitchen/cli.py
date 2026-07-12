@@ -1649,6 +1649,74 @@ def _write_kaggle_score(score: float, metrics_file: str = "metrics.json") -> Non
         pass
 
 
+def _submit_notebook(params_file: str, from_script: str, call: str, out: str, execute: bool) -> None:
+    """`kitchen submit --notebook`: wrap a submission script into a runnable notebook (GEN-005a)."""
+    import subprocess
+    import sys as _sys
+
+    from kitchen.config import KitchenConfig, resolve_params_path
+    from kitchen.notebook import NotebookSafetyError, build_submission_notebook, notebook_code
+
+    src_path = Path(from_script)
+    if not src_path.exists():
+        typer.echo(
+            f"error: submission script not found: {from_script} (pass --from <path>)", err=True
+        )
+        raise typer.Exit(1)
+
+    try:
+        cfg = KitchenConfig.from_yaml(resolve_params_path(params_file))
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    sub = cfg.submission
+    id_col = sub.id_col if sub else "Id"
+    target_col = sub.target_col if sub else "target"
+    competition = (sub.competition if sub else None) or (cfg.data.competition if cfg.data else None)
+    sample_name = sub.sample_submission if sub else "sample_submission.csv"
+
+    try:
+        nb = build_submission_notebook(
+            source=src_path.read_text(encoding="utf-8"),
+            call=call,
+            competition=competition,
+            id_col=id_col,
+            target_col=target_col,
+            sample_path=f"data/raw/{sample_name}",
+            submission_file="submissions/submission.csv",
+        )
+    except NotebookSafetyError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    Path(out).write_text(nb, encoding="utf-8")
+    typer.echo(f"Wrote submission notebook → {out}  (generated, not uploaded)")
+
+    if not execute:
+        typer.echo(
+            "Run with --execute to smoke-test it locally; then push it to Kaggle\n"
+            "(`kaggle kernels push`) for a code competition. Offline dependency bundling is separate."
+        )
+        return
+
+    # Smoke-test: run the code cells top-to-bottom (like Kaggle — no __main__), then the notebook's
+    # own validation cell asserts. `python -c` puts cwd on sys.path so `import src` resolves; drop
+    # KITCHEN_METRICS_FILE so a stray sweep env var doesn't redirect any metrics write.
+    env = {k: v for k, v in os.environ.items() if k != "KITCHEN_METRICS_FILE"}
+    typer.echo("Executing the notebook's cells locally …")
+    # cwd is the project dir (the caller's, after any -C chdir); `python -c` puts it on sys.path so
+    # `import src` resolves. Explicit `cwd=` documents that a later refactor mustn't change it.
+    result = subprocess.run([_sys.executable, "-c", notebook_code(nb)], env=env, cwd=os.getcwd())
+    if result.returncode != 0:
+        typer.echo(
+            f"error: notebook execution failed (exit {result.returncode}) — see the traceback above "
+            "(a nonzero exit from the validation cell means the CSV didn't pass validate_submission).",
+            err=True,
+        )
+        raise typer.Exit(result.returncode)
+    typer.echo("Notebook ran clean and validated → submissions/submission.csv")
+
+
 @app.command()
 def submit(
     params_file: Annotated[
@@ -1680,8 +1748,29 @@ def submit(
             help="Run from this project directory (like `git -C`). Default: the current directory.",
         ),
     ] = None,
+    notebook: Annotated[
+        bool,
+        typer.Option(
+            "--notebook",
+            help="GENERATE a submission notebook from --from (does not upload) — for code competitions.",
+        ),
+    ] = False,
+    from_script: Annotated[
+        str,
+        typer.Option("--from", help="Submission script to wrap into the notebook (--notebook)"),
+    ] = "flows/generate_submission.py",
+    call: Annotated[
+        str, typer.Option("--call", help="Entry function the notebook calls (--notebook)")
+    ] = "generate",
+    out: Annotated[
+        str, typer.Option("--out", help="Notebook output path (--notebook)")
+    ] = "submission.ipynb",
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="After generating, run the notebook's cells + validate (--notebook)"),
+    ] = False,
 ) -> None:
-    """Validate and upload a submission CSV to Kaggle."""
+    """Validate and upload a submission CSV to Kaggle (or, with --notebook, generate a submission notebook)."""
 
     import pandas as pd
 
@@ -1691,6 +1780,10 @@ def submit(
 
     if project:
         os.chdir(project)  # resolve the menu, submission file + sample under the project dir (DX-013)
+
+    if notebook:
+        _submit_notebook(params_file, from_script, call, out, execute)
+        return
 
     params_file = resolve_params_path(params_file)
     path = Path(params_file)

@@ -1,50 +1,48 @@
 """Generate a Kaggle submission from the champion, then validate it.
 
-This is the filled-in twin of the `flows/generate_submission.py` that `kitchen init`
-scaffolds (with the flavour/feature TODOs resolved for this competition). It:
+This is the filled-in twin of the `flows/generate_submission.py` that `kitchen init` scaffolds
+(with the flavour/feature TODOs resolved for this competition). Run `kitchen menu run` first to
+train + promote a champion, then, **from the project directory**:
 
-1. loads the champion (`models:/spaceship-titanic-model@champion`) from the local
-   MLflow registry — so run `kitchen menu run` (which trains + promotes) first;
-2. engineers `test.csv` with the *same* `_engineer()` the training features use;
-3. writes `submissions/submission.csv` (`PassengerId,Transported`);
-4. validates it against `sample_submission.csv` with the platform's own
-   `validate_submission` (the exact check `kitchen submit` runs before uploading).
+    python flows/generate_submission.py
 
-Spaceship Titanic is a Getting Started *sandbox* (unlimited submissions, no stakes),
-so the resulting file is real and submittable — `kitchen submit` uploads it under
-your own Kaggle account. Fetch the data first with `kitchen ingest`. Run from anywhere:
+It loads the champion, engineers `test.csv` with the *same* `_engineer()` training uses, writes
+`submissions/submission.csv`, and validates it against `sample_submission.csv`.
 
-    python examples/spaceship-titanic/flows/generate_submission.py
+It is **notebook-safe** (GEN-005a): the real work is in `generate()`, which imports project/heavy
+modules itself and uses paths relative to the working directory — no module-level `__file__` /
+`sys.path` / `os.chdir`. That bootstrap lives in the `if __name__ == "__main__":` block below (so
+the script still runs from any directory), and `kitchen submit --notebook` can wrap `generate()`
+into a Kaggle submission notebook.
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
-
-import pandas as pd
-import yaml
-
-# Run project-relative regardless of the caller's cwd: `src` importable, data/ + mlruns.db found.
-PROJECT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT))
-os.chdir(PROJECT)
-
-import mlflow  # noqa: E402 — after sys.path/cwd setup
-from src.features.run import FEATURES, _engineer  # noqa: E402
-
-from kitchen.registry import get_production_uri  # noqa: E402
-from kitchen.store import DataStore  # noqa: E402
-from kitchen.submit import check_feature_parity, validate_submission  # noqa: E402
 
 
 def generate(menu_file: str = "menu.yaml") -> Path:
+    """Load the champion, predict on the test set, write + validate the submission CSV.
+
+    Paths are relative to the current working directory (the project root), so this runs unchanged
+    both as a script (see ``__main__``) and inside a `kitchen submit --notebook` notebook.
+    """
+    import mlflow
+    import pandas as pd
+    import yaml
+
+    from kitchen.registry import get_production_uri
+    from kitchen.store import DataStore
+    from kitchen.submit import check_feature_parity, validate_submission
+    from src.features.run import FEATURES, _engineer
+
     params = yaml.safe_load(Path(menu_file).read_text())
     project = params["project"]
     id_col = params["submission"]["id_col"]
     target_col = params["submission"]["target_col"]
-    model_name = os.environ.get("MLFLOW_MODEL_NAME", f"{project}-model")
 
+    import os
+
+    model_name = os.environ.get("MLFLOW_MODEL_NAME", f"{project}-model")
     mlflow.set_tracking_uri(params["mlflow"]["tracking_uri"])
     store = DataStore()
 
@@ -52,8 +50,7 @@ def generate(menu_file: str = "menu.yaml") -> Path:
     uri = get_production_uri(model_name)
     if uri is None:
         raise SystemExit(
-            f"No champion found for {model_name!r}. Run `kitchen menu run "
-            f"-C {PROJECT}` first to train and promote one."
+            f"No champion found for {model_name!r}. Run `kitchen menu run` first to train + promote one."
         )
     model = mlflow.pyfunc.load_model(uri)  # flavour-agnostic → class labels for this classifier
 
@@ -67,7 +64,7 @@ def generate(menu_file: str = "menu.yaml") -> Path:
     # 3. Predict → the real competition wants True/False booleans.
     preds = pd.Series(model.predict(test_df)).astype(int).astype(bool)
     submission = pd.DataFrame({id_col: test_raw[id_col].to_numpy(), target_col: preds.to_numpy()})
-    out = PROJECT / "submissions" / "submission.csv"
+    out = Path("submissions/submission.csv")
     out.parent.mkdir(exist_ok=True)
     submission.to_csv(out, index=False)
     print(f"Wrote {len(submission)} predictions → {out}")
@@ -91,4 +88,12 @@ def generate(menu_file: str = "menu.yaml") -> Path:
 
 
 if __name__ == "__main__":
+    # Standalone convenience: make `src` importable and run project-relative regardless of the
+    # caller's cwd. (This block is excluded when `kitchen submit --notebook` wraps `generate()`.)
+    import os
+    import sys
+
+    project_root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(project_root))
+    os.chdir(project_root)
     generate()

@@ -7,6 +7,13 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `kitchen submit --notebook` (GEN-005a) — assemble a Kaggle **submission notebook** from a
+  notebook-safe submission script (default `flows/generate_submission.py`): a header, the inlined
+  source, an explicit call to its entry function, and a validation cell (`validate_submission`).
+  `--execute` runs the cells top-to-bottom (as Kaggle would) and validates the produced CSV. The
+  builder enforces the notebook-safe contract via AST (rejects module-level `__file__` /
+  `os.chdir` / `sys.path` and excludes the `__main__` block). Offline-dependency bundling for
+  internet-off code competitions is a separate follow-up (GEN-005b).
 - Generic command sweeps — `kitchen sweep --run "<cmd with {a} {b}>" --param a=… --param b=… --metric <m>`
   (GEN-004). Sweeps a param grid over an arbitrary command (not just the train loop), pointing each
   combo at a per-combo metrics file via `KITCHEN_METRICS_FILE`, logging every combo to the run store
