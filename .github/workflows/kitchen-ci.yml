@@ -19,6 +19,15 @@ on:
         type: boolean
         default: false
 
+# Serialize runs per ref so two rapid main merges don't run `terraform apply` (infra-apply /
+# lambda-deploy) concurrently and race the S3 Terraform state lock (PreconditionFailed on the lock
+# object). Keyed by github.ref, so PR runs (their own refs) still run in parallel. cancel-in-progress
+# is false so a running deploy is never killed mid-apply — a superseded *pending* run is dropped
+# instead (the latest merge's deploy applies the final state).
+concurrency:
+  group: kitchen-ci-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: ubuntu-latest
