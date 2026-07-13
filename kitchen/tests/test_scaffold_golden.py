@@ -41,6 +41,14 @@ CONFIGS: dict[str, list[str]] = {
         "init", "demo", "--template", "baseline-xgb",
         "--source", "kaggle", "--competition", "demo-comp", "--ci", "--here",
     ],
+    # GEN-007: the lean `--kind pipeline` shape (a command stage, no tabular ABCs).
+    "pipeline-local": [
+        "init", "demo", "--kind", "pipeline", "--source", "local", "--here",
+    ],
+    "pipeline-kaggle": [
+        "init", "demo", "--kind", "pipeline",
+        "--source", "kaggle", "--competition", "demo-comp", "--here",
+    ],
 }
 
 

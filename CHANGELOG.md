@@ -14,6 +14,12 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   builder enforces the notebook-safe contract via AST (rejects module-level `__file__` /
   `os.chdir` / `sys.path` and excludes the `__main__` block). Offline-dependency bundling for
   internet-off code competitions is a separate follow-up (GEN-005b).
+- `kitchen init --kind pipeline` (GEN-007) — scaffold a **lean** project built around a command
+  stage (GEN-002/003) instead of the tabular `FeatureBuilder`/`Trainer`/`Evaluator` ABCs: just
+  `menu.yaml` + a `src/pipeline/run.py` stub (which writes its metric to `$KITCHEN_METRICS_FILE`),
+  no `serve`/`experiments`/`flows`/dashboard. For inference-only / non-tabular projects. `--source
+  kaggle` wires `kitchen ingest`. The default `--kind tabular` is unchanged; the model `--template`,
+  `--ci`, and `--with-dvc` (tabular-specific) error clearly if combined with `--kind pipeline`.
 - Generic command sweeps — `kitchen sweep --run "<cmd with {a} {b}>" --param a=… --param b=… --metric <m>`
   (GEN-004). Sweeps a param grid over an arbitrary command (not just the train loop), pointing each
   combo at a per-combo metrics file via `KITCHEN_METRICS_FILE`, logging every combo to the run store

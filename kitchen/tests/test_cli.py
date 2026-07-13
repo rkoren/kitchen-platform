@@ -228,6 +228,53 @@ def test_init_here_flag(tmp_path, monkeypatch):
     assert not (tmp_path / "my-competition" / "menu.yaml").exists()
 
 
+def test_init_kind_pipeline_scaffolds_lean_command_stage(tmp_path, monkeypatch):
+    # GEN-007: a lean project — a command stage + stub, no FeatureBuilder/Trainer/Evaluator ABCs.
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "cell-track", "--kind", "pipeline"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    root = tmp_path / "cell-track"
+    assert (root / "src" / "pipeline" / "run.py").exists()
+    # none of the tabular ABC / serve / experiments / flows scaffolding
+    for absent in ("src/features", "src/train", "src/evaluate", "src/serve", "experiments", "flows"):
+        assert not (root / absent).exists(), f"{absent} should not be scaffolded for --kind pipeline"
+    # the menu declares a command stage and validates
+    import yaml
+
+    from kitchen.menu import Menu
+
+    menu = Menu.model_validate(yaml.safe_load((root / "menu.yaml").read_text()))
+    assert menu.pipeline == ["run"]
+    assert menu.recipes["run"].cmd  # a command stage, not a `source:` ABC
+
+
+def test_init_kind_pipeline_kaggle_wires_ingest(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["init", "cell-track", "--kind", "pipeline", "--source", "kaggle", "--competition", "biohub"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    menu_text = (tmp_path / "cell-track" / "menu.yaml").read_text()
+    assert "source: kaggle" in menu_text and "competition: biohub" in menu_text
+
+
+def test_init_kind_pipeline_rejects_tabular_only_flags(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    for extra in (["--template", "baseline-xgb"], ["--ci"], ["--with-dvc"]):
+        result = runner.invoke(app, ["init", "x", "--kind", "pipeline", *extra])
+        assert result.exit_code != 0, extra
+        assert "not applicable to --kind pipeline" in result.output
+
+
+def test_init_invalid_kind_errors(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "x", "--kind", "bogus"])
+    assert result.exit_code != 0
+    assert "invalid --kind" in result.output
+
+
 def test_init_skips_existing_files(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-competition"], catch_exceptions=False)

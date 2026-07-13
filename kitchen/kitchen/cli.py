@@ -63,12 +63,15 @@ from kitchen._cli._templates import (
     _GITIGNORE,
     _MENU_YAML,
     _MENU_YAML_KAGGLE,
+    _MENU_YAML_PIPELINE,
+    _MENU_YAML_PIPELINE_KAGGLE,
     _MODEL_SECTION_GENERIC,
     _MODEL_SECTION_LGBM,
     _MODEL_SECTION_LR,
     _MODEL_SECTION_RF,
     _MODEL_SECTION_TS,
     _MODEL_SECTION_XGB,
+    _PIPELINE_RUN,
     _PREDICTOR_PY,
     _PROMOTE_PY,
     _PYPROJECT_TOML,
@@ -3093,6 +3096,52 @@ def push(
 app.add_typer(dvc_app, name="dvc")
 
 
+def _init_pipeline(
+    root: Path,
+    name: str,
+    class_name: str,
+    source: str,
+    competition: str | None,
+    here: bool,
+    overwrite: bool,
+) -> None:
+    """Scaffold a lean `--kind pipeline` project (GEN-007) — a command stage, no tabular ABCs."""
+    r = _render
+    menu_tmpl = _MENU_YAML_PIPELINE_KAGGLE if source == "kaggle" else _MENU_YAML_PIPELINE
+    params_extra = {"competition": competition} if source == "kaggle" else {}
+    files: list[tuple[Path, str]] = [
+        (root / "CLAUDE.md", r(_CLAUDE_MD, name, class_name)),
+        (root / ".env.example", r(_ENV_EXAMPLE, name, class_name)),
+        (root / ".gitignore", r(_GITIGNORE, name, class_name)),
+        (root / "menu.yaml", r(menu_tmpl, name, class_name, **params_extra)),
+        (root / "pyproject.toml", r(_PYPROJECT_TOML, name, class_name, model_deps="")),
+        (root / "src" / "__init__.py", ""),
+        (root / "src" / "pipeline" / "__init__.py", ""),
+        (root / "src" / "pipeline" / "run.py", r(_PIPELINE_RUN, name, class_name)),
+        (root / "data" / "raw" / ".gitkeep", ""),
+    ]
+    for path, content in files:
+        _write(path, content, overwrite)
+
+    cd_line = f"  cd {root.name}\n" if not here else ""
+    ingest = (
+        "  kitchen ingest                      # download competition data → data/raw/\n"
+        if source == "kaggle"
+        else ""
+    )
+    typer.echo(
+        "\nDone (%s, --kind pipeline). Next steps:\n\n"
+        "%s  pip install rkoren-kitchen -e .\n"
+        "  cp .env.example .env\n"
+        "  kitchen check                       # verify tools, credentials, and config\n"
+        "%s  # implement src/pipeline/run.py — write your metric to $KITCHEN_METRICS_FILE\n"
+        "  kitchen stage run                   # run the pipeline stage alone\n"
+        "  kitchen menu run                    # run the whole pipeline\n"
+        "  kitchen sweep --run 'python -m src.pipeline.run' --param key=v1,v2 --metric score\n"
+        % (name, cd_line, ingest)
+    )
+
+
 @app.command()
 def init(
     name: str = typer.Argument(..., help="Project / competition name (e.g. spaceship-titanic)"),
@@ -3102,10 +3151,16 @@ def init(
     competition: str | None = typer.Option(
         None, "--competition", help="Kaggle competition slug (required when --source kaggle)"
     ),
+    kind: str = typer.Option(
+        "tabular",
+        "--kind",
+        help="Project shape: tabular (FeatureBuilder/Trainer/Evaluator + a model --template) or "
+        "pipeline (a lean command-stage project — no ABCs, for inference/non-tabular work)",
+    ),
     template: str = typer.Option(
         "none",
         "--template",
-        help="Starter template: none, baseline-xgb, baseline-lgbm, baseline-lr, baseline-rf, binary-cls, multiclass-cls, regression, tabular-ts",
+        help="Starter template (tabular kind): none, baseline-xgb, baseline-lgbm, baseline-lr, baseline-rf, binary-cls, multiclass-cls, regression, tabular-ts",
     ),
     ci: bool = typer.Option(
         False, "--ci", help="Scaffold a .github/workflows/train-evaluate.yml CI workflow"
@@ -3150,6 +3205,29 @@ def init(
         )
         raise typer.Exit(1)
 
+    if kind not in {"tabular", "pipeline"}:
+        typer.echo(f"error: invalid --kind {kind!r} — choose from: tabular, pipeline", err=True)
+        raise typer.Exit(1)
+
+    # GEN-007: the tabular model template, CI workflow, and DVC pipeline all assume the
+    # FeatureBuilder/Trainer/Evaluator ABCs, which a `--kind pipeline` project doesn't scaffold.
+    if kind == "pipeline":
+        incompatible = []
+        if template != "none":
+            incompatible.append(f"--template {template}")
+        if ci:
+            incompatible.append("--ci")
+        if with_dvc:
+            incompatible.append("--with-dvc")
+        if incompatible:
+            typer.echo(
+                f"error: {', '.join(incompatible)} not applicable to --kind pipeline — the model "
+                "template, CI workflow, and DVC pipeline assume the tabular train/evaluate stages. "
+                "Wire your own command stage(s) in menu.yaml instead.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
     if with_dvc:
         import shutil as _shutil
 
@@ -3166,6 +3244,10 @@ def init(
     typer.echo(f"\nScaffolding '{name}' → {root}\n")
 
     r = _render  # shorthand
+
+    if kind == "pipeline":
+        _init_pipeline(root, name, class_name, source, competition, here, overwrite)
+        return
 
     menu_tmpl = _MENU_YAML_KAGGLE if source == "kaggle" else _MENU_YAML
     params_extra = {"competition": competition} if source == "kaggle" else {}

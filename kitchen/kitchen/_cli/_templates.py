@@ -374,6 +374,100 @@ thresholds:
 """
 
 
+# --- `--kind pipeline` scaffold (GEN-007): a lean, non-tabular project ---------------------
+# A command stage instead of the FeatureBuilder/Trainer/Evaluator ABCs — the fit for
+# inference-only, non-tabular, or separate-interpreter pipelines.
+
+_MENU_YAML_PIPELINE = """\
+# Unified project manifest (menu.yaml). This is a `--kind pipeline` project: the work runs as a
+# command stage (a subprocess), not the tabular train/evaluate ABCs. Drive it with
+# `kitchen menu run`; run the single stage with `kitchen stage run`.
+
+project: $name
+
+pipeline: [run]
+
+recipes:
+  run:
+    kind: stage
+    cmd: python -m src.pipeline.run    # the subprocess to run (a list is the argv, verbatim)
+    # python: .venv-pipeline/bin/python  # optional per-stage interpreter; `cmd:` is then its args
+    # inputs: [data/raw]                 # checked to exist before the stage runs (fail fast)
+    # outputs: [predictions.parquet]     # a missing declared output warns after
+
+data:
+  source: local
+  path: data/raw
+
+# Rank runs by this metric — your stage writes it to $$KITCHEN_METRICS_FILE (see src/pipeline/run.py).
+# Sweep it with `kitchen sweep --run "python -m src.pipeline.run" --param ... --metric score`.
+thresholds:
+  score: 0.0
+"""
+
+
+_MENU_YAML_PIPELINE_KAGGLE = """\
+# Unified project manifest (menu.yaml). This is a `--kind pipeline` project: the work runs as a
+# command stage (a subprocess), not the tabular train/evaluate ABCs. `kitchen ingest` fetches the
+# competition data; drive the pipeline with `kitchen menu run`.
+
+project: $name
+
+pipeline: [run]
+
+recipes:
+  run:
+    kind: stage
+    cmd: python -m src.pipeline.run    # the subprocess to run (a list is the argv, verbatim)
+    # python: .venv-pipeline/bin/python  # optional per-stage interpreter; `cmd:` is then its args
+    # inputs: [data/raw]                 # checked to exist before the stage runs (fail fast)
+    # outputs: [submission.csv]
+
+data:
+  source: kaggle
+  competition: $competition
+
+# Rank runs by this metric — your stage writes it to $$KITCHEN_METRICS_FILE (see src/pipeline/run.py).
+thresholds:
+  score: 0.0
+"""
+
+
+_PIPELINE_RUN = """\
+\"\"\"$name pipeline — a command stage (GEN-002/003).
+
+Run the whole pipeline with ``kitchen menu run`` (or just this stage with ``kitchen stage run``).
+Sweep it with, e.g.::
+
+    kitchen sweep --run "python -m src.pipeline.run --thresh {t}" --param t=0.4,0.5,0.6 --metric score
+
+Report your metric where kitchen looks for it: write a JSON object to the path in
+``$$KITCHEN_METRICS_FILE`` (it falls back to ``metrics.json``). ``kitchen leaderboard --store`` and
+``kitchen sweep`` then rank runs by it.
+
+Alternative for pure-Python inference: declare a ``scorer:`` block in menu.yaml
+(``source: src/pipeline/run.py``, ``function: score`` returning ``{name: value}``) and run
+``kitchen score`` — see docs/kitchen/experiment-tracking.md.
+\"\"\"
+import json
+import os
+
+
+def main() -> None:
+    # TODO: implement your pipeline (ingest → process → infer → score, in whatever shape fits).
+    score = 0.0
+
+    metrics_file = os.environ.get("KITCHEN_METRICS_FILE", "metrics.json")
+    with open(metrics_file, "w", encoding="utf-8") as f:
+        json.dump({"score": score}, f)
+    print(f"score={score}")
+
+
+if __name__ == "__main__":
+    main()
+"""
+
+
 _FEATURES_RUN = """\
 \"\"\"Feature engineering for $name.
 
