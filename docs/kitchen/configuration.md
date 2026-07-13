@@ -287,6 +287,11 @@ feed `leaderboard`/`thresholds`. Run one stage in isolation with `kitchen stage 
 `--dry-run` to preview the exact argv, or `-C <dir>` to run from elsewhere); `kitchen menu run`
 runs the whole pipeline.
 
+To scaffold a lean project built around a command stage — no `FeatureBuilder`/`Trainer`/`Evaluator`
+ABCs — use `kitchen init <name> --kind pipeline` (vs the default `--kind tabular`). It generates a
+`menu.yaml` with a command stage and a `src/pipeline/run.py` stub that writes its metric to
+`$KITCHEN_METRICS_FILE`; `--source kaggle` wires `kitchen ingest` too.
+
 ### What belongs in `menu.yaml`
 
 - Data source and file names
