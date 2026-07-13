@@ -1,0 +1,2035 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="IaC CLI (recipes) and reusable MLOps framework (kitchen) for Kaggle and modeling projects">
+      
+      
+      
+        <link rel="canonical" href="https://rkoren.github.io/kitchen-platform/kitchen/configuration/">
+      
+      
+        <link rel="prev" href="../kaggle-quickstart/">
+      
+      
+        <link rel="next" href="../data-versioning/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Configuration - kitchen-platform</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="kitchen-platform" class="md-header__button md-logo" aria-label="kitchen-platform" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            kitchen-platform
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/rkoren/kitchen-platform" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    rkoren/kitchen-platform
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../quickstart/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Quickstart
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../recipes/" class="md-tabs__link">
+          
+  
+  
+  recipes
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  kitchen
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../notebooks/exploration/" class="md-tabs__link">
+          
+  
+  
+  Notebooks
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="kitchen-platform" class="md-nav__button md-logo" aria-label="kitchen-platform" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    kitchen-platform
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/rkoren/kitchen-platform" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    rkoren/kitchen-platform
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    recipes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    recipes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/yaml-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YAML Spec Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/ci-cd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    kitchen
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    kitchen
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kaggle-quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kaggle Competition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#decision-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision guide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#menuyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        menu.yaml
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="menu.yaml">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#data-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        data: section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#thresholds-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        thresholds: section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#secrets-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        secrets: section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#monitor-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        monitor: section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mlflow-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mlflow: section
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="mlflow: section">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#persistent-tracking-backend-champions-across-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistent tracking backend (champions across runs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recipes-stages-including-command-stages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        recipes: — stages, including command stages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-belongs-in-menuyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What belongs in menu.yaml
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-not-belong-in-menuyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What does NOT belong in menu.yaml
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#env-local-development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        .env (local development)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#github-actions-secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitHub Actions secrets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#github-actions-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitHub Actions variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow_dispatch-inputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        workflow_dispatch inputs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#precedence-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence order
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-versioning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Versioning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../experiment-tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../model-serving/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Serving
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modeling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modeling Helpers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ci-cd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notebooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Notebooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../notebooks/exploration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notebook-First Exploration with kitchen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#decision-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision guide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#menuyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        menu.yaml
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="menu.yaml">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#data-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        data: section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#thresholds-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        thresholds: section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#secrets-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        secrets: section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#monitor-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        monitor: section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mlflow-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mlflow: section
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="mlflow: section">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#persistent-tracking-backend-champions-across-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistent tracking backend (champions across runs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recipes-stages-including-command-stages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        recipes: — stages, including command stages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-belongs-in-menuyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What belongs in menu.yaml
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-not-belong-in-menuyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What does NOT belong in menu.yaml
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#env-local-development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        .env (local development)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#github-actions-secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitHub Actions secrets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#github-actions-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitHub Actions variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow_dispatch-inputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        workflow_dispatch inputs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#precedence-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence order
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="configuration-reference">Configuration Reference<a class="headerlink" href="#configuration-reference" title="Permanent link">&para;</a></h1>
+<p><code>kitchen</code> pulls configuration from four places. The rule of thumb: if it controls training behavior, put it in <code>menu.yaml</code>. If it's a credential or a local override, put it in <code>.env</code>. If it's needed only in CI, put it in GitHub secrets or variables.</p>
+<h2 id="decision-guide">Decision guide<a class="headerlink" href="#decision-guide" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Answer</th>
+<th>Where it goes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Does it affect model training or evaluation?</td>
+<td>Yes</td>
+<td><code>menu.yaml</code></td>
+</tr>
+<tr>
+<td>Is it a credential or API key?</td>
+<td>Yes</td>
+<td><code>.env</code> locally; GitHub secret in CI</td>
+</tr>
+<tr>
+<td>Is it non-sensitive CI-only config (e.g. a bucket name)?</td>
+<td>Yes</td>
+<td>GitHub Actions variable</td>
+</tr>
+<tr>
+<td>Is it a one-off override for a single manual run?</td>
+<td>Yes</td>
+<td><code>workflow_dispatch</code> input</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="menuyaml"><code>menu.yaml</code><a class="headerlink" href="#menuyaml" title="Permanent link">&para;</a></h2>
+<p>Version-controlled. Lives in the project root and is committed to git. Controls all training and evaluation behavior.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">experiment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">spaceship-titanic</span><span class="w">          </span><span class="c1"># MLflow experiment name</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">data</span><span class="p">:</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kaggle</span><span class="w">                       </span><span class="c1"># &quot;local&quot;, &quot;kaggle&quot;, or &quot;s3&quot;</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">competition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">spaceship-titanic</span><span class="w">       </span><span class="c1"># Kaggle competition slug</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nt">submission</span><span class="p">:</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">id_col</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PassengerId</span><span class="w">                  </span><span class="c1"># ID column in test set</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">target_col</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Transported</span><span class="w">              </span><span class="c1"># target column</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">spaceship-titanic v1</span><span class="w">        </span><span class="c1"># submission message shown on Kaggle</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="nt">sample_submission</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sample_submission.csv</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="nt">features</span><span class="p">:</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="nt">raw_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">train.csv</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="nt">processed_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">features.parquet</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span><span class="nt">test_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test.csv</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="nt">model</span><span class="p">:</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Transported</span><span class="w">                  </span><span class="c1"># must match submission.target_col</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">  </span><span class="nt">test_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span><span class="nt">random_state</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">42</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span><span class="nt">xgb</span><span class="p">:</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">    </span><span class="nt">n_estimators</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">    </span><span class="nt">max_depth</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">    </span><span class="nt">learning_rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.05</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="nt">mlflow</span><span class="p">:</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">  </span><span class="nt">tracking_uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sqlite:///mlruns.db</span><span class="w">    </span><span class="c1"># override with MLFLOW_TRACKING_URI for S3-backed server</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">  </span><span class="nt">artifact_bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-project-data</span><span class="w">    </span><span class="c1"># S3 bucket for model artifacts (optional)</span>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="nt">run_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">baseline</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="nt">metrics_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">metrics.json</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="nt">thresholds</span><span class="p">:</span><span class="w">                            </span><span class="c1"># optional: fail CI if a metric violates its constraint</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">  </span><span class="nt">val_accuracy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.80</span><span class="w">                   </span><span class="c1"># lower bound — fail if below 0.80</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">  </span><span class="nt">val_logloss</span><span class="p">:</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">    </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.50</span><span class="w">                          </span><span class="c1"># upper bound — fail if above 0.50</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="nt">monitor</span><span class="p">:</span><span class="w">                               </span><span class="c1"># optional: drift monitoring configuration</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">  </span><span class="nt">reference_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reference.parquet</span>
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">  </span><span class="nt">current_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">current.parquet</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">  </span><span class="nt">report_bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-project-data</span><span class="w">      </span><span class="c1"># S3 bucket for HTML reports (or omit for local only)</span>
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">  </span><span class="nt">report_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">monitoring/drift_report.html</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">  </span><span class="nt">local_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">monitoring/drift_report.html</span>
+</code></pre></div>
+<h3 id="data-section"><code>data:</code> section<a class="headerlink" href="#data-section" title="Permanent link">&para;</a></h3>
+<p>The <code>source</code> field determines which other fields are required:</p>
+<table>
+<thead>
+<tr>
+<th><code>source</code></th>
+<th>Required fields</th>
+<th>Optional fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kaggle</code></td>
+<td><code>competition</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>s3</code></td>
+<td><code>bucket</code></td>
+<td><code>prefix</code></td>
+</tr>
+<tr>
+<td><code>local</code></td>
+<td><code>path</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Kaggle</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">data</span><span class="p">:</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kaggle</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">competition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">spaceship-titanic</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># S3</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="nt">data</span><span class="p">:</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-project-data</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">raw/</span><span class="w">                   </span><span class="c1"># defaults to &quot;&quot; (bucket root)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="c1"># Local</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="nt">data</span><span class="p">:</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">local</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">  </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/my-project/raw</span>
+</code></pre></div>
+<h3 id="thresholds-section"><code>thresholds:</code> section<a class="headerlink" href="#thresholds-section" title="Permanent link">&para;</a></h3>
+<p>Used to gate CI on metric quality. <code>kitchen run evaluate</code> exits with a non-zero code if any threshold is violated.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">thresholds</span><span class="p">:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="c1"># Shorthand: float is treated as a minimum (lower bound)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">val_accuracy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.80</span><span class="w">          </span><span class="c1"># fail if val_accuracy &lt; 0.80</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="c1"># Explicit: use min/max for full control</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">val_logloss</span><span class="p">:</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.50</span><span class="w">                 </span><span class="c1"># fail if val_logloss &gt; 0.50 (lower-is-better metric)</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">val_brier</span><span class="p">:</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.25</span><span class="w">                 </span><span class="c1"># valid range constraint</span>
+</code></pre></div>
+<h3 id="secrets-section"><code>secrets:</code> section<a class="headerlink" href="#secrets-section" title="Permanent link">&para;</a></h3>
+<p>Declares the secrets a project needs and where each one resolves from. It is the single
+source of truth for credentials — <code>kitchen check</code> validates it, and the resolver reads it.
+Each entry names one secret:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">secrets</span><span class="p">:</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">KAGGLE_KEY</span><span class="p">:</span><span class="w">                     </span><span class="c1"># SM JSON bundle: field `key` within bundle `aws_secret`</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">aws_secret</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-project/prod</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KAGGLE_KEY</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">                </span><span class="c1"># default true; gates `kitchen check`</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">SLACK_WEBHOOK_URL</span><span class="p">:</span><span class="w">              </span><span class="c1"># optional — absence won&#39;t fail check</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">aws_secret</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-project/prod</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SLACK_WEBHOOK_URL</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="nt">DB_PASSWORD</span><span class="p">:</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">    </span><span class="nt">ssm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/my-project/db-password</span><span class="w">  </span><span class="c1"># SSM Parameter Store path (SecureString)</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="nt">LOCAL_TOKEN</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span><span class="w">                 </span><span class="c1"># no source → env-only (must come from env / .env)</span>
+</code></pre></div>
+<p>A secret declares <strong>either</strong> <code>aws_secret</code> (+ optional <code>key</code> to select a field in the JSON
+bundle) <strong>or</strong> <code>ssm</code>, or neither (env-only). <code>kitchen check</code> <strong>resolves</strong> every required secret
+through the chain below and hard-fails (with the exact remediation) when one can't be resolved —
+so a missing credential is caught at pre-flight, not mid-run. Optional (<code>required: false</code>)
+secrets only warn. An env var of the same name always overrides the declared cloud source.</p>
+<blockquote>
+<p><strong>Deprecated:</strong> the earlier <code>check.required_env: [NAME, ...]</code> list still works — it folds
+into the manifest as env-only required secrets and <code>kitchen check</code>/<code>validate</code> warn — but
+migrate each entry to <code>secrets:</code> (it is removed in a future release).</p>
+</blockquote>
+<p><strong>Resolving at runtime.</strong> Read a secret in code through one call:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">kitchen</span><span class="w"> </span><span class="kn">import</span> <span class="n">secrets</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">kaggle_key</span> <span class="o">=</span> <span class="n">secrets</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;KAGGLE_KEY&quot;</span><span class="p">)</span>   <span class="c1"># raises SecretNotFound if unresolved</span>
+</code></pre></div>
+<p><code>get()</code> resolves through an ordered chain — (1) process env / <code>.env</code> → (2) the declared cloud
+source (Secrets Manager or SSM, attempted only when an AWS identity resolves) → (3) raise
+<code>SecretNotFound</code> naming the secret and how to provide it. An env var always overrides the cloud
+source. Resolved values are cached in-process for <code>KITCHEN_SECRETS_TTL</code> seconds (default 300) so
+a rotated secret is picked up without a restart. The resolver never logs secret values. Use
+<code>secrets.try_get(name)</code> for a <code>None</code>-instead-of-raise variant.</p>
+<p>To pass secrets into a subprocess that needs them in its environment (e.g. DVC needs <code>AWS_*</code> to
+reach S3), use <code>secrets.resolve_into_env([...])</code> — it resolves each secret, <strong>masks</strong> it under
+GitHub Actions (emits <code>::add-mask::</code> so the value is scrubbed from CI logs), and returns an
+environment mapping to hand to <code>subprocess.run(..., env=...)</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">kitchen</span><span class="w"> </span><span class="kn">import</span> <span class="n">secrets</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">env</span> <span class="o">=</span> <span class="n">secrets</span><span class="o">.</span><span class="n">resolve_into_env</span><span class="p">([</span><span class="s2">&quot;AWS_SECRET_ACCESS_KEY&quot;</span><span class="p">])</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="s2">&quot;dvc&quot;</span><span class="p">,</span> <span class="s2">&quot;pull&quot;</span><span class="p">],</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Generating <code>.env.example</code>.</strong> <code>kitchen secrets template</code> renders an annotated <code>.env.example</code>
+from the manifest — one blank <code>NAME=</code> line per secret, tagged required/optional with its source
+— so a fresh clone self-documents what to set (use <code>--stdout</code> to preview, <code>--force</code> to overwrite):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kitchen<span class="w"> </span>secrets<span class="w"> </span>template<span class="w">            </span><span class="c1"># writes .env.example</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>kitchen<span class="w"> </span>secrets<span class="w"> </span>template<span class="w"> </span>--stdout<span class="w">   </span><span class="c1"># print instead</span>
+</code></pre></div>
+<p><strong>Least-privilege IAM for CI.</strong> When secrets live in Secrets Manager / SSM, the CI or deploy
+role needs read access to exactly those — and no more. <code>kitchen secrets iam-policy</code> emits that
+policy from the manifest (one statement per source type, scoped to the declared ARNs):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kitchen<span class="w"> </span>secrets<span class="w"> </span>iam-policy<span class="w"> </span>--account<span class="w"> </span><span class="m">123456789012</span><span class="w"> </span>--region<span class="w"> </span>us-east-1<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>aws<span class="w"> </span>iam<span class="w"> </span>put-role-policy<span class="w"> </span>--role-name<span class="w"> </span>&lt;ci-role&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">      </span>--policy-name<span class="w"> </span>kitchen-secrets<span class="w"> </span>--policy-document<span class="w"> </span>file:///dev/stdin
+</code></pre></div>
+<p>With no <code>--account</code>/<code>--region</code> the ARNs use <code>*</code> wildcards (still name-scoped; no account ID
+embedded). Pair this with a GitHub-OIDC role (<code>bootstrap-aws.sh</code> / SEC-007–008) so CI assumes a
+short-lived role and resolves secrets from the cloud — no long-lived keys.</p>
+<h3 id="monitor-section"><code>monitor:</code> section<a class="headerlink" href="#monitor-section" title="Permanent link">&para;</a></h3>
+<p>Required by <code>kitchen run monitor</code>. At least one of <code>report_bucket</code> or <code>local_path</code> must be set.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reference_file</code></td>
+<td><code>reference.parquet</code></td>
+<td>Baseline dataset (training distribution)</td>
+</tr>
+<tr>
+<td><code>current_file</code></td>
+<td><code>current.parquet</code></td>
+<td>Recent production inputs</td>
+</tr>
+<tr>
+<td><code>report_bucket</code></td>
+<td><code>""</code></td>
+<td>S3 bucket to upload the HTML drift report to</td>
+</tr>
+<tr>
+<td><code>report_key</code></td>
+<td><code>monitoring/drift_report.html</code></td>
+<td>S3 key for the report</td>
+</tr>
+<tr>
+<td><code>local_path</code></td>
+<td><code>""</code></td>
+<td>Local file path to save the report (can be set alongside <code>report_bucket</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mlflow-section"><code>mlflow:</code> section<a class="headerlink" href="#mlflow-section" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tracking_uri</code></td>
+<td><code>sqlite:///mlruns.db</code></td>
+<td>MLflow tracking backend URI</td>
+</tr>
+<tr>
+<td><code>artifact_bucket</code></td>
+<td><code>null</code></td>
+<td>S3 bucket for model artifacts (overrides MLflow default artifact root)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="persistent-tracking-backend-champions-across-runs">Persistent tracking backend (champions across runs)<a class="headerlink" href="#persistent-tracking-backend-champions-across-runs" title="Permanent link">&para;</a></h4>
+<p>The default <code>sqlite:///mlruns.db</code> is <strong>per-run</strong> in CI: the registry starts empty every run, so <code>kitchen run train --auto-promote</code> never sees a champion and promotes unconditionally — cross-run comparison is a no-op. To make champions persist (and <code>--auto-promote</code> actually compare against the last good model), point MLflow at a <strong>persistent backend store</strong> (the registry/champion lives there) plus a shared <strong>artifact store</strong> (the model files). Rationale and the full decision: <a href="../decisions/mlflow-tracking-backend.md"><code>mlflow-tracking-backend</code></a>.</p>
+<ol>
+<li><strong>Deploy</strong> the backend with <code>recipes</code> — <code>recipes/examples/mlflow-tracking-backend.yaml</code> provisions a security group, an RDS Postgres instance (master password managed in Secrets Manager — never in Terraform/state), and a versioned S3 artifact bucket:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>recipes<span class="w"> </span>apply<span class="w"> </span>mlflow-tracking-backend.yaml<span class="w"> </span>--state-bucket<span class="w"> </span>&lt;your-tf-state-bucket&gt;
+</code></pre></div>
+<p>Terraform outputs the connection <code>…_endpoint</code>, the <code>…_master_user_secret_arn</code>, and the bucket.</p>
+<ol>
+<li>
+<p><strong>Install the PostgreSQL driver</strong> alongside kitchen — MLflow needs it to talk to a <code>postgresql://</code> store (it is not in the base install): <code>pip install 'rkoren-kitchen[postgres]'</code>. <code>kitchen check</code> fails fast with this hint if a postgresql tracking URI is set without it.</p>
+</li>
+<li>
+<p><strong>Set the artifact bucket</strong> in <code>menu.yaml</code> (the connection URL itself comes from the RDS-managed secret at run time — step 4 — so it is never written to menu.yaml or a second secret):</p>
+</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">mlflow</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">artifact_bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-project-mlflow-artifacts</span>
+</code></pre></div>
+<ol>
+<li><strong>CI</strong> — in the scaffolded <code>train-evaluate.yml</code>, set <code>MLFLOW_ARTIFACT_BUCKET</code>, remove the SQLite <code>MLFLOW_TRACKING_URI</code> line, and (after an <code>aws-actions/configure-aws-credentials</code> step with your OIDC role — see <a href="../aws-deployment/">aws-deployment</a>) assemble the tracking URI from the RDS-managed secret + endpoint into the job environment:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Resolve persistent MLflow backend</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kitchen secrets db-url --secret-id &lt;…_master_user_secret_arn&gt; --endpoint &lt;…_endpoint&gt;</span>
+</code></pre></div>
+<p><code>kitchen secrets db-url</code> fetches the RDS-managed username/password, URL-encodes them, and writes <code>MLFLOW_TRACKING_URI=postgresql://…</code> to <code>$GITHUB_ENV</code> (masked, never to stdout) — no hand-built URL and no second secret. If the recipes Terraform workspace is present in the job (e.g. you <code>recipes apply</code> in the same job), drop the flags entirely and let it read the outputs: <code>kitchen secrets db-url --from-terraform ~/.recipes/tf/&lt;spec&gt;</code>. (For a backend you manage yourself, the general path still works: store the full URL as a secret, declare it in <code>menu.yaml</code> <code>secrets:</code> as <code>MLFLOW_TRACKING_URI</code>, and use <code>kitchen secrets export --name MLFLOW_TRACKING_URI</code>.)</p>
+<ol>
+<li><strong>Local / notebooks</strong> — assemble the URL straight from the recipes workspace into <code>.env</code> (loaded automatically at startup); needs AWS credentials locally:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kitchen<span class="w"> </span>secrets<span class="w"> </span>db-url<span class="w"> </span>--from-terraform<span class="w"> </span>~/.recipes/tf/&lt;spec&gt;<span class="w"> </span>--output<span class="w"> </span>.env
+</code></pre></div>
+<p><code>--from-terraform</code> reads the <code>&lt;name&gt;_endpoint</code> + <code>&lt;name&gt;_master_user_secret_arn</code> outputs directly — no copying ARNs/endpoints by hand. (Pass <code>--secret-id</code>/<code>--endpoint</code> instead if you're not using recipes.)</p>
+<p><strong>Migrating from local SQLite:</strong> champions registered against the old <code>mlruns.db</code> do not carry over — re-train against the new store (the first <code>--auto-promote</code> registers a fresh champion), or <code>mlflow db upgrade &lt;uri&gt;</code> if you are moving an existing DB (see <a href="../troubleshooting/">troubleshooting</a> for the schema-mismatch guidance). A champion whose <strong>artifacts</strong> were written to a local path before the move won't load against the new store — <code>kitchen run evaluate</code> / <code>predictor.py</code> detect this and explain it (<code>ArtifactLocationError</code>), so keep <code>MLFLOW_ARTIFACT_BUCKET</code> set so artifacts land in S3 from the start.</p>
+<p><strong>Reachability:</strong> the example RDS is <code>publicly_accessible</code> with an open security group so GitHub-hosted runners (dynamic IPs) and your laptop can connect — gated by TLS and the RDS-managed password. For a private backend, drop public access and run an MLflow tracking server in front (the decision doc's upgrade path).</p>
+<p><strong>Validate it:</strong> deploy the throwaway <code>recipes/examples/mlflow-backend-validation.yaml</code> (tiny instance, <code>deletion_protection: false</code> for clean teardown), point <code>MLFLOW_TRACKING_URI</code> at it, and run <code>examples/validate_persistent_backend.py</code> <strong>twice</strong> — run 2 finding run 1's champion confirms the backend persists champions across runs. Then <code>recipes destroy</code>.</p>
+<h3 id="recipes-stages-including-command-stages"><code>recipes:</code> — stages, including command stages<a class="headerlink" href="#recipes-stages-including-command-stages" title="Permanent link">&para;</a></h3>
+<p>A <code>pipeline:</code> step runs a <code>recipes:</code> entry. A <code>kind: stage</code> recipe is either an <strong>in-process</strong>
+Python callable (<code>source:</code>, the tabular default — <code>kitchen run &lt;stage&gt;</code> imports and calls it) or a
+<strong>command stage</strong> (<code>cmd:</code>) that runs as a subprocess. Command stages fit pipelines that aren't
+single-table supervised — inference-only, non-Python, or needing a different interpreter.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">pipeline</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">detect</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">track</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">recipes</span><span class="p">:</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="nt">detect</span><span class="p">:</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stage</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">    </span><span class="nt">cmd</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;./scripts/detect.sh&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;--fast&quot;</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># a list is the argv, used verbatim (no shell)</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span><span class="nt">track</span><span class="p">:</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stage</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">    </span><span class="nt">python</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.venv-track/bin/python</span><span class="w">           </span><span class="c1"># per-stage interpreter (GEN-003)</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">    </span><span class="nt">cmd</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-m pipeline.run --thresh 0.5</span><span class="w">        </span><span class="c1"># when `python:` is set, `cmd:` is the ARGS to it</span>
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">    </span><span class="nt">inputs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">data/frames</span><span class="p p-Indicator">]</span><span class="w">                    </span><span class="c1"># must exist before the stage runs (fail fast)</span>
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">    </span><span class="nt">outputs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">tracks.parquet</span><span class="p p-Indicator">]</span><span class="w">                </span><span class="c1"># a missing declared output warns after</span>
+</code></pre></div>
+<ul>
+<li><strong><code>cmd</code></strong> — a list (the argv, used verbatim) or a string (<code>shlex</code>-split, <strong>no shell</strong>; wrap
+  pipes/globs in a <code>.sh</code> and call that). A stage declares <strong>either</strong> <code>source</code> <strong>or</strong> <code>cmd</code>.</li>
+<li><strong><code>python</code></strong> — an interpreter path; when set, <code>cmd</code> is the <em>args</em> passed to it (so
+  <code>python: .venv/bin/python</code>, <code>cmd: -m pipeline.run</code>). Omit it to run any other program directly.</li>
+<li><strong><code>inputs</code> / <code>outputs</code></strong> — declared paths (relative to the project dir); inputs are checked to
+  exist before running, a missing output warns after.</li>
+</ul>
+<p>A command stage inherits the process environment and working directory. <strong>Metrics are the stage's
+job</strong> — call <code>kitchen log</code> (framework-agnostic tracking) or write <code>metrics.json</code> from inside it to
+feed <code>leaderboard</code>/<code>thresholds</code>. Run one stage in isolation with <code>kitchen stage &lt;name&gt;</code> (add
+<code>--dry-run</code> to preview the exact argv, or <code>-C &lt;dir&gt;</code> to run from elsewhere); <code>kitchen menu run</code>
+runs the whole pipeline.</p>
+<p>To scaffold a lean project built around a command stage — no <code>FeatureBuilder</code>/<code>Trainer</code>/<code>Evaluator</code>
+ABCs — use <code>kitchen init &lt;name&gt; --kind pipeline</code> (vs the default <code>--kind tabular</code>). It generates a
+<code>menu.yaml</code> with a command stage and a <code>src/pipeline/run.py</code> stub that writes its metric to
+<code>$KITCHEN_METRICS_FILE</code>; <code>--source kaggle</code> wires <code>kitchen ingest</code> too.</p>
+<h3 id="what-belongs-in-menuyaml">What belongs in <code>menu.yaml</code><a class="headerlink" href="#what-belongs-in-menuyaml" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Data source and file names</li>
+<li>Model hyperparameters</li>
+<li>Feature engineering config</li>
+<li>MLflow experiment and tracking URI (non-secret)</li>
+<li>Metric thresholds for CI gating</li>
+<li>Any value that should be reproducible and reviewable in a PR</li>
+</ul>
+<h3 id="what-does-not-belong-in-menuyaml">What does NOT belong in <code>menu.yaml</code><a class="headerlink" href="#what-does-not-belong-in-menuyaml" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Credentials (<code>KAGGLE_KEY</code>, <code>AWS_SECRET_ACCESS_KEY</code>) — use <code>.env</code> or GitHub secrets</li>
+<li>Account IDs, ARNs, or bucket names tied to a specific AWS account — use environment variables or GitHub variables</li>
+</ul>
+<hr />
+<h2 id="env-local-development"><code>.env</code> (local development)<a class="headerlink" href="#env-local-development" title="Permanent link">&para;</a></h2>
+<p>Never committed — <code>.gitignore</code> excludes it. Sourced automatically by <code>kitchen</code> at startup via <code>python-dotenv</code>. Copy <code>.env.example</code> and fill in your values.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Kaggle credentials — required for kitchen ingest and kitchen submit</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="nv">KAGGLE_USERNAME</span><span class="o">=</span>your-username
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="nv">KAGGLE_KEY</span><span class="o">=</span>your-api-key
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="c1"># MLflow — these override menu.yaml.mlflow.tracking_uri</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="nv">MLFLOW_TRACKING_URI</span><span class="o">=</span>sqlite:///mlruns.db
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="nv">MLFLOW_EXPERIMENT</span><span class="o">=</span>spaceship-titanic
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="nv">MLFLOW_MODEL_NAME</span><span class="o">=</span>spaceship-titanic-model
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1"># AWS — only needed for S3-backed MLflow or model serving</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="nv">AWS_PROFILE</span><span class="o">=</span>default
+</code></pre></div>
+<p>Environment variables take precedence over <code>menu.yaml</code> for any key they share (e.g. <code>MLFLOW_TRACKING_URI</code> overrides <code>menu.yaml → mlflow → tracking_uri</code>).</p>
+<hr />
+<h2 id="github-actions-secrets">GitHub Actions secrets<a class="headerlink" href="#github-actions-secrets" title="Permanent link">&para;</a></h2>
+<p>Repository-level or Environment-level secrets for values that are sensitive and needed in CI. Set at <strong>Settings → Secrets and variables → Actions</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Secret</th>
+<th>Required by</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>KAGGLE_USERNAME</code></td>
+<td><code>kitchen ingest</code>, <code>kitchen submit</code></td>
+<td>Your Kaggle account username</td>
+</tr>
+<tr>
+<td><code>KAGGLE_KEY</code></td>
+<td><code>kitchen ingest</code>, <code>kitchen submit</code></td>
+<td>Kaggle API token</td>
+</tr>
+<tr>
+<td><code>AWS_ACCESS_KEY_ID</code></td>
+<td>S3 artifacts, OIDC fallback</td>
+<td>IAM access key (prefer OIDC)</td>
+</tr>
+<tr>
+<td><code>AWS_SECRET_ACCESS_KEY</code></td>
+<td>S3 artifacts, OIDC fallback</td>
+<td>IAM secret key (prefer OIDC)</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition tip">
+<p class="admonition-title">Use GitHub Environments</p>
+<p>Prefer <strong>Environment secrets</strong> over repository secrets — they are scoped by branch, support approval gates, and keep <code>production</code> credentials out of reach of untrusted branches. See <a href="../ci-cd/#secrets-management">Secrets management</a> in the CI/CD guide for step-by-step setup.</p>
+</div>
+<hr />
+<h2 id="github-actions-variables">GitHub Actions variables<a class="headerlink" href="#github-actions-variables" title="Permanent link">&para;</a></h2>
+<p>Repository-level or Environment-level variables for non-sensitive CI config. Set at <strong>Settings → Secrets and variables → Actions → Variables</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Used by</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RECIPES_STATE_BUCKET</code></td>
+<td><code>recipes apply</code></td>
+<td>S3 bucket for Terraform state</td>
+</tr>
+<tr>
+<td><code>AWS_ACCOUNT_ID</code></td>
+<td>OIDC role ARN</td>
+<td>AWS account ID for <code>configure-aws-credentials</code></td>
+</tr>
+</tbody>
+</table>
+<p>Variables are not masked in logs, so never store credentials here.</p>
+<hr />
+<h2 id="workflow_dispatch-inputs"><code>workflow_dispatch</code> inputs<a class="headerlink" href="#workflow_dispatch-inputs" title="Permanent link">&para;</a></h2>
+<p>One-off overrides for manually triggered runs. Defined in the scaffolded <code>.github/workflows/train-evaluate.yml</code> and visible in <strong>Actions → Run workflow</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Input</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>submit</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td>Submit to Kaggle leaderboard after evaluate</td>
+</tr>
+</tbody>
+</table>
+<p>Workflow inputs are intentionally minimal — if you find yourself adding many inputs, the value probably belongs in <code>menu.yaml</code> (where it's version-controlled and reviewable) rather than as a runtime override.</p>
+<hr />
+<h2 id="precedence-order">Precedence order<a class="headerlink" href="#precedence-order" title="Permanent link">&para;</a></h2>
+<p>When the same setting can come from multiple places, later entries win:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>menu.yaml  →  .env / environment variable  →  workflow_dispatch input
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>(committed)       (local or CI secret)            (one-off manual override)
+</code></pre></div>
+<p>The <code>mlflow.tracking_uri</code> in <code>menu.yaml</code> is the most common example: it defaults to <code>sqlite:///mlruns.db</code> for local runs, and a CI job that sets <code>MLFLOW_TRACKING_URI</code> in its <code>env:</code> block overrides it without touching <code>menu.yaml</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.instant", "search.highlight", "search.suggest", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

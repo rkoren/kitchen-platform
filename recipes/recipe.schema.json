@@ -1,0 +1,551 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ECRSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "ecr",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "scan_on_push": {
+          "default": true,
+          "title": "Scan On Push",
+          "type": "boolean"
+        },
+        "image_tag_mutability": {
+          "default": "MUTABLE",
+          "enum": [
+            "MUTABLE",
+            "IMMUTABLE"
+          ],
+          "title": "Image Tag Mutability",
+          "type": "string"
+        },
+        "lambda_access": {
+          "default": false,
+          "title": "Lambda Access",
+          "type": "boolean"
+        },
+        "lifecycle_keep_last": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lifecycle Keep Last"
+        }
+      },
+      "required": [
+        "type",
+        "name"
+      ],
+      "title": "ECRSpec",
+      "type": "object"
+    },
+    "IAMRoleSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "iam_role",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "service": {
+          "title": "Service",
+          "type": "string"
+        },
+        "policies": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Policies",
+          "type": "array"
+        },
+        "inline_policies": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/InlinePolicy"
+          },
+          "title": "Inline Policies",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "service"
+      ],
+      "title": "IAMRoleSpec",
+      "type": "object"
+    },
+    "IngressRule": {
+      "additionalProperties": false,
+      "description": "A single inbound rule on a security group.",
+      "properties": {
+        "port": {
+          "title": "Port",
+          "type": "integer"
+        },
+        "protocol": {
+          "default": "tcp",
+          "title": "Protocol",
+          "type": "string"
+        },
+        "cidr_blocks": {
+          "default": [
+            "0.0.0.0/0"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Cidr Blocks",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        }
+      },
+      "required": [
+        "port"
+      ],
+      "title": "IngressRule",
+      "type": "object"
+    },
+    "InlinePolicy": {
+      "additionalProperties": false,
+      "description": "An inline allow policy for project-scoped access (e.g. a specific S3 bucket).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "resources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Resources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "actions",
+        "resources"
+      ],
+      "title": "InlinePolicy",
+      "type": "object"
+    },
+    "LambdaSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "lambda",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime"
+        },
+        "handler": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Handler"
+        },
+        "memory": {
+          "default": 128,
+          "title": "Memory",
+          "type": "integer"
+        },
+        "timeout": {
+          "default": 3,
+          "title": "Timeout",
+          "type": "integer"
+        },
+        "image_uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Uri"
+        },
+        "ecr_repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ecr Repo"
+        },
+        "environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Environment",
+          "type": "object"
+        },
+        "function_url": {
+          "default": false,
+          "title": "Function Url",
+          "type": "boolean"
+        },
+        "function_url_auth": {
+          "default": "AWS_IAM",
+          "enum": [
+            "AWS_IAM",
+            "NONE"
+          ],
+          "title": "Function Url Auth",
+          "type": "string"
+        },
+        "log_retention_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Log Retention Days"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "role"
+      ],
+      "title": "LambdaSpec",
+      "type": "object"
+    },
+    "RDSSpec": {
+      "additionalProperties": false,
+      "description": "A managed Postgres instance \u2014 e.g. the MLflow backend store that makes\nregistry champions persist across runs (see docs/decisions/mlflow-tracking-backend.md).\n\nThe master password is created and rotated by RDS in AWS Secrets Manager\n(``manage_master_user_password``) \u2014 it is never rendered into Terraform config\nor state. The generated ``<name>_master_user_secret_arn`` output is the ARN to\nwire into a project's ``secrets:`` manifest.",
+      "properties": {
+        "type": {
+          "const": "rds",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "engine_version": {
+          "default": "16",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "instance_class": {
+          "default": "db.t4g.micro",
+          "title": "Instance Class",
+          "type": "string"
+        },
+        "allocated_storage": {
+          "default": 20,
+          "title": "Allocated Storage",
+          "type": "integer"
+        },
+        "backup_retention_days": {
+          "default": 7,
+          "title": "Backup Retention Days",
+          "type": "integer"
+        },
+        "db_name": {
+          "default": "mlflow",
+          "title": "Db Name",
+          "type": "string"
+        },
+        "username": {
+          "default": "mlflow",
+          "title": "Username",
+          "type": "string"
+        },
+        "storage_encrypted": {
+          "default": true,
+          "title": "Storage Encrypted",
+          "type": "boolean"
+        },
+        "multi_az": {
+          "default": false,
+          "title": "Multi Az",
+          "type": "boolean"
+        },
+        "publicly_accessible": {
+          "default": false,
+          "title": "Publicly Accessible",
+          "type": "boolean"
+        },
+        "deletion_protection": {
+          "default": true,
+          "title": "Deletion Protection",
+          "type": "boolean"
+        },
+        "skip_final_snapshot": {
+          "default": true,
+          "title": "Skip Final Snapshot",
+          "type": "boolean"
+        },
+        "db_subnet_group_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Db Subnet Group Name"
+        },
+        "subnet_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Subnet Ids",
+          "type": "array"
+        },
+        "security_groups": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Security Groups",
+          "type": "array"
+        },
+        "vpc_security_group_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Vpc Security Group Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "name"
+      ],
+      "title": "RDSSpec",
+      "type": "object"
+    },
+    "S3Spec": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "s3",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "versioning": {
+          "default": false,
+          "title": "Versioning",
+          "type": "boolean"
+        },
+        "encryption": {
+          "default": true,
+          "title": "Encryption",
+          "type": "boolean"
+        },
+        "public_access_block": {
+          "default": true,
+          "title": "Public Access Block",
+          "type": "boolean"
+        },
+        "lifecycle_expiration_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lifecycle Expiration Days"
+        }
+      },
+      "required": [
+        "type",
+        "name"
+      ],
+      "title": "S3Spec",
+      "type": "object"
+    },
+    "SecurityGroupSpec": {
+      "additionalProperties": false,
+      "description": "A security group \u2014 typically the inbound rule that makes an `rds` instance\nreachable (default: Postgres 5432). Attach it from an `rds` resource via\n``security_groups: [<this name>]``.\n\nThe default ingress CIDR is ``0.0.0.0/0`` (reachable from anywhere, e.g.\nGitHub-hosted CI runners with dynamic IPs) \u2014 pair it with TLS and the\nRDS-managed password, or narrow ``cidr_blocks`` to known ranges.",
+      "properties": {
+        "type": {
+          "const": "security_group",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "Managed by recipes",
+          "title": "Description",
+          "type": "string"
+        },
+        "vpc_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vpc Id"
+        },
+        "ingress": {
+          "items": {
+            "$ref": "#/$defs/IngressRule"
+          },
+          "title": "Ingress",
+          "type": "array"
+        },
+        "egress_all": {
+          "default": true,
+          "title": "Egress All",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "name"
+      ],
+      "title": "SecurityGroupSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "region": {
+      "default": "us-east-1",
+      "title": "Region",
+      "type": "string"
+    },
+    "resources": {
+      "default": [],
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "ecr": "#/$defs/ECRSpec",
+            "iam_role": "#/$defs/IAMRoleSpec",
+            "lambda": "#/$defs/LambdaSpec",
+            "rds": "#/$defs/RDSSpec",
+            "s3": "#/$defs/S3Spec",
+            "security_group": "#/$defs/SecurityGroupSpec"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/S3Spec"
+          },
+          {
+            "$ref": "#/$defs/IAMRoleSpec"
+          },
+          {
+            "$ref": "#/$defs/ECRSpec"
+          },
+          {
+            "$ref": "#/$defs/LambdaSpec"
+          },
+          {
+            "$ref": "#/$defs/RDSSpec"
+          },
+          {
+            "$ref": "#/$defs/SecurityGroupSpec"
+          }
+        ]
+      },
+      "title": "Resources",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "RecipeSpec",
+  "type": "object"
+}
