@@ -1735,6 +1735,12 @@ def submit(
             "--wait", help="Poll for leaderboard score after upload and write to metrics.json"
         ),
     ] = False,
+    wait_timeout: Annotated[
+        int,
+        typer.Option(
+            "--wait-timeout", help="Seconds to wait for Kaggle to score (--wait)"
+        ),
+    ] = 300,
     dry_run: Annotated[
         bool,
         typer.Option(
@@ -1870,16 +1876,28 @@ def submit(
     typer.echo(f"Submitted {sub_path} → {competition}")
 
     if wait:
-        from kitchen.submit import fetch_score
+        from kitchen.submit import ERRORED, PENDING, SCORED, poll_submission_score
 
-        typer.echo("Waiting for Kaggle to score submission…")
-        score = fetch_score(competition)
-        if score is not None:
-            typer.echo(f"Leaderboard score: {score:.6f}")
-            _write_kaggle_score(score)
+        typer.echo(f"Waiting up to {wait_timeout}s for Kaggle to score submission…")
+        result = poll_submission_score(competition, timeout=wait_timeout)
+        if result.status == SCORED:
+            typer.echo(f"Leaderboard score: {result.score:.6f}")
+            _write_kaggle_score(result.score)
             typer.echo("Score written to metrics.json")
-        else:
-            typer.echo("Score not yet available — check the Kaggle leaderboard.")
+        elif result.status == PENDING:
+            typer.echo(
+                f"Still scoring after {wait_timeout}s — Kaggle hasn't finished. Re-run "
+                "`kitchen submit --wait` (raise --wait-timeout for a longer window), or "
+                "check the leaderboard."
+            )
+        elif result.status == ERRORED:
+            typer.echo(
+                "Kaggle reported the submission errored — see the competition's "
+                "'My Submissions' page.",
+                err=True,
+            )
+        else:  # UNAVAILABLE
+            typer.echo(f"Score unavailable ({result.detail}) — check the Kaggle leaderboard.")
 
 
 @app.command()

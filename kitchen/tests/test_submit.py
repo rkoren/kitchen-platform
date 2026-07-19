@@ -13,7 +13,18 @@ import pytest
 from typer.testing import CliRunner
 
 from kitchen.cli import app
-from kitchen.submit import check_feature_parity, fetch_score, log_submission, validate_submission
+from kitchen.submit import (
+    ERRORED,
+    PENDING,
+    SCORED,
+    UNAVAILABLE,
+    ScoreResult,
+    check_feature_parity,
+    fetch_score,
+    log_submission,
+    poll_submission_score,
+    validate_submission,
+)
 
 runner = CliRunner()
 
@@ -569,6 +580,122 @@ def test_fetch_score_none_public_score():
 
 
 # ---------------------------------------------------------------------------
+# poll_submission_score — outcome distinctions + backoff (S6E7-003)
+# ---------------------------------------------------------------------------
+
+
+def test_poll_scored_returns_score():
+    sub = _make_submission("complete", "0.9312")
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+    ):
+        result = poll_submission_score("test-comp", timeout=5, interval=0)
+    assert result.status == SCORED
+    assert result.score == pytest.approx(0.9312)
+
+
+def test_poll_normalizes_enum_style_status():
+    # Kaggle may return an enum whose str() is "SubmissionStatus.COMPLETE".
+    sub = _make_submission("SubmissionStatus.COMPLETE", "0.5")
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+    ):
+        result = poll_submission_score("test-comp", timeout=5, interval=0)
+    assert result.status == SCORED
+    assert result.score == pytest.approx(0.5)
+
+
+def test_poll_pending_times_out_as_pending():
+    sub = _make_submission("pending")
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+        patch("time.sleep"),
+    ):
+        result = poll_submission_score("test-comp", timeout=0, interval=0)
+    assert result.status == PENDING
+    assert result.score is None
+    assert "still scoring" in result.detail
+
+
+def test_poll_errored_status():
+    sub = _make_submission("error")
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+    ):
+        result = poll_submission_score("test-comp", timeout=5, interval=0)
+    assert result.status == ERRORED
+
+
+def test_poll_auth_failure_is_unavailable():
+    with patch.object(_kaggle.api, "authenticate", side_effect=RuntimeError("no creds")):
+        result = poll_submission_score("test-comp", timeout=5, interval=0)
+    assert result.status == UNAVAILABLE
+    assert "authenticate" in result.detail
+
+
+def test_poll_api_exception_is_unavailable():
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", side_effect=RuntimeError("boom")),
+    ):
+        result = poll_submission_score("test-comp", timeout=5, interval=0)
+    assert result.status == UNAVAILABLE
+
+
+def test_poll_unparseable_score_is_unavailable():
+    sub = _make_submission("complete", "not-a-number")
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", return_value=[sub]),
+    ):
+        result = poll_submission_score("test-comp", timeout=5, interval=0)
+    assert result.status == UNAVAILABLE
+
+
+def test_poll_pending_then_complete():
+    pending = _make_submission("pending")
+    complete = _make_submission("complete", "0.71")
+    subs = MagicMock(side_effect=[[pending], [complete]])
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", subs),
+        patch("time.sleep"),
+    ):
+        result = poll_submission_score("test-comp", timeout=60, interval=1)
+    assert result.status == SCORED
+    assert result.score == pytest.approx(0.71)
+
+
+def test_poll_backs_off_and_caps_interval():
+    # The poll interval grows by `backoff` each round and never exceeds `max_interval`.
+    pending = _make_submission("pending")
+    slept: list[int] = []
+    call = {"n": 0}
+
+    def _submissions(_comp):
+        # Return pending for several rounds, then complete so the loop ends.
+        call["n"] += 1
+        return [pending] if call["n"] < 6 else [_make_submission("complete", "0.4")]
+
+    with (
+        patch.object(_kaggle.api, "authenticate"),
+        patch.object(_kaggle.api, "competition_submissions", side_effect=_submissions),
+        patch("time.sleep", side_effect=lambda s: slept.append(s)),
+    ):
+        result = poll_submission_score(
+            "test-comp", timeout=10_000, interval=5, max_interval=30, backoff=2.0
+        )
+    assert result.status == SCORED
+    # 5 → 10 → 20 → 30 → 30 (capped), strictly non-decreasing and bounded by max_interval.
+    assert slept == [5, 10, 20, 30, 30]
+    assert max(slept) <= 30
+
+
+# ---------------------------------------------------------------------------
 # CLI submit + score integration tests
 # ---------------------------------------------------------------------------
 
@@ -581,7 +708,10 @@ def test_submit_wait_writes_score_to_metrics_json(tmp_path, monkeypatch):
     with (
         patch("pathlib.Path.home", return_value=tmp_path),
         patch("kitchen.submit.upload"),
-        patch("kitchen.submit.fetch_score", return_value=0.78) as mock_fetch,
+        patch(
+            "kitchen.submit.poll_submission_score",
+            return_value=ScoreResult(SCORED, 0.78),
+        ) as mock_poll,
     ):
         result = runner.invoke(
             app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"}
@@ -593,7 +723,7 @@ def test_submit_wait_writes_score_to_metrics_json(tmp_path, monkeypatch):
     metrics = json.loads((tmp_path / "metrics.json").read_text())
     assert metrics["kaggle_public_score"] == pytest.approx(0.78)
     assert metrics["val_accuracy"] == pytest.approx(0.9)
-    mock_fetch.assert_called_once_with("march-machine-learning-mania-2026")
+    mock_poll.assert_called_once_with("march-machine-learning-mania-2026", timeout=300)
 
 
 def test_submit_default_skips_fetch(tmp_path, monkeypatch):
@@ -604,7 +734,7 @@ def test_submit_default_skips_fetch(tmp_path, monkeypatch):
     with (
         patch("pathlib.Path.home", return_value=tmp_path),
         patch("kitchen.submit.upload"),
-        patch("kitchen.submit.fetch_score") as mock_fetch,
+        patch("kitchen.submit.poll_submission_score") as mock_poll,
     ):
         result = runner.invoke(
             app,
@@ -613,26 +743,76 @@ def test_submit_default_skips_fetch(tmp_path, monkeypatch):
         )
 
     assert result.exit_code == 0
-    mock_fetch.assert_not_called()
+    mock_poll.assert_not_called()
     assert "Leaderboard score" not in result.output
 
 
-def test_submit_wait_score_not_available_message(tmp_path, monkeypatch):
+def test_submit_wait_pending_message_no_metrics_written(tmp_path, monkeypatch):
+    # A timed-out (still-scoring) poll tells the user to retry, and writes nothing.
     monkeypatch.chdir(tmp_path)
     _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
 
     with (
         patch("pathlib.Path.home", return_value=tmp_path),
         patch("kitchen.submit.upload"),
-        patch("kitchen.submit.fetch_score", return_value=None),
+        patch(
+            "kitchen.submit.poll_submission_score",
+            return_value=ScoreResult(PENDING, None, "still scoring after 300s"),
+        ),
     ):
         result = runner.invoke(
             app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"}
         )
 
     assert result.exit_code == 0
-    assert "not yet available" in result.output
+    assert "Still scoring" in result.output
+    assert "--wait-timeout" in result.output
     assert not (tmp_path / "metrics.json").exists()
+
+
+def test_submit_wait_errored_message(tmp_path, monkeypatch):
+    # A submission Kaggle marks errored gets a distinct message (not "still scoring").
+    monkeypatch.chdir(tmp_path)
+    _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
+
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload"),
+        patch(
+            "kitchen.submit.poll_submission_score",
+            return_value=ScoreResult(ERRORED, None, "Kaggle reported the submission errored"),
+        ),
+    ):
+        result = runner.invoke(
+            app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"}
+        )
+
+    assert result.exit_code == 0
+    assert "errored" in result.output
+    assert not (tmp_path / "metrics.json").exists()
+
+
+def test_submit_wait_timeout_option_forwarded(tmp_path, monkeypatch):
+    # --wait-timeout flows through to poll_submission_score.
+    monkeypatch.chdir(tmp_path)
+    _setup(tmp_path, KAGGLE_PARAMS, VALID_SUB, SAMPLE)
+
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path),
+        patch("kitchen.submit.upload"),
+        patch(
+            "kitchen.submit.poll_submission_score",
+            return_value=ScoreResult(SCORED, 0.5),
+        ) as mock_poll,
+    ):
+        result = runner.invoke(
+            app,
+            ["submit", "--wait", "--wait-timeout", "600"],
+            env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"},
+        )
+
+    assert result.exit_code == 0
+    mock_poll.assert_called_once_with("march-machine-learning-mania-2026", timeout=600)
 
 
 def test_submit_wait_creates_metrics_json_if_missing(tmp_path, monkeypatch):
@@ -642,7 +822,10 @@ def test_submit_wait_creates_metrics_json_if_missing(tmp_path, monkeypatch):
     with (
         patch("pathlib.Path.home", return_value=tmp_path),
         patch("kitchen.submit.upload"),
-        patch("kitchen.submit.fetch_score", return_value=0.82),
+        patch(
+            "kitchen.submit.poll_submission_score",
+            return_value=ScoreResult(SCORED, 0.82),
+        ),
     ):
         result = runner.invoke(
             app, ["submit", "--wait"], env={"KAGGLE_USERNAME": "u", "KAGGLE_KEY": "k"}
