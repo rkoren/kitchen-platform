@@ -868,18 +868,33 @@ def evaluate(model: object, params: dict, store: DataStore) -> dict[str, float]:
 _TRAIN_RUN_MULTICLASS_CLS = """\
 \"\"\"Model training for $name — multiclass classification (XGBoost baseline).
 
-Splits features into train/val, fits XGBClassifier with multi:softprob
-objective, logs validation metrics (val_accuracy, val_f1, val_roc_auc) to the
-active MLflow run.  The run is opened by Trainer.run() before fit() is called.
+Fits an XGBClassifier (multi:softprob) and logs validation metrics — including
+val_balanced_accuracy, the metric to rank imbalanced multiclass on — to the active MLflow
+run, which Trainer.run() opens before fit().
 
-Set params.model.num_classes to the number of classes (XGBoost ≥1.6 can infer
-it, but setting it explicitly is safer).
+This baseline handles two things a plain XGBClassifier does not:
+
+* Class imbalance: sample_weight uses sklearn's "balanced" weights so a majority class does
+  not swamp training (without it the model collapses onto one class and val_balanced_accuracy
+  sits at chance, 1/n_classes).
+* Categorical features: enable_categorical=True consumes pandas `category` columns directly.
+  In src/features/run.py, give each categorical a fixed category list so train and test encode
+  identically, e.g. df[col] = pd.Categorical(df[col], categories=["a", "b", "c"]).
+
+The target must be integer-encoded 0..n-1 in the features stage — XGBoost rejects string
+labels. Encode with a fixed class order (reproducible) and decode predictions back in
+flows/generate_submission.py:
+    CLASSES = ["class_a", "class_b", "class_c"]                 # in src/features/run.py
+    df[target] = df[target].map({c: i for i, c in enumerate(CLASSES)})
+    labels = [CLASSES[i] for i in model.predict(X_test)]        # in generate_submission.py
 \"\"\"
 from __future__ import annotations
 
 import mlflow
 import pandas as pd
 import xgboost as xgb
+from sklearn.utils.class_weight import compute_sample_weight
+
 from kitchen.modeling import classification_metrics, train_val_split
 from kitchen.steps import Trainer
 from kitchen.store import DataStore
@@ -901,6 +916,7 @@ class ${class_name}Trainer(Trainer):
         p = params["model"].get("xgb", {})
         model = xgb.XGBClassifier(
             objective="multi:softprob",
+            enable_categorical=True,  # consume pandas `category` feature columns directly
             n_estimators=p.get("n_estimators", 300),
             max_depth=p.get("max_depth", 6),
             learning_rate=p.get("learning_rate", 0.05),
@@ -909,7 +925,9 @@ class ${class_name}Trainer(Trainer):
             random_state=seed,
             eval_metric="mlogloss",
         )
-        model.fit(X_train, y_train)
+        # Balance the classes so val_balanced_accuracy reflects real per-class skill.
+        sample_weight = compute_sample_weight("balanced", y_train)
+        model.fit(X_train, y_train, sample_weight=sample_weight)
 
         y_pred = model.predict(X_val)
         y_proba = model.predict_proba(X_val)  # full probability matrix for roc_auc (ovr)
@@ -927,7 +945,8 @@ _EVALUATE_RUN_MULTICLASS_CLS = """\
 
 Scores the model on a held-out validation split using the same seed as
 training so the val partition is consistent across runs.
-Reports accuracy, macro-f1, and macro roc_auc (one-vs-rest).
+Reports accuracy, balanced_accuracy (mean per-class recall — the imbalanced-multiclass
+metric), macro-f1, and macro roc_auc (one-vs-rest).
 \"\"\"
 from __future__ import annotations
 

@@ -1700,6 +1700,22 @@ def test_init_multiclass_cls_template_evaluate(tmp_path, monkeypatch):
     assert "NotImplementedError" not in eval_src
 
 
+def test_init_multiclass_cls_handles_imbalance_and_categoricals(tmp_path, monkeypatch):
+    # SCF-019/020: the multiclass baseline balances classes, enables categoricals, and documents
+    # the integer-encode-the-target pattern (XGBoost 3.x rejects string labels) — not a plain fit.
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app, ["init", "my-comp", "--template", "multiclass-cls"], catch_exceptions=False
+    )
+    train_src = (tmp_path / "my-comp" / "src" / "train" / "run.py").read_text()
+    assert "enable_categorical=True" in train_src
+    assert 'compute_sample_weight("balanced"' in train_src
+    assert "sample_weight=sample_weight" in train_src
+    # target-encoding guidance is present; the old misleading num_classes claim is gone
+    assert "integer-encoded" in train_src
+    assert "num_classes" not in train_src
+
+
 def test_init_regression_template_train(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(

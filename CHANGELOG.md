@@ -79,6 +79,13 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   submit steps exported `KAGGLE_USERNAME`/`KAGGLE_KEY`, but current kaggle clients **401 on
   env-var auth** against `api.kaggle.com`; the steps now write `kaggle.json` from the secrets
   (and `chmod 600` it) before `kitchen ingest` / `kitchen submit`.
+- The `multiclass-cls` scaffold now produces a working *imbalanced*-multiclass baseline
+  (SCF-019, SCF-020). The train template balances classes (`sample_weight="balanced"` — without
+  it the model collapses onto the majority class and balanced accuracy sits at chance), enables
+  categorical features (`enable_categorical=True`), and documents the integer-encode-the-target
+  pattern: XGBoost ≥3 **rejects string labels**, so the old template silently broke on them and
+  its docstring wrongly implied XGBoost could infer classes from a string target. It logs
+  `val_balanced_accuracy` (via the SCF-018 metric) as the metric to rank on.
 
 ## [1.0.2] - 2026-07-07
 
