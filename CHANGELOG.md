@@ -7,6 +7,12 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `classification_metrics` (`kitchen.modeling`) now also returns **`balanced_accuracy`** (SCF-018)
+  — mean per-class recall, the metric to rank on for imbalanced targets (a majority-only
+  prediction scores `1/n_classes`, not the inflated plain accuracy) and the evaluation metric for
+  competitions like Kaggle Playground S6E7. Scaffolded trainers/evaluators that call
+  `classification_metrics` now log `val_balanced_accuracy` with no project-side code, so
+  `--auto-promote` / `leaderboard` can target it directly.
 - Promotion **validation-scheme guard** (S6E7-002) — `kitchen promote <metric>` and
   `kitchen run train --auto-promote` now refuse to rank/compare runs that declare different
   `validation_scheme` run tags (e.g. an 80/20 holdout vs out-of-fold CV): their metrics aren't

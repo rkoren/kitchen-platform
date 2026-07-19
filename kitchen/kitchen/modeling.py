@@ -97,8 +97,14 @@ def classification_metrics(
 ) -> dict[str, float]:
     """Compute standard classification metrics.
 
-    Always returns ``accuracy`` and ``f1``.  When *y_proba* is supplied,
-    also returns ``log_loss`` and ``roc_auc``.
+    Always returns ``accuracy``, ``balanced_accuracy``, and ``f1``.  When *y_proba* is
+    supplied, also returns ``log_loss`` and ``roc_auc``.
+
+    ``balanced_accuracy`` is the mean per-class recall — the metric to rank on for
+    imbalanced targets (a majority-class-only prediction scores ``1/n_classes``, not the
+    inflated plain accuracy). It's the evaluation metric for competitions like Kaggle
+    Playground S6E7, so having it here means ``--auto-promote`` / ``leaderboard`` can target
+    ``val_balanced_accuracy`` with no project-side code.
 
     Args:
         y_true: Ground-truth labels.
@@ -111,10 +117,17 @@ def classification_metrics(
     Returns:
         Flat ``dict[str, float]`` suitable for ``mlflow.log_metrics()``.
     """
-    from sklearn.metrics import accuracy_score, f1_score, log_loss, roc_auc_score
+    from sklearn.metrics import (
+        accuracy_score,
+        balanced_accuracy_score,
+        f1_score,
+        log_loss,
+        roc_auc_score,
+    )
 
     metrics: dict[str, float] = {
         "accuracy": float(accuracy_score(y_true, y_pred)),
+        "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
         "f1": float(f1_score(y_true, y_pred, average=average)),
     }
     if y_proba is not None:
