@@ -1663,7 +1663,7 @@ jobs:
           cache: pip
 
       - name: Install kitchen
-        run: pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
+        run: pip install rkoren-kitchen
 
       - name: Install project
         run: pip install -e ".[dev]"
@@ -1779,7 +1779,7 @@ jobs:
           cache: pip
 
       - name: Install kitchen
-        run: pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
+        run: pip install rkoren-kitchen
 
       - name: Fetch results branch
         run: git fetch origin results:results 2>/dev/null || true
@@ -1856,16 +1856,20 @@ jobs:
           cache: pip
 
       - name: Install kitchen
-        run: pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
+        run: pip install rkoren-kitchen
 
       - name: Install project
         run: pip install -e ".[dev]"
 
       - name: Ingest data
-        env:
-          KAGGLE_USERNAME: $${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: $${{ secrets.KAGGLE_KEY }}
-        run: kitchen ingest
+        # Write ~/.kaggle/kaggle.json from the secrets rather than relying on
+        # KAGGLE_USERNAME/KAGGLE_KEY env vars — current kaggle clients 401 on the
+        # env-var auth path against api.kaggle.com, but authenticate fine via the file.
+        run: |
+          mkdir -p ~/.kaggle
+          printf '{"username":"%s","key":"%s"}' '$${{ secrets.KAGGLE_USERNAME }}' '$${{ secrets.KAGGLE_KEY }}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+          kitchen ingest
 
       # Persistent backend only: resolve MLFLOW_TRACKING_URI from the secrets manifest into
       # the GitHub env file so the steps below use the RDS store (needs AWS creds — add an
@@ -1890,10 +1894,11 @@ jobs:
 
       - name: Submit to Kaggle
         if: $${{ inputs.submit || (steps.ci.outputs.auto_submit == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-        env:
-          KAGGLE_USERNAME: $${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: $${{ secrets.KAGGLE_KEY }}
-        run: kitchen submit --wait
+        run: |
+          mkdir -p ~/.kaggle
+          printf '{"username":"%s","key":"%s"}' '$${{ secrets.KAGGLE_USERNAME }}' '$${{ secrets.KAGGLE_KEY }}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+          kitchen submit --wait
 
       - name: Push results
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -1993,7 +1998,7 @@ jobs:
           cache: pip
 
       - name: Install kitchen
-        run: pip install "kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
+        run: pip install rkoren-kitchen
 
       - name: Fetch results branch
         run: git fetch origin results:results 2>/dev/null || true
