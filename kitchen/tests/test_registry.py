@@ -9,6 +9,7 @@ import mlflow.exceptions
 import pytest
 
 from kitchen.registry import (
+    _SCHEME_INSPECT_LIMIT,
     get_best_run,
     get_champion_metrics,
     get_production_uri,
@@ -106,7 +107,7 @@ def test_get_best_run_lower_is_better_uses_asc():
         experiment_ids=["42"],
         filter_string="",
         order_by=["metrics.val_brier ASC"],
-        max_results=1,
+        max_results=_SCHEME_INSPECT_LIMIT,
     )
     assert result is run
 
@@ -145,6 +146,54 @@ def test_get_best_run_error_mentions_tags_when_filter_set():
         client.search_runs.return_value = []
         with pytest.raises(ValueError, match="tags"):
             get_best_run("my-exp", "val_brier", tag_filter={"model_variant": "x"})
+
+
+# get_best_run — validation-scheme comparability guard (S6E7-002)
+
+
+def _scheme_run(metric_value: float, scheme: str | None, metric: str = "val_accuracy"):
+    """A run carrying a real metrics dict + optional validation_scheme tag (real dicts so
+    ``metric in run.data.metrics`` and ``tags.get`` behave like production, not MagicMock)."""
+    run = MagicMock()
+    run.data.metrics = {metric: metric_value}
+    run.data.tags = {"validation_scheme": scheme} if scheme else {}
+    return run
+
+
+def _run_get_best(runs, **kwargs):
+    exp = MagicMock()
+    exp.experiment_id = "1"
+    with patch("mlflow.tracking.MlflowClient") as MockClient:
+        client = MockClient.return_value
+        client.get_experiment_by_name.return_value = exp
+        client.search_runs.return_value = runs
+        return get_best_run("my-exp", "val_accuracy", lower_is_better=False, **kwargs)
+
+
+def test_get_best_run_refuses_when_competitive_runs_span_schemes():
+    # A split-based 0.95001 must NOT silently beat an out-of-fold 0.94981 — different schemes.
+    runs = [_scheme_run(0.95001, "holdout-0.2"), _scheme_run(0.94981, "oof-5fold")]
+    with pytest.raises(ValueError, match="multiple validation schemes"):
+        _run_get_best(runs)
+
+
+def test_get_best_run_allows_single_scheme():
+    runs = [_scheme_run(0.95, "oof-5fold"), _scheme_run(0.94, "oof-5fold")]
+    assert _run_get_best(runs) is runs[0]
+
+
+def test_get_best_run_untagged_runs_skip_the_guard():
+    # Backward compatible: runs without a validation_scheme tag never trigger a refusal.
+    runs = [_scheme_run(0.95, None), _scheme_run(0.94, None)]
+    assert _run_get_best(runs) is runs[0]
+
+
+def test_get_best_run_scheme_filter_bypasses_guard():
+    # Narrowing to one scheme via tag_filter makes the pool comparable — no raise even if the
+    # returned candidates carry differing tags (the server-side filter is what scopes them).
+    runs = [_scheme_run(0.95, "holdout-0.2"), _scheme_run(0.94, "oof-5fold")]
+    result = _run_get_best(runs, tag_filter={"validation_scheme": "oof-5fold"})
+    assert result is runs[0]
 
 
 # ---------------------------------------------------------------------------

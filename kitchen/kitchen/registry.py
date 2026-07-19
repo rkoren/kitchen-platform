@@ -6,6 +6,17 @@ import mlflow
 import mlflow.exceptions
 import mlflow.tracking
 
+# Optional run tag naming the validation scheme a run's metrics were computed under
+# (e.g. "holdout-0.2", "oof-5fold", "in-sample"). Metrics from different schemes are not
+# comparable, so ranking/auto-promote refuse to compare across declared schemes. Projects
+# opt in by tagging their runs (`mlflow.set_tag("validation_scheme", "...")`); untagged runs
+# are treated as unknown and never trigger the guard (backward compatible).
+VALIDATION_SCHEME_TAG = "validation_scheme"
+
+# How many top-ranked runs to inspect for scheme mixing. Bounds the guard to genuinely
+# competitive runs — a distant also-ran under a different scheme won't block a clear winner.
+_SCHEME_INSPECT_LIMIT = 50
+
 
 def _run_logged_model_names(run_id: str) -> list[str] | None:
     """Best-effort: names of the models a run logged (MLflow 3.x logged models).
@@ -68,13 +79,17 @@ def get_best_run(
         metric: Metric name to rank by (e.g. "brier_2026").
         lower_is_better: True for loss metrics (Brier), False for reward metrics.
         tag_filter: Optional tag key→value pairs to narrow the search
-                    (e.g. {"model_variant": "challenger"}).
+                    (e.g. {"model_variant": "challenger"}). Include
+                    ``{VALIDATION_SCHEME_TAG: "..."}`` to rank within one scheme and
+                    bypass the comparability guard below.
 
     Returns:
         The Run object with the best metric value.
 
     Raises:
-        ValueError: If the experiment doesn't exist or no matching runs are found.
+        ValueError: If the experiment doesn't exist, no matching runs are found, or the
+            competitive runs span more than one declared ``validation_scheme`` (their
+            metrics aren't comparable — narrow via ``tag_filter`` or promote by run ID).
     """
     client = mlflow.tracking.MlflowClient()
     exp = client.get_experiment_by_name(experiment_name)
@@ -87,11 +102,32 @@ def get_best_run(
         experiment_ids=[exp.experiment_id],
         filter_string=filter_str or "",
         order_by=[f"metrics.{metric} {order}"],
-        max_results=1,
+        max_results=_SCHEME_INSPECT_LIMIT,
     )
     if not runs:
         desc = f" with tags {tag_filter}" if tag_filter else ""
         raise ValueError(f"No runs found in experiment {experiment_name!r}{desc}")
+
+    # Comparability guard (S6E7-002): ranking a metric across runs computed under different
+    # validation schemes (e.g. an 80/20 holdout vs out-of-fold CV) compares non-comparable
+    # numbers and can crown the wrong model. If the competitive runs (those that actually
+    # have the metric) declare more than one scheme — and the caller didn't already narrow
+    # to one — refuse rather than silently pick a scheme-advantaged run.
+    if not (tag_filter and VALIDATION_SCHEME_TAG in tag_filter):
+        schemes = {
+            scheme
+            for run in runs
+            if metric in run.data.metrics
+            and (scheme := run.data.tags.get(VALIDATION_SCHEME_TAG))
+        }
+        if len(schemes) > 1:
+            listed = ", ".join(repr(s) for s in sorted(schemes))
+            raise ValueError(
+                f"runs in experiment {experiment_name!r} span multiple validation schemes "
+                f"({listed}); their {metric!r} values are not comparable. Promote a specific "
+                f"run with `kitchen promote --run-id <id>`, or rank within one scheme "
+                f"(`kitchen promote {metric} --scheme {sorted(schemes)[0]}`)."
+            )
     return runs[0]
 
 

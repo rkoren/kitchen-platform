@@ -2781,6 +2781,14 @@ def promote(
         str | None,
         typer.Option("--run-id", help="Promote a specific run by ID instead of ranking by metric"),
     ] = None,
+    scheme: Annotated[
+        str | None,
+        typer.Option(
+            "--scheme",
+            help="Rank only runs with this validation_scheme tag (metrics from different "
+            "schemes aren't comparable)",
+        ),
+    ] = None,
     model_artifact_path: Annotated[
         str | None,
         typer.Option(
@@ -2794,6 +2802,10 @@ def promote(
     Pass METRIC to promote whichever run leads on that metric.
     Pass --run-id to promote a specific run directly (e.g. copied from the dashboard).
     Both METRIC and --run-id may be combined: --run-id targets the run, METRIC is shown for context.
+
+    Metric ranking refuses to compare runs that declare different ``validation_scheme`` tags
+    (e.g. an 80/20 holdout vs out-of-fold CV) since those numbers aren't comparable — narrow
+    with --scheme, or target a specific run with --run-id.
     """
 
     import mlflow.tracking
@@ -2823,8 +2835,11 @@ def promote(
             typer.echo(f"error: could not fetch run {run_id!r}: {exc}", err=True)
             raise typer.Exit(1)
     else:
+        tag_filter = {"validation_scheme": scheme} if scheme else None
         try:
-            run = get_best_run(exp_name, metric, lower_is_better=lower_is_better)
+            run = get_best_run(
+                exp_name, metric, lower_is_better=lower_is_better, tag_filter=tag_filter
+            )
         except ValueError as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(1)

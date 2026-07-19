@@ -726,9 +726,13 @@ def _fake_pipeline_noop(params_file="params.yaml", overrides=None, variant=None)
 
 
 def _auto_promote_invoke(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    tmp_path, monkeypatch, extra_args, champion_score=None, new_score=0.15, metric="loto_brier"
+    tmp_path, monkeypatch, extra_args, champion_score=None, new_score=0.15, metric="loto_brier",
+    new_scheme=None, champion_scheme=None,
 ):
-    """Helper: set up a fake pipeline + MLflow client and invoke run train with extra_args."""
+    """Helper: set up a fake pipeline + MLflow client and invoke run train with extra_args.
+
+    ``new_scheme`` / ``champion_scheme`` set the runs' validation_scheme tags (real dicts, so
+    an unset tag reads as absent — not a truthy MagicMock — matching production)."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text("experiment: cbb\n")
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
@@ -736,6 +740,7 @@ def _auto_promote_invoke(  # pylint: disable=too-many-arguments,too-many-positio
     new_run = MagicMock()
     new_run.info.run_id = "newrun" + "0" * 26
     new_run.data.metrics = {metric: new_score}
+    new_run.data.tags = {"validation_scheme": new_scheme} if new_scheme else {}
 
     def make_client():
         client = MagicMock()
@@ -746,6 +751,7 @@ def _auto_promote_invoke(  # pylint: disable=too-many-arguments,too-many-positio
             mv.run_id = "champrun" + "0" * 24
             champ_run = MagicMock()
             champ_run.data.metrics = {metric: champion_score}
+            champ_run.data.tags = {"validation_scheme": champion_scheme} if champion_scheme else {}
             client.get_model_version_by_alias.return_value = mv
             client.get_run.return_value = champ_run
         else:
@@ -883,6 +889,36 @@ def test_auto_promote_higher_is_better(tmp_path, monkeypatch):
     assert result.exit_code == 0
     mock_reg.assert_called_once()
     mock_prom.assert_called_once()
+
+
+def test_auto_promote_refuses_on_scheme_mismatch(tmp_path, monkeypatch):
+    # Challenger scored under a different validation scheme than the champion → refuse rather
+    # than promote on an unfair comparison, even though the raw number "wins" (S6E7-002).
+    result, mock_reg, mock_prom = _auto_promote_invoke(
+        tmp_path, monkeypatch,
+        ["--auto-promote", "--promote-metric", "val_bal_acc", "--higher-is-better"],
+        champion_score=0.90, champion_scheme="oof-5fold",
+        new_score=0.95, new_scheme="holdout-0.2", metric="val_bal_acc",
+    )
+    assert result.exit_code == 0
+    mock_reg.assert_not_called()
+    mock_prom.assert_not_called()
+    assert "refused" in result.output
+    assert "validation_scheme" in result.output
+
+
+def test_auto_promote_same_scheme_promotes(tmp_path, monkeypatch):
+    # Matching schemes → guard is a no-op; a genuine improvement still promotes.
+    result, mock_reg, mock_prom = _auto_promote_invoke(
+        tmp_path, monkeypatch,
+        ["--auto-promote", "--promote-metric", "val_bal_acc", "--higher-is-better"],
+        champion_score=0.90, champion_scheme="oof-5fold",
+        new_score=0.95, new_scheme="oof-5fold", metric="val_bal_acc",
+    )
+    assert result.exit_code == 0
+    mock_reg.assert_called_once()
+    mock_prom.assert_called_once()
+    assert "→ champion" in result.output
 
 
 def test_auto_promote_not_set_no_promote(tmp_path, monkeypatch):
@@ -3546,6 +3582,33 @@ def _promote_invoke(extra_args: list | None = None) -> object:
             ["promote", "--experiment", "test-exp", *(extra_args or [])],
             catch_exceptions=False,
         )
+
+
+def test_promote_scheme_forwards_tag_filter():
+    """--scheme narrows metric ranking to one validation_scheme via get_best_run's tag_filter."""
+    best = _make_promote_run("sch123" + "0" * 26, {"accuracy": 0.9})
+
+    def make_client():
+        client = MagicMock()
+        client.get_model_version_by_alias.side_effect = Exception("no champion")
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+        patch("kitchen.registry.get_best_run", return_value=best) as mock_gbr,
+        patch("kitchen.registry.register_model", return_value="3"),
+        patch("kitchen.registry.promote_model"),
+        patch("kitchen.registry.get_production_uri", return_value=None),
+    ):
+        result = runner.invoke(
+            app,
+            ["promote", "accuracy", "--experiment", "test-exp", "--scheme", "oof-5fold"],
+            catch_exceptions=False,
+        )
+    assert result.exit_code == 0
+    _, kwargs = mock_gbr.call_args
+    assert kwargs["tag_filter"] == {"validation_scheme": "oof-5fold"}
 
 
 def test_promote_run_id_succeeds():

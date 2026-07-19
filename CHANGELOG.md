@@ -7,6 +7,13 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Promotion **validation-scheme guard** (S6E7-002) — `kitchen promote <metric>` and
+  `kitchen run train --auto-promote` now refuse to rank/compare runs that declare different
+  `validation_scheme` run tags (e.g. an 80/20 holdout vs out-of-fold CV): their metrics aren't
+  comparable, and a scheme-advantaged run could silently crown the wrong champion. Projects opt
+  in by tagging runs (`mlflow.set_tag("validation_scheme", "...")`); untagged runs are unaffected
+  (backward compatible). Narrow a ranking to one scheme with `kitchen promote <metric> --scheme
+  <name>`, or target a specific run with `--run-id`.
 - `kitchen submit --notebook` (GEN-005a) — assemble a Kaggle **submission notebook** from a
   notebook-safe submission script (default `flows/generate_submission.py`): a header, the inlined
   source, an explicit call to its entry function, and a validation cell (`validate_submission`).

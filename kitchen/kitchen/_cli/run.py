@@ -67,7 +67,7 @@ def _try_auto_promote(
     import mlflow.tracking
 
     from kitchen.config import KitchenConfig
-    from kitchen.registry import promote_model, register_model
+    from kitchen.registry import VALIDATION_SCHEME_TAG, promote_model, register_model
     from kitchen.tracking import configure_from_env
 
     configure_from_env()
@@ -97,14 +97,29 @@ def _try_auto_promote(
         typer.echo(f"auto-promote: metric {metric!r} missing from latest run.")
         return
 
-    # Look up current champion score (None if no champion yet).
+    # Look up current champion score + validation scheme (None if no champion yet).
     champ_score: float | None = None
+    champ_scheme: str | None = None
     try:
         mv = client.get_model_version_by_alias(resolved_model, "champion")
         champ_run = client.get_run(mv.run_id)
         champ_score = champ_run.data.metrics.get(metric)
+        champ_scheme = champ_run.data.tags.get(VALIDATION_SCHEME_TAG)
     except Exception:
         pass
+
+    # Comparability guard (S6E7-002): if the challenger and champion declare different
+    # validation schemes, their metrics aren't comparable — refuse rather than silently
+    # promote on an unfair comparison. Untagged runs skip the guard (backward compatible).
+    new_scheme = new_run.data.tags.get(VALIDATION_SCHEME_TAG)
+    if champ_score is not None and new_scheme and champ_scheme and new_scheme != champ_scheme:
+        typer.echo()
+        typer.echo(
+            f"auto-promote: refused — challenger validation_scheme {new_scheme!r} differs from "
+            f"champion's {champ_scheme!r}; {metric} is not comparable across schemes. Promote "
+            f"explicitly with `kitchen promote --run-id {new_run.info.run_id[:8]}` if intended."
+        )
+        return
 
     direction_label = "lower=better" if lower_is_better else "higher=better"
     if champ_score is None:
