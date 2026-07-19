@@ -1986,6 +1986,37 @@ def test_init_ci_kaggle_ingest_uses_secrets(tmp_path, monkeypatch):
     assert "secrets.KAGGLE_KEY" in raw
 
 
+def test_init_ci_installs_rkoren_kitchen_from_pypi(_ci_local):
+    # SCF-021: the standalone "Install kitchen" step must install the real distribution
+    # (rkoren-kitchen), not the old `kitchen @ git+...` name — pip resolved that to an
+    # unrelated PyPI `kitchen` and failed the first CI run of every scaffolded project.
+    raw, data = _ci_local
+    install = next(
+        s for s in data["jobs"]["train-evaluate"]["steps"] if s.get("name") == "Install kitchen"
+    )
+    assert install["run"].strip() == "pip install rkoren-kitchen"
+    assert "kitchen @ git+" not in raw
+
+
+def test_init_ci_kaggle_ingest_writes_kaggle_json(tmp_path, monkeypatch):
+    # SCF-022: authenticate via ~/.kaggle/kaggle.json (KAGGLE_USERNAME/KAGGLE_KEY env-var auth
+    # 401s on current kaggle clients), so the Ingest step writes the file from the secrets and
+    # carries no KAGGLE_* env block.
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(
+        app,
+        ["init", "my-comp", "--ci", "--source", "kaggle", "--competition", "my-comp"],
+        catch_exceptions=False,
+    )
+    content = yaml.safe_load((tmp_path / "my-comp" / _CI_WORKFLOW_PATH).read_text())
+    ingest = next(
+        s for s in content["jobs"]["train-evaluate"]["steps"] if s.get("name") == "Ingest data"
+    )
+    assert "~/.kaggle/kaggle.json" in ingest["run"]
+    assert "kitchen ingest" in ingest["run"]
+    assert ingest.get("env") is None  # creds flow through the file, not env-var auth
+
+
 def test_init_ci_local_no_ingest_step(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-comp", "--ci"], catch_exceptions=False)

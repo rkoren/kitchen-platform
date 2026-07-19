@@ -63,6 +63,17 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   non-tabular / separate-interpreter pipelines without the `FeatureBuilder`/`Trainer`/`Evaluator`
   ABCs.
 
+### Fixed
+- Scaffolded CI (`kitchen init --ci`) now installs the platform correctly (SCF-021). Both
+  "Install kitchen" steps ran `pip install "kitchen @ git+…"`, but the PEP 508 name `kitchen`
+  no longer matches the renamed distribution `rkoren-kitchen`, so pip resolved an unrelated
+  PyPI `kitchen` and **every scaffolded project's first CI run failed at install**. Now
+  `pip install rkoren-kitchen`.
+- Scaffolded Kaggle CI now authenticates via `~/.kaggle/kaggle.json` (SCF-022). The ingest +
+  submit steps exported `KAGGLE_USERNAME`/`KAGGLE_KEY`, but current kaggle clients **401 on
+  env-var auth** against `api.kaggle.com`; the steps now write `kaggle.json` from the secrets
+  (and `chmod 600` it) before `kitchen ingest` / `kitchen submit`.
+
 ## [1.0.2] - 2026-07-07
 
 ### Changed
