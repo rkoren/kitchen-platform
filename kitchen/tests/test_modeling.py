@@ -159,6 +159,24 @@ def test_classification_macro_average():
     assert "f1" in m
 
 
+def test_classification_balanced_accuracy_present(imperfect_binary):
+    y_true, y_pred, _ = imperfect_binary
+    m = classification_metrics(y_true, y_pred)
+    assert "balanced_accuracy" in m
+    assert 0.0 <= m["balanced_accuracy"] <= 1.0
+
+
+def test_classification_balanced_accuracy_differs_on_imbalance():
+    # Majority-only prediction on an imbalanced target: plain accuracy looks decent, but
+    # balanced accuracy (mean per-class recall) collapses to chance — the point of the metric.
+    y_true = np.array([0, 0, 0, 0, 1, 2])
+    y_pred = np.array([0, 0, 0, 0, 0, 0])
+    m = classification_metrics(y_true, y_pred, average="macro")
+    assert m["accuracy"] == pytest.approx(4 / 6)
+    # mean per-class recall: (4/4 + 0/1 + 0/1) / 3
+    assert m["balanced_accuracy"] == pytest.approx(1 / 3)
+
+
 # ---------------------------------------------------------------------------
 # regression_metrics
 # ---------------------------------------------------------------------------
