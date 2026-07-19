@@ -46,9 +46,9 @@ kitchen leaderboard                 # rank all runs by primary metric
 kitchen promote METRIC              # promote best run to the registry
 kitchen ui                          # open MLflow UI in browser
 
-# Experiment variants (edit first, then run)
-python experiments/baseline.py
-python experiments/challenger.py
+# Experiment variants (run as modules from the project root, so `import experiments`/`src` resolve)
+python -m experiments.baseline
+python -m experiments.challenger
 
 # Generate Kaggle submission
 kitchen submit
@@ -1334,8 +1334,8 @@ _BASELINE_PY = """\
 First approach — simpler features, default hyperparams.
 Tag: model_variant=baseline.
 
-Usage:
-    python experiments/baseline.py
+Usage (from the project root):
+    python -m experiments.baseline
 \"\"\"
 from __future__ import annotations
 
@@ -1384,8 +1384,8 @@ _CHALLENGER_PY = """\
 Extend the baseline: add features, tune hyperparams, or swap the model.
 Tag: model_variant=challenger.
 
-Usage:
-    python experiments/challenger.py
+Usage (from the project root):
+    python -m experiments.challenger
 \"\"\"
 from __future__ import annotations
 
