@@ -68,6 +68,62 @@ Both experiment scripts tag runs with `model_variant=baseline` or `model_variant
 Load the champion with `mlflow.pyfunc.load_model('models:/$name-model@champion')`.
 """
 
+_CLAUDE_MD_PIPELINE = """\
+# $name
+
+A lean, command-stage project built on the [kitchen platform](https://github.com/rkoren/kitchen-platform)
+(`kitchen init --kind pipeline`). The work runs as a subprocess **stage** — no tabular
+`FeatureBuilder`/`Trainer`/`Evaluator` ABCs and no `experiments/`. For inference-only or
+non-tabular jobs.
+
+## Setup
+
+```bash
+pip install rkoren-kitchen -e .
+# Contributors working from the monorepo: pip install -e ../kitchen-platform/kitchen -e .
+cp .env.example .env
+```
+
+## The contract — one file to implement
+
+`src/pipeline/run.py` does the work and writes its metric(s) as JSON to the path in
+`$$KITCHEN_METRICS_FILE` (falls back to `metrics.json`) — any `{name: number}` dict. The stub
+writes `{"score": ...}`.
+
+`menu.yaml` wires it up as a command stage:
+
+```yaml
+pipeline: [run]
+recipes:
+  run:
+    kind: stage
+    cmd: python -m src.pipeline.run   # the subprocess argv, run verbatim
+thresholds:
+  score: 0.0                          # the metric to rank/gate on
+```
+
+## Running
+
+```bash
+kitchen stage run                       # run the one stage in isolation (--dry-run previews the argv)
+kitchen menu run                        # run the whole pipeline
+kitchen leaderboard --store runs.jsonl  # rank runs logged to the store
+kitchen sweep --run 'python -m src.pipeline.run' --param key=v1,v2 --metric score
+```
+
+`--source kaggle` projects fetch data first with `kitchen ingest`.
+
+## Notes
+
+- Tracking is your call: write metrics to `$$KITCHEN_METRICS_FILE`, and/or append to the
+  dependency-light run store with `kitchen log` (rank it with `kitchen leaderboard --store <path>`).
+  No MLflow required.
+- Add a per-stage interpreter (`python:`) or declared `inputs:`/`outputs:` in the recipe — see the
+  `menu.yaml` comments.
+- Want the tabular train/evaluate/promote loop instead? Re-scaffold with `kitchen init` (the default
+  `--kind tabular`).
+"""
+
 _ENV_EXAMPLE = """\
 export MLFLOW_TRACKING_URI=sqlite:///mlruns.db
 export MLFLOW_EXPERIMENT=$name
