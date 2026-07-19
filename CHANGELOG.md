@@ -86,6 +86,13 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   pattern: XGBoost ≥3 **rejects string labels**, so the old template silently broke on them and
   its docstring wrongly implied XGBoost could infer classes from a string target. It logs
   `val_balanced_accuracy` (via the SCF-018 metric) as the metric to rank on.
+- Scaffolded experiment run commands now work as advertised (S6E7-001). The generated `CLAUDE.md`
+  and the `experiments/baseline.py` / `experiments/challenger.py` docstrings told users to run
+  `python experiments/<script>.py`, which fails `ModuleNotFoundError: No module named 'experiments'`
+  — the scripts do `from experiments.baseline import …` / `from src…`, but running a script by path
+  doesn't put the project root on `sys.path`. They (and the local-source `generate_submission`
+  next-step) now use the module form `python -m experiments.<script>` /
+  `python -m flows.generate_submission`, run from the project root.
 
 ## [1.0.2] - 2026-07-07
 

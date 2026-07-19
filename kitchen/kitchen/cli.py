@@ -3380,7 +3380,7 @@ def init(
         submit_step = "  kitchen submit                      # validate and upload to Kaggle"
     else:
         data_step = "  # Download data to data/raw/"
-        submit_step = "  python flows/generate_submission.py # generate submission CSV"
+        submit_step = "  python -m flows.generate_submission # generate submission CSV"
 
     ci_note = ""
     if ci:
