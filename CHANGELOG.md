@@ -14,6 +14,14 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   builder enforces the notebook-safe contract via AST (rejects module-level `__file__` /
   `os.chdir` / `sys.path` and excludes the `__main__` block). Offline-dependency bundling for
   internet-off code competitions is a separate follow-up (GEN-005b).
+- `kitchen submit --wait` polls longer and reports precisely (S6E7-003) — Kaggle lags tens of
+  seconds behind an upload, so `--wait` now waits up to 5 min (tunable with `--wait-timeout`),
+  polling on an exponential backoff instead of a fixed short window. The result is no longer a
+  bare "score not available": it distinguishes **scored** (writes `metrics.json`), **still
+  scoring** (re-run / raise the timeout), **errored** (submission failed on Kaggle), and
+  **unavailable** (auth/API problem). Submission-status matching now tolerates enum-style values.
+  New `poll_submission_score()` returns a structured `ScoreResult`; `fetch_score()` stays as a
+  thin `float | None` wrapper.
 - `kitchen init --kind pipeline` (GEN-007) — scaffold a **lean** project built around a command
   stage (GEN-002/003) instead of the tabular `FeatureBuilder`/`Trainer`/`Evaluator` ABCs: just
   `menu.yaml` + a `src/pipeline/run.py` stub (which writes its metric to `$KITCHEN_METRICS_FILE`),

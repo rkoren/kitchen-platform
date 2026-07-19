@@ -3,8 +3,25 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
+
+# Outcomes of polling Kaggle for a submission's score. `None` alone can't tell "still
+# scoring" (retry later) from "errored" (don't) from "couldn't reach Kaggle" — callers
+# need the distinction to message the user correctly (S6E7-003).
+SCORED = "scored"  # Kaggle finished scoring; `.score` is set
+PENDING = "pending"  # timed out while still scoring — safe to poll again later
+ERRORED = "errored"  # Kaggle reported the submission itself errored
+UNAVAILABLE = "unavailable"  # auth/API failure, or a scored submission with no parseable score
+
+
+class ScoreResult(NamedTuple):
+    """Result of polling Kaggle for a submission score."""
+
+    status: str  # one of SCORED / PENDING / ERRORED / UNAVAILABLE
+    score: float | None
+    detail: str = ""  # human-readable context for non-SCORED outcomes
 
 
 def log_submission(
@@ -127,11 +144,35 @@ def upload(file_path: Path, message: str, competition: str) -> None:
     kaggle.api.competition_submit(str(file_path), message, competition, quiet=False)
 
 
-def fetch_score(competition: str, timeout: int = 120, interval: int = 10) -> float | None:
-    """Poll Kaggle for the most recent submission's public leaderboard score.
+def _normalize_status(status: object) -> str:
+    """Lowercase leaf token of a Kaggle submission status.
 
-    Returns the score as a float, or None if the timeout expires, the submission
-    errors, or the score cannot be parsed.
+    Kaggle may hand back a plain string (``"complete"``) or an enum whose ``str()`` is
+    ``"SubmissionStatus.COMPLETE"``; both normalize to ``"complete"``.
+    """
+    return str(status).lower().rsplit(".", 1)[-1]
+
+
+def poll_submission_score(
+    competition: str,
+    timeout: int = 300,
+    interval: int = 5,
+    max_interval: int = 30,
+    backoff: float = 1.5,
+) -> ScoreResult:
+    """Poll Kaggle for the latest submission's public leaderboard score.
+
+    Kaggle typically lags tens of seconds behind an upload, so this waits up to ``timeout``
+    seconds, polling on an exponential backoff (``interval`` → ``max_interval``) to avoid
+    hammering the API. Returns a :class:`ScoreResult` distinguishing "scored" from "still
+    scoring" (``PENDING`` — safe to poll again), "errored", and "unavailable".
+
+    Args:
+        competition: Kaggle competition slug.
+        timeout: Max seconds to wait for a terminal status.
+        interval: Initial poll interval in seconds.
+        max_interval: Cap the backing-off interval at this many seconds.
+        backoff: Multiplier applied to the interval after each poll.
     """
     import time
 
@@ -139,26 +180,42 @@ def fetch_score(competition: str, timeout: int = 120, interval: int = 10) -> flo
 
     try:
         kaggle.api.authenticate()
-    except Exception:
-        return None
+    except Exception as exc:
+        return ScoreResult(UNAVAILABLE, None, f"could not authenticate with Kaggle: {exc}")
+
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    wait = interval
+    while True:
         try:
             submissions = kaggle.api.competition_submissions(competition)
-        except Exception:
-            return None
+        except Exception as exc:
+            return ScoreResult(UNAVAILABLE, None, f"could not fetch submissions: {exc}")
+
         if submissions:
             latest = submissions[0]
-            status = getattr(latest, "status", None)
+            status = _normalize_status(getattr(latest, "status", None))
             if status == "complete":
                 raw = getattr(latest, "publicScore", None)
                 if raw is None:
-                    return None
+                    return ScoreResult(UNAVAILABLE, None, "submission scored but no publicScore")
                 try:
-                    return float(raw)
+                    return ScoreResult(SCORED, float(raw))
                 except (TypeError, ValueError):
-                    return None
+                    return ScoreResult(UNAVAILABLE, None, f"could not parse publicScore {raw!r}")
             if status == "error":
-                return None
-        time.sleep(interval)
-    return None
+                return ScoreResult(ERRORED, None, "Kaggle reported the submission errored")
+
+        if time.monotonic() >= deadline:
+            return ScoreResult(PENDING, None, f"still scoring after {timeout}s")
+        time.sleep(wait)
+        wait = min(max(int(wait * backoff), interval), max_interval)
+
+
+def fetch_score(competition: str, timeout: int = 120, interval: int = 10) -> float | None:
+    """Poll Kaggle for the most recent submission's public leaderboard score.
+
+    Thin backward-compatible wrapper over :func:`poll_submission_score`; returns the score
+    as a float, or None if it timed out, errored, or couldn't be parsed. New callers that
+    need to tell those cases apart should use :func:`poll_submission_score` directly.
+    """
+    return poll_submission_score(competition, timeout=timeout, interval=interval).score
