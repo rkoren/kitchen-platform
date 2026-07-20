@@ -943,6 +943,10 @@ flows/generate_submission.py:
     CLASSES = ["class_a", "class_b", "class_c"]                 # in src/features/run.py
     df[target] = df[target].map({c: i for i, c in enumerate(CLASSES)})
     labels = [CLASSES[i] for i in model.predict(X_test)]        # in generate_submission.py
+
+If you later refit the champion on ALL rows (e.g. cross-validation + a full-data refit), tag the
+run `mlflow.set_tag("trained_on_all_data", "true")` — then `kitchen run evaluate` reports this run's
+honest logged (out-of-fold) metrics instead of an in-sample re-score on data the model already saw.
 \"\"\"
 from __future__ import annotations
 

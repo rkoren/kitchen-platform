@@ -17,6 +17,12 @@ VALIDATION_SCHEME_TAG = "validation_scheme"
 # competitive runs — a distant also-ran under a different scheme won't block a clear winner.
 _SCHEME_INSPECT_LIMIT = 50
 
+# Run tag marking that a champion was refit on ALL rows (e.g. a CV + full-data-refit model),
+# so it has no honest hold-out left. `kitchen run evaluate` honors it (S6E7-004): rather than
+# re-scoring in-sample, it reports the run's own logged (out-of-fold / held-out) metrics. A
+# project sets it in its trainer (`mlflow.set_tag(TRAINED_ON_ALL_DATA_TAG, "true")`).
+TRAINED_ON_ALL_DATA_TAG = "trained_on_all_data"
+
 
 def _run_logged_model_names(run_id: str) -> list[str] | None:
     """Best-effort: names of the models a run logged (MLflow 3.x logged models).
