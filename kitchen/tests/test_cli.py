@@ -1164,6 +1164,67 @@ def test_run_evaluate_prints_metrics(tmp_path, monkeypatch):
     assert "val_accuracy" in result.output
 
 
+def _tagged_champion_client(tags: dict, run_id: str = "champ" + "0" * 27) -> MagicMock:
+    mv = MagicMock()
+    mv.run_id = run_id
+    champ_run = MagicMock()
+    champ_run.data.tags = tags
+    client = MagicMock()
+    client.get_model_version_by_alias.return_value = mv
+    client.get_run.return_value = champ_run
+    return client
+
+
+def test_run_evaluate_defers_to_logged_metrics_when_trained_on_all_data(tmp_path, monkeypatch):
+    # S6E7-004: a champion tagged trained_on_all_data has no honest hold-out — evaluate reports its
+    # logged (OOF) metrics and does NOT call the project evaluate() (no in-sample re-score).
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    fake_evaluate, calls, _ = _make_evaluate_mocks(monkeypatch)
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = fake_evaluate
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    client = _tagged_champion_client({"trained_on_all_data": "true"})
+    monkeypatch.setattr("mlflow.tracking.MlflowClient", lambda *a, **k: client)
+    monkeypatch.setattr(
+        "kitchen.registry.get_champion_metrics",
+        lambda name, alias="champion": {"val_balanced_accuracy": 0.95, "val_accuracy": 0.94},
+    )
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 0
+    assert "trained on all data" in result.output
+    assert "val_balanced_accuracy" in result.output
+    # the project evaluate() was NOT invoked
+    assert calls == []
+    # metrics.json holds the champion's own logged metrics (val_-prefixed) + its run_id
+    written = json.loads((tmp_path / "metrics.json").read_text())
+    assert written["val_balanced_accuracy"] == 0.95
+    assert written["val_accuracy"] == 0.94
+    assert written["run_id"] == "champ" + "0" * 27
+
+
+def test_run_evaluate_untagged_champion_still_re_scores(tmp_path, monkeypatch):
+    # Regression guard: an untagged champion re-scores via the project evaluate() exactly as before.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
+
+    fake_evaluate, calls, _ = _make_evaluate_mocks(monkeypatch, metrics={"val_brier": 0.2})
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = fake_evaluate
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+
+    client = _tagged_champion_client({})  # no trained_on_all_data tag
+    monkeypatch.setattr("mlflow.tracking.MlflowClient", lambda *a, **k: client)
+
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 0
+    assert len(calls) == 1  # the in-sample re-score path is unchanged
+    assert "val_brier" in result.output
+
+
 def test_run_evaluate_model_load_failure(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text(EVAL_PARAMS)
