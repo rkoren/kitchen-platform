@@ -48,6 +48,7 @@ from kitchen._cli._templates import (
     _CI_WORKFLOW,
     _CI_WORKFLOW_KAGGLE,
     _CLAUDE_MD,
+    _CLAUDE_MD_PIPELINE,
     _DASHBOARD_HTML,
     _DVC_YAML,
     _DVC_YAML_KAGGLE,
@@ -3143,7 +3144,7 @@ def _init_pipeline(
     menu_tmpl = _MENU_YAML_PIPELINE_KAGGLE if source == "kaggle" else _MENU_YAML_PIPELINE
     params_extra = {"competition": competition} if source == "kaggle" else {}
     files: list[tuple[Path, str]] = [
-        (root / "CLAUDE.md", r(_CLAUDE_MD, name, class_name)),
+        (root / "CLAUDE.md", r(_CLAUDE_MD_PIPELINE, name, class_name)),
         (root / ".env.example", r(_ENV_EXAMPLE, name, class_name)),
         (root / ".gitignore", r(_GITIGNORE, name, class_name)),
         (root / "menu.yaml", r(menu_tmpl, name, class_name, **params_extra)),

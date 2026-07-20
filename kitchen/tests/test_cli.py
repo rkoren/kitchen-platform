@@ -268,6 +268,23 @@ def test_init_kind_pipeline_rejects_tabular_only_flags(tmp_path, monkeypatch):
         assert "not applicable to --kind pipeline" in result.output
 
 
+def test_init_pipeline_claude_md_is_pipeline_specific(tmp_path, monkeypatch):
+    # SCF-023: the --kind pipeline CLAUDE.md documents the command-stage workflow, not the tabular
+    # ABCs / experiment scripts (which a pipeline project does not scaffold).
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "demo", "--kind", "pipeline"], catch_exceptions=False)
+    claude = (tmp_path / "demo" / "CLAUDE.md").read_text()
+    # documents what it actually ships
+    assert "src/pipeline/run.py" in claude
+    assert "kitchen stage run" in claude
+    assert "$KITCHEN_METRICS_FILE" in claude  # rendered with a single $ (template `$$` escaping)
+    assert "$$" not in claude
+    # does NOT advertise the tabular run loop / experiment scripts it doesn't generate
+    assert "python -m experiments" not in claude
+    assert "kitchen run train" not in claude
+    assert "src/features/run.py" not in claude
+
+
 def test_init_invalid_kind_errors(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["init", "x", "--kind", "bogus"])
