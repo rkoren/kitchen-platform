@@ -1,5 +1,6 @@
 """Tests for the recipes CLI."""
 
+import re
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,18 @@ from kitchen.recipes.cli import _refresh_tf_files, _workspace, app
 from kitchen.recipes.schema import RecipeSpec
 
 runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    """Strip ANSI color codes and collapse whitespace from rich output.
+
+    ``rich`` highlights numbers and may soft-wrap styled lines, so a phrase like ``< 1.10``
+    can be split by escape codes (or a line break) in the raw output — making a plain-substring
+    assertion brittle. Normalize before asserting on human-readable phrases.
+    """
+    return " ".join(_ANSI_RE.sub("", text).split())
 
 VALID_SPEC = """\
 name: test-infra
@@ -627,7 +640,8 @@ def test_doctor_warns_on_old_terraform():
          patch("kitchen.recipes.cli.subprocess.run", side_effect=runs):
         result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0
-    assert "< 1.10" in result.output
+    # rich number-highlights "1.10", so assert on the ANSI-stripped, whitespace-normalized text.
+    assert "< 1.10" in _plain(result.output)
 
 
 def test_doctor_checks_state_bucket_access():
