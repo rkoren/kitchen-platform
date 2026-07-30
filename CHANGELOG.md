@@ -6,6 +6,14 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-19
+
+The **generalization** release: the platform is now a strict superset that serves
+inference-only / non-tabular / separate-environment projects without the tabular
+`FeatureBuilder`/`Trainer`/`Evaluator` ABCs (the GEN-* epic), plus a full pass of
+scaffold-correctness and workflow hardening surfaced by dogfooding a real Kaggle
+competition end to end (the SCF-* / S6E7-* items).
+
 ### Changed
 - `kitchen run evaluate` no longer reports optimistic in-sample metrics for a champion that
   trained on all of the data (S6E7-004). A CV + full-data-refit champion has no honest hold-out
