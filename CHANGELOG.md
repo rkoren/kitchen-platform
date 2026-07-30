@@ -6,6 +6,19 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- `kitchen run evaluate` no longer reports optimistic in-sample metrics for a champion that
+  trained on all of the data (S6E7-004). A CV + full-data-refit champion has no honest hold-out
+  left, so re-scoring it wrote an inflated number to `metrics.json` — which `kitchen report`, the
+  CI threshold gate, and the dashboard read (the MLflow leaderboard was unaffected). Now, when the
+  champion run is tagged `trained_on_all_data`, `evaluate` **defers to the run's own logged
+  (out-of-fold / held-out) metrics** via `get_champion_metrics()` instead of re-scoring — and skips
+  the project `evaluate()` entirely (any in-sample calibration/artifacts it would produce are
+  correctly not reported). A project opts in by tagging its trainer's run
+  (`mlflow.set_tag("trained_on_all_data", "true")`); untagged champions re-score exactly as before.
+  Note: under the tag, `metrics.json` uses the same `val_`-prefixed keys as MLflow / thresholds /
+  leaderboard.
+
 ### Added
 - `classification_metrics` (`kitchen.modeling`) now also returns **`balanced_accuracy`** (SCF-018)
   — mean per-class recall, the metric to rank on for imbalanced targets (a majority-only

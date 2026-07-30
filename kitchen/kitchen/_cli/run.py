@@ -950,6 +950,7 @@ def run_evaluate(
 
     params = load_params(str(path))
 
+    model_name: str | None = None
     if model_uri is None:
         from kitchen.config import KitchenConfig
 
@@ -1015,6 +1016,46 @@ def run_evaluate(
             else:
                 typer.echo(f"error loading model from {model_uri!r}: {exc}", err=True)
         raise typer.Exit(1)
+
+    # S6E7-004: a champion refit on ALL of the data has no honest hold-out left — the project's
+    # evaluate() would re-score in-sample and write an optimistic number to metrics.json (which
+    # `kitchen report` / the CI gate / the dashboard read). When the champion run is tagged
+    # `trained_on_all_data`, defer to its own logged (out-of-fold / held-out) metrics instead of
+    # re-scoring. Backward compatible: untagged champions re-score exactly as before. This also
+    # skips the project evaluate() entirely, so any in-sample calibration/artifacts it would have
+    # produced are (correctly) not reported for a full-data champion.
+    if model_name is not None:
+        import mlflow.tracking as _mlt_tag
+
+        from kitchen.registry import TRAINED_ON_ALL_DATA_TAG, get_champion_metrics
+
+        trained_on_all = False
+        champ_run_id = None
+        try:
+            _tag_client = _mlt_tag.MlflowClient()
+            champ_run_id = _tag_client.get_model_version_by_alias(model_name, alias).run_id
+            _tag_val = _tag_client.get_run(champ_run_id).data.tags.get(TRAINED_ON_ALL_DATA_TAG, "")
+            trained_on_all = str(_tag_val).strip().lower() in ("true", "1", "yes")
+        except Exception:
+            trained_on_all = False
+
+        if trained_on_all:
+            import json as _json_defer
+
+            champ_metrics = get_champion_metrics(model_name, alias) or {}
+            metrics_path = Path(params.get("metrics_file", "metrics.json"))
+            payload = dict(champ_metrics)
+            if champ_run_id:
+                payload["run_id"] = champ_run_id
+            metrics_path.write_text(_json_defer.dumps(payload, indent=2) + "\n", encoding="utf-8")
+            typer.echo(
+                f"\nchampion trained on all data ({TRAINED_ON_ALL_DATA_TAG}=true) — reporting its "
+                "logged out-of-fold/held-out metrics, not an in-sample re-score:"
+            )
+            for k, v in champ_metrics.items():
+                typer.echo(f"  {k}: {v:.6f}" if isinstance(v, float) else f"  {k}: {v}")
+            typer.echo()
+            return
 
     from kitchen.menu import load_stage_callable  # noqa: PLC0415
 
