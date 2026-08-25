@@ -1,6 +1,6 @@
 # kitchen-platform
 
-Platform to work on ML competitions or iteratively improve and deploy models. **recipes** lets you spin up cloud resources from YAML specs, and **kitchen** is the framework that repos can install to build and deploy with.
+Platform to work on ML competitions or iteratively improve and deploy models. **recipes** lets you spin up cloud resources from YAML specs, and **kitchen** is a framework that repos can install to build and deploy with.
 
 The workflow has two modes:
 
@@ -13,7 +13,7 @@ The workflow has two modes:
 
 ### `kitchen.recipes` — IaC CLI
 
-Generates Terraform from a declarative YAML spec. Supports S3, ECR, IAM roles, and Lambda. Used in CI to provision infrastructure before deploying. Merged into `rkoren-kitchen` as the `kitchen.recipes` sub-package (INT-013); the `recipes` command ships with the kitchen install.
+Generates Terraform from a YAML file. Have used it for S3, ECR, IAM roles, and Lambda, and lets you provision any infrastructure before deploying.
 
 ```bash
 pip install -e kitchen/
@@ -60,9 +60,9 @@ resources:
 
 ---
 
-### `kitchen/` — MLOps Framework
+### `kitchen/` — Ops Framework
 
-A reusable Python library that handles the platform concerns (data I/O, experiment tracking, serving, orchestration)
+A reusable library that handles platform concerns (data I/O, experiment tracking, serving, orchestration).
 
 ```bash
 pip install "rkoren-kitchen @ git+https://github.com/rkoren/kitchen-platform#subdirectory=kitchen"
@@ -132,14 +132,11 @@ def predict(payload: dict) -> dict:
     return {"prediction": int(_model.predict([features])[0])}
 ```
 
-#### `menu.yaml` — the unified manifest
+#### `menu.yaml` — packages kitchen + recipes
 
-`kitchen init` scaffolds a single **`menu.yaml`**: the one source of truth the platform reads.
+`kitchen init` creates a **`menu.yaml`**.
 It wraps the ML config below in a `project`, an ordered `pipeline`, and a `recipes:` map (each
 entry is a stage's code or an infra resource — `kind: stage | s3 | ecr | iam_role | rds | …`).
-Drive everything with `kitchen menu run`; every `kitchen` command also reads this file directly.
-A legacy `params.yaml` (the ML fields only) still loads transparently during the deprecation
-window.
 
 ```yaml
 project: my-project             # Terraform state key + default experiment name
@@ -200,9 +197,9 @@ ci:                             # optional: CI behavior knobs (read by the scaff
 
 **Framework-owned fields** (`experiment`, `data`, `mlflow`, `monitor`, `submission`, `run_name`, `metrics_file`, `thresholds`, `ci`) are validated by `KitchenConfig` when `kitchen validate` or `kitchen run *` commands load `menu.yaml` (or a legacy `params.yaml`). All other top-level keys (`train`, `features`, `model`, `evaluate`, etc.) are project-defined and passed through without validation.
 
-The scaffolded `train-evaluate.yml` runs main-branch pushes under the `production` GitHub Environment and all other runs (PRs) under `staging`, so you can attach branch rules, required reviewers, and scoped secrets per environment (see [`docs/kitchen/ci-cd.md`](docs/kitchen/ci-cd.md)). `ci.auto_submit` lets a main-branch push submit to Kaggle without the manual `workflow_dispatch` toggle.
+`train-evaluate.yml` runs main-branch pushes under the `production` GitHub Environment and all other runs (PRs) under `staging`, so you can attach branch rules, required reviewers, and scoped secrets per environment (see [`docs/kitchen/ci-cd.md`](docs/kitchen/ci-cd.md)). `ci.auto_submit` lets a main-branch push submit to Kaggle without the manual `workflow_dispatch` toggle.
 
-The submission step (`kitchen.submit.log_submission`) validates the CSV against the sample submission, attaches it as an artifact to the active MLflow run, and (when `competition` is set) uploads to Kaggle — logging the public leaderboard score as `lb_score` on the same run. This closes the loop: every MLflow run records your local metric, the submission file, and the actual LB score together.
+The submission step (`kitchen.submit.log_submission`) validates the CSV against the sample submission, attaches it as an artifact to the active MLflow run, and (when `competition` is set) uploads to Kaggle, with the public leaderboard score as `lb_score`.
 
 ---
 
@@ -235,19 +232,19 @@ test → infra-apply (S3, ECR, IAM) → docker-build → lambda-deploy
 test → infra-plan (shows Terraform diff as a check)
 ```
 
-AWS authentication uses OIDC — no long-lived credentials stored in GitHub. Run the one-time account setup with your repo, then add the two printed values as GitHub Actions secrets:
+AWS authentication uses OIDC. Run the one-time account setup with your repo, then add the two printed values as GitHub Actions secrets:
 
 ```bash
 GITHUB_REPO=<owner>/<repo> bash scripts/bootstrap-aws.sh
 ```
 
-The script is parameterised (`AWS_REGION`, `CI_ROLE_NAME`, `TF_STATE_BUCKET`, … all override via the environment) and idempotent — safe to re-run; it reuses an existing OIDC provider, state bucket, or CI role rather than failing. See [`scripts/bootstrap-aws.sh`](scripts/bootstrap-aws.sh) for the full list of variables.
+See [`scripts/bootstrap-aws.sh`](scripts/bootstrap-aws.sh) for the full setup.
 
 ---
 
 ## Stack
 
-| Concern | Tool |
+| Feature | Tool |
 |---|---|
 | IaC generation | recipes CLI (this repo) + Terraform |
 | Data versioning | DVC + S3 |
@@ -256,9 +253,3 @@ The script is parameterised (`AWS_REGION`, `CI_ROLE_NAME`, `TF_STATE_BUCKET`, �
 | Drift monitoring | Built-in (KS / χ² / PSI) |
 | Orchestration | Prefect |
 | Auth | AWS OIDC (keyless GitHub Actions) |
-
-## Examples
-
-Runnable demos live in [`examples/`](examples/) — see
-[`examples/README.md`](examples/README.md) for the index.
-[`examples/offline-quickstart/`](examples/offline-quickstart/)
