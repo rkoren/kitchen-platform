@@ -35,6 +35,13 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
+- `kitchen promote --model X` (CBB-041) fills in the `models:` entry's experiment,
+  `model_name`, metric and direction (explicit flags still win), so
+  `kitchen promote -C DIR --model reg_season --run-id <id>` replaces restating
+  `--model-name … --lower-is-better loto_brier_reg`. Metric ranking is scoped to the entry's
+  variant (`model_variant` tag), and a `--run-id` trained under a different variant is refused
+  rather than registered under the wrong model. `--lower-is-better` now defaults to the entry's
+  direction (still higher-is-better without `--model`).
 - Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
   --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
   entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The

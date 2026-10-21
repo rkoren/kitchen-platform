@@ -5224,3 +5224,118 @@ def test_run_evaluate_parity_remedy_uses_model_flag(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "kitchen run train --model reg" in result.output
 
+
+
+# ---------------------------------------------------------------------------
+# CBB-041: kitchen promote --model
+# ---------------------------------------------------------------------------
+
+_PROMOTE_MODELS_MENU = """\
+project: cbb
+pipeline: []
+experiment: cbb-tournament
+models:
+  tournament:
+    model_name: cbb-tournament-model
+    metric: brier
+    lower_is_better: true
+  reg_season:
+    model_name: cbb-reg-model
+    variant: reg_season
+    metric: loto_brier_reg
+    lower_is_better: true
+variants:
+  reg_season:
+    model: {num_rounds: 700}
+"""
+
+
+def _promote_model_invoke(tmp_path, monkeypatch, args, run_tags=None, best_tags=None):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_PROMOTE_MODELS_MENU)
+    run = _make_promote_run("abc123" + "0" * 26, {"loto_brier_reg": 0.17})
+    run.data.tags = dict(run_tags or {})
+    best = _make_promote_run("bst123" + "0" * 26, {"loto_brier_reg": 0.16})
+    best.data.tags = {"model_variant": "reg_season"} if best_tags is None else dict(best_tags)
+
+    def make_client():
+        client = MagicMock()
+        client.get_run.return_value = run
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+        patch("kitchen.registry.get_best_run", return_value=best) as mock_gbr,
+        patch("kitchen.registry.register_model", return_value="14") as mock_reg,
+        patch("kitchen.registry.promote_model"),
+        patch("kitchen.registry.get_production_uri", return_value=None),
+    ):
+        result = runner.invoke(app, ["promote", *args], catch_exceptions=False)
+    return result, mock_gbr, mock_reg
+
+
+def test_promote_model_fills_metric_direction_and_scopes_variant(tmp_path, monkeypatch):
+    result, mock_gbr, mock_reg = _promote_model_invoke(
+        tmp_path, monkeypatch, ["--model", "reg_season"]
+    )
+    assert result.exit_code == 0, result.output
+    args, kwargs = mock_gbr.call_args
+    assert args[:2] == ("cbb-tournament", "loto_brier_reg")
+    assert kwargs["lower_is_better"] is True
+    assert kwargs["tag_filter"] == {"model_variant": "reg_season"}
+    assert mock_reg.call_args[0][2] == "cbb-reg-model"
+    assert "lower=better" in result.output
+
+
+def test_promote_model_run_id_shows_model_metric(tmp_path, monkeypatch):
+    result, _, mock_reg = _promote_model_invoke(
+        tmp_path,
+        monkeypatch,
+        ["--model", "reg_season", "--run-id", "abc123" + "0" * 26],
+        run_tags={"model_variant": "reg_season"},
+    )
+    assert result.exit_code == 0, result.output
+    assert "loto_brier_reg=0.170000" in result.output
+    assert mock_reg.call_args[0][2] == "cbb-reg-model"
+
+
+def test_promote_model_refuses_run_from_other_variant(tmp_path, monkeypatch):
+    result, _, mock_reg = _promote_model_invoke(
+        tmp_path, monkeypatch, ["--model", "reg_season", "--run-id", "abc123" + "0" * 26]
+    )
+    assert result.exit_code == 1
+    assert "trained with no variant" in result.output
+    mock_reg.assert_not_called()
+
+
+def test_promote_model_explicit_flags_win(tmp_path, monkeypatch):
+    result, mock_gbr, mock_reg = _promote_model_invoke(
+        tmp_path,
+        monkeypatch,
+        ["other_metric", "--model", "reg_season", "--higher-is-better", "--model-name", "x-model"],
+    )
+    assert result.exit_code == 0, result.output
+    args, kwargs = mock_gbr.call_args
+    assert args[1] == "other_metric" and kwargs["lower_is_better"] is False
+    assert mock_reg.call_args[0][2] == "x-model"
+
+
+def test_promote_model_unknown_errors(tmp_path, monkeypatch):
+    result, _, _ = _promote_model_invoke(tmp_path, monkeypatch, ["--model", "nope"])
+    assert result.exit_code == 1
+    assert "no model 'nope'" in result.output
+
+
+def test_promote_project_flag_finds_menu_without_params(tmp_path, monkeypatch):
+    """`-C DIR` + default --params resolves DIR/menu.yaml (no --params menu.yaml needed)."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "menu.yaml").write_text(_PROMOTE_MODELS_MENU)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    result, mock_gbr, _ = _promote_model_invoke(
+        elsewhere, monkeypatch, ["-C", str(proj), "--model", "tournament"], best_tags={}
+    )
+    assert result.exit_code == 0, result.output
+    assert mock_gbr.call_args[0][:2] == ("cbb-tournament", "brier")
