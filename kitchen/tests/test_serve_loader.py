@@ -574,3 +574,13 @@ def test_load_champion_passes_through_unrelated_errors(monkeypatch):
     monkeypatch.setattr("kitchen.tracking.explain_model_load_error", lambda uri, exc: None)
     with pytest.raises(ValueError, match="genuinely broken"):
         load_champion("models:/proj@champion")
+
+
+def test_registry_uri_alias_vs_version():
+    # CBB-036: an alias → @alias, a numeric version → /version
+    from kitchen.serve import registry_uri
+
+    assert registry_uri("m") == "models:/m@champion"
+    assert registry_uri("m", "challenger") == "models:/m@challenger"
+    assert registry_uri("m", "7") == "models:/m/7"
+    assert registry_uri("m", " 12 ") == "models:/m/12"
