@@ -1418,6 +1418,10 @@ def _diff_load_fi(run_id: str) -> dict[str, float] | None:
     import json
     import tempfile
 
+    # CBB-029: MLflow's tqdm "Downloading artifacts" bars otherwise leak above the table.
+    env_key = "MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR"
+    prev = os.environ.get(env_key)
+    os.environ[env_key] = "false"
     try:
         import mlflow.artifacts
 
@@ -1430,6 +1434,11 @@ def _diff_load_fi(run_id: str) -> dict[str, float] | None:
             return json.loads(Path(fi_path).read_text(encoding="utf-8"))
     except Exception:
         return None
+    finally:
+        if prev is None:
+            os.environ.pop(env_key, None)
+        else:
+            os.environ[env_key] = prev
 
 
 #: Max display width for a param value in `kitchen diff` (CBB-021). MLflow logs params as
@@ -1442,6 +1451,38 @@ _DIFF_VALUE_MAX = 60
 
 def _ellipsize(value: str, width: int = _DIFF_VALUE_MAX) -> str:
     return value if len(value) <= width else value[: width - 1] + "…"
+
+
+def _parse_list_param(value: str) -> list | None:
+    """A stringified list/tuple param (how MLflow logs ``feature_candidates``) → list, else None."""
+    import ast
+
+    if not value.startswith(("[", "(")):
+        return None
+    try:
+        parsed = ast.literal_eval(value)
+    except (ValueError, SyntaxError, MemoryError, RecursionError):
+        return None
+    return list(parsed) if isinstance(parsed, (list, tuple)) else None
+
+
+#: Max ``+x``/``-y`` tokens shown per list delta line before collapsing to "… (+N more)".
+_DIFF_DELTA_MAX = 12
+
+
+def _list_delta(a: list, b: list) -> str:
+    """Element-level delta from ``a`` to ``b`` (CBB-029): ``+added -removed``, in list order."""
+    a_set, b_set = set(map(repr, a)), set(map(repr, b))
+    tokens = [f"+{x}" for x in b if repr(x) not in a_set]
+    tokens += [f"-{x}" for x in a if repr(x) not in b_set]
+    if not tokens:
+        return "(same elements, reordered)" if a_set == b_set else "(duplicates differ)"
+    shown, rest = tokens[:_DIFF_DELTA_MAX], len(tokens) - _DIFF_DELTA_MAX
+    return " ".join(shown) + (f" … (+{rest} more)" if rest > 0 else "")
+
+
+def _items(n: int) -> str:
+    return f"[{n} item{'' if n == 1 else 's'}]"
 
 
 @app.command()
@@ -1486,12 +1527,21 @@ def diff(
     params_a = run_a.data.params
     params_b = run_b.data.params
     param_rows: list[tuple[str, str, str]] = []
+    list_deltas: list[tuple[str, str]] = []
     for key in sorted(set(params_a) | set(params_b)):
         va = params_a.get(key, "(missing)")
         vb = params_b.get(key, "(missing)")
-        if va != vb:
-            # CBB-021: compare on the full value, display ellipsized so a long list-valued
-            # param (e.g. feature_candidates) can't blow the value column out to its own width.
+        if va == vb:
+            continue
+        la, lb = _parse_list_param(va), _parse_list_param(vb)
+        if la is not None and lb is not None:
+            # CBB-029: two ellipsized copies of a list share a prefix and hide the change —
+            # show the sizes in the table and the element-level delta below it.
+            param_rows.append((key, _items(len(la)), _items(len(lb))))
+            list_deltas.append((key, _list_delta(la, lb)))
+        else:
+            # CBB-021: compare on the full value, display ellipsized so a long value can't
+            # blow the value column out to its own width.
             param_rows.append((key, _ellipsize(va), _ellipsize(vb)))
 
     # --- Metric diffs ---
@@ -1540,6 +1590,8 @@ def diff(
             typer.echo(sep)
             for key, va, vb in param_rows:
                 typer.echo(f"  {key:<{key_w}}  {va:>{a_w}}  {vb}")
+            for key, delta in list_deltas:
+                typer.echo(f"  {key} (a → b): {delta}")
 
         if metric_rows:
             typer.echo(f"\nMetrics{header}")

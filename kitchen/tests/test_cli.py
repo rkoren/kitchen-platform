@@ -4967,17 +4967,79 @@ def test_status_model_scopes_experiment_and_champion(tmp_path, monkeypatch):
 
 
 def test_diff_ellipsizes_long_param_value():
-    # CBB-021: a long list-valued param (stringified feature_candidates) must not blow the
-    # value column out — it's ellipsized for display, and no output line runs absurdly long.
-    long_val = str([f"feat_{i}" for i in range(60)])  # ~600+ chars
-    run_a = _make_diff_run("a" * 32, {"feature_candidates": long_val}, {})
-    run_b = _make_diff_run("b" * 32, {"feature_candidates": "['feat_0']"}, {})
+    # CBB-021: a long non-list param must not blow the value column out — it's ellipsized
+    # for display, and no output line runs absurdly long.
+    long_val = ",".join(f"feat_{i}" for i in range(60))  # ~500 chars, not a list literal
+    run_a = _make_diff_run("a" * 32, {"feature_spec": long_val}, {})
+    run_b = _make_diff_run("b" * 32, {"feature_spec": "feat_0"}, {})
     result = _diff_invoke(run_a, run_b)
     assert result.exit_code == 0
-    assert "feature_candidates" in result.output
+    assert "feature_spec" in result.output
     assert "…" in result.output  # the long value was truncated
     assert long_val not in result.output  # the full ~600-char value is never printed
     assert max(len(line) for line in result.output.splitlines()) < 160  # table stays bounded
+
+
+def test_diff_list_param_shows_element_delta():
+    # CBB-029: two ellipsized copies of a list share a prefix — show sizes + what changed.
+    base = [f"feat_{i}" for i in range(48)]
+    rich = [*base[:-1], "d_kp_Exp", "d_kp_Bench"]
+    run_a = _make_diff_run("a" * 32, {"feature_candidates": str(base)}, {})
+    run_b = _make_diff_run("b" * 32, {"feature_candidates": str(rich)}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "[48 items]" in result.output and "[49 items]" in result.output
+    assert "feature_candidates (a → b): +d_kp_Exp +d_kp_Bench -feat_47" in result.output
+    assert str(base) not in result.output
+    assert max(len(line) for line in result.output.splitlines()) < 160
+
+
+def test_diff_list_param_delta_caps_tokens():
+    run_a = _make_diff_run("a" * 32, {"cols": str([f"c{i}" for i in range(40)])}, {})
+    run_b = _make_diff_run("b" * 32, {"cols": "[]"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "[0 items]" in result.output
+    assert "… (+28 more)" in result.output
+
+
+def test_diff_list_param_reorder_only():
+    run_a = _make_diff_run("a" * 32, {"cols": "['x', 'y']"}, {})
+    run_b = _make_diff_run("b" * 32, {"cols": "['y', 'x']"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert "(same elements, reordered)" in result.output
+
+
+def test_diff_unparseable_bracket_param_falls_back_to_raw():
+    run_a = _make_diff_run("a" * 32, {"x": "[not a literal"}, {})
+    run_b = _make_diff_run("b" * 32, {"x": "[1, 2]"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert "[not a literal" in result.output
+    assert "(a → b)" not in result.output
+
+
+def test_diff_disables_artifact_progress_bar(monkeypatch):
+    import os
+
+    key = "MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR"
+    monkeypatch.delenv(key, raising=False)
+    seen: list[str | None] = []
+    run_a = _make_diff_run("a" * 32, {"k": "1"}, {})
+    run_b = _make_diff_run("b" * 32, {"k": "2"}, {})
+
+    def fake_download(run_id, artifact_path, dst_path):
+        seen.append(os.environ.get(key))
+        raise Exception("no artifact")
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", return_value=MagicMock(
+            get_run=MagicMock(side_effect=[run_a, run_b]))),
+        patch("mlflow.artifacts.download_artifacts", side_effect=fake_download),
+    ):
+        runner.invoke(app, ["diff", "a" * 32, "b" * 32], catch_exceptions=False)
+    assert seen == ["false", "false"]  # bars off while downloading…
+    assert key not in os.environ  # …and the caller's environment is restored
 
 
 def test_diff_short_param_value_not_truncated():
