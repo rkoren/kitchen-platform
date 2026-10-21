@@ -6,6 +6,15 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- `kitchen run evaluate` checks feature parity before calling the project (CBB-027): the
+  champion's features (from the model's `features` / `*_features` / `feature_names_in_`
+  attributes) must all be present in some `data/processed/` parquet (or `feature_schema.file`),
+  else it **exits 1** with the missing columns and a remedy instead of a raw pandas `KeyError`.
+  A champion whose features were since dropped from the pipeline now fails here until it is
+  retrained and promoted. `--skip-parity-check` opts out for an `evaluate()` that joins several
+  files.
+
 ### Added
 - `kitchen run train --skip-features` trains on the existing `data/processed/` outputs without
   re-running the features stage (CBB-031) — a train-only retrain. The run is tagged
@@ -17,11 +26,6 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 - The scaffolded CI workflow (`kitchen init --ci`) runs `pytest -q` before training (CBB-033).
   The scaffolded feature test now skips while `build()` is unimplemented instead of asserting
   `NotImplementedError`, so CI stays green before and after you implement it.
-- `kitchen run evaluate` checks feature parity before calling the project (CBB-027): the
-  champion's features (from the model's `features` / `*_features` / `feature_names_in_`
-  attributes) must all be present in some `data/processed/` parquet (or `feature_schema.file`),
-  else it errors with the missing columns and a remedy instead of a raw pandas `KeyError`.
-  `--skip-parity-check` opts out for an `evaluate()` that joins several files.
 - `kitchen run evaluate --model X` evaluates that `models:` entry's champion with its declared
   variant applied (CBB-039). A variant can route stage code per model — e.g.
   `recipes: {train: {source: src/train/reg.py}}` plus `holdout: null` — so a second model no

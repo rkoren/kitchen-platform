@@ -54,9 +54,12 @@ def model_feature_names(model: Any) -> list[str]:
 
 @dataclass(frozen=True)
 class ParityResult:
+    """Outcome of :func:`check_processed_parity`."""
+
     ok: bool
     file: Path | None = None  # the processed file that covers every feature (ok) or comes closest
     missing: tuple[str, ...] = ()
+    tied: tuple[Path, ...] = ()
 
 
 def check_processed_parity(
@@ -79,7 +82,7 @@ def check_processed_parity(
 
     import pyarrow.parquet as pq
 
-    best: ParityResult | None = None
+    closest: list[tuple[Path, tuple[str, ...]]] = []
     for path in candidates:
         try:
             columns = set(pq.read_schema(path).names)
@@ -88,21 +91,37 @@ def check_processed_parity(
         missing = tuple(f for f in features if f not in columns)
         if not missing:
             return ParityResult(ok=True, file=path)
-        if best is None or len(missing) < len(best.missing):
-            best = ParityResult(ok=False, file=path, missing=missing)
-    return best
+        if not closest or len(missing) < len(closest[0][1]):
+            closest = [(path, missing)]
+        elif len(missing) == len(closest[0][1]):
+            closest.append((path, missing))
+    if not closest:
+        return None
+    (path, missing), rest = closest[0], closest[1:]
+    return ParityResult(ok=False, file=path, missing=missing, tied=tuple(p for p, _ in rest))
 
 
-def parity_remedy(variant: str | None) -> str:
+def parity_remedy(variant: str | None, model: str | None = None) -> str:
     """The fix to suggest when processed data can't feed the champion.
 
     Two causes, two fixes: the processed data came from another variant (rebuild it), or the
-    feature set itself has moved on since the champion trained (retrain + promote).
+    feature set itself has moved on since the champion trained (retrain + promote). ``model``
+    (a ``models:`` key) wins over ``variant`` in the suggested command, since a multi-model
+    project's ``run train`` requires ``--model``.
     """
-    rebuild = (
-        f"rebuild processed data with the champion's variant {variant!r} "
-        f"(`kitchen run train --variant {variant}` re-runs features first)"
-        if variant
-        else "re-run `kitchen run features` with the params the champion trained on"
+    if model:
+        rebuild = (
+            f"rebuild processed data for model {model!r} "
+            f"(`kitchen run train --model {model}` re-runs features first)"
+        )
+    elif variant:
+        rebuild = (
+            f"rebuild processed data with the champion's variant {variant!r} "
+            f"(`kitchen run train --variant {variant}` re-runs features first)"
+        )
+    else:
+        rebuild = "re-run `kitchen run features` with the params the champion trained on"
+    return (
+        f"{rebuild}, or — if those features were since dropped — retrain and promote a new "
+        "champion"
     )
-    return f"{rebuild}, or — if those features were since dropped — retrain and promote a new champion"

@@ -4941,7 +4941,7 @@ def test_run_evaluate_parity_guard_names_missing_columns(tmp_path, monkeypatch):
     calls = _eval_with_processed(tmp_path, monkeypatch, _FeatModel(["a", "b", "d_kp_Exp"]), ["a", "b"])
     result = runner.invoke(app, ["run", "evaluate"])
     assert result.exit_code == 1
-    assert "matchups.parquet, missing 1: d_kp_Exp" in result.output
+    assert "closest: matchups.parquet, missing 1: d_kp_Exp" in result.output
     assert "--skip-parity-check" in result.output
     assert calls == []  # never reached the project's evaluate()
 
@@ -5022,4 +5022,17 @@ def test_run_evaluate_unknown_model_errors(tmp_path, monkeypatch):
     result = runner.invoke(app, ["run", "evaluate", "--model", "nope"])
     assert result.exit_code == 1
     assert "no model 'nope'" in result.output
+
+
+def test_run_evaluate_parity_remedy_uses_model_flag(tmp_path, monkeypatch):
+    """In a multi-model project the suggested retrain is `--model X` (bare `run train` errors)."""
+    _eval_with_processed(
+        tmp_path, monkeypatch, _FeatModel(["a", "zz"]), ["a"], menu=_EVAL_MODELS_MENU
+    )
+    reg_mod = type(sys)("src.evaluate.reg")
+    reg_mod.evaluate = lambda _m, _p, _s: {}
+    monkeypatch.setitem(sys.modules, "src.evaluate.reg", reg_mod)
+    result = runner.invoke(app, ["run", "evaluate", "--model", "reg"])
+    assert result.exit_code == 1
+    assert "kitchen run train --model reg" in result.output
 

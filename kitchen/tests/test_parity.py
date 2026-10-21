@@ -56,6 +56,17 @@ def test_parity_reports_closest_file(tmp_path):
     assert res.missing == ("q",)
 
 
+def test_parity_lists_tied_closest_files(tmp_path):
+    _parquet(tmp_path, "holdout.parquet", ["x"])
+    _parquet(tmp_path, "matchups.parquet", ["x"])
+    res = check_processed_parity(["x", "q"], tmp_path)
+    assert {res.file.name, *(p.name for p in res.tied)} == {"holdout.parquet", "matchups.parquet"}
+
+
+def test_parity_remedy_prefers_model_flag():
+    assert "--model reg" in parity_remedy("reg_season", "reg")
+
+
 def test_parity_union_across_files_is_not_enough(tmp_path):
     _parquet(tmp_path, "a.parquet", ["x"])
     _parquet(tmp_path, "b.parquet", ["y"])

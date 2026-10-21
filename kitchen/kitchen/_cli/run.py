@@ -1152,6 +1152,7 @@ def run_evaluate(
     # CBB-027: fail with the missing columns + a remedy, not a raw pandas KeyError from inside
     # the project's predict, when data/processed/ can't feed this champion.
     champ_variant = _champion_variant(model_name, alias, model_uri)
+    remedy_model = resolved_model.name if resolved_model is not None else None
     if not skip_parity_check:
         from kitchen.parity import check_processed_parity, model_feature_names, parity_remedy
         from kitchen.store import DataStore
@@ -1165,10 +1166,11 @@ def run_evaluate(
         if parity is not None and not parity.ok:
             shown = ", ".join(parity.missing[:10])
             more = f" (+{len(parity.missing) - 10} more)" if len(parity.missing) > 10 else ""
+            files = ", ".join(p.name for p in (parity.file, *parity.tied))
             typer.echo(
-                f"error: no data/processed/ file has every feature the champion reads — closest is "
-                f"{parity.file.name}, missing {len(parity.missing)}: {shown}{more}\n"
-                f"  {parity_remedy(champ_variant)}\n"
+                f"error: no data/processed/ file has every feature the champion reads — closest: "
+                f"{files}, missing {len(parity.missing)}: {shown}{more}\n"
+                f"  {parity_remedy(champ_variant, remedy_model)}\n"
                 f"  (--skip-parity-check if evaluate() joins several files)",
                 err=True,
             )
@@ -1196,7 +1198,10 @@ def run_evaluate(
         if isinstance(exc, KeyError) and "not in index" in str(exc):
             from kitchen.parity import parity_remedy
 
-            hint = f"\n  columns the champion needs are missing: {parity_remedy(champ_variant)}"
+            hint = (
+                "\n  columns the champion needs are missing: "
+                f"{parity_remedy(champ_variant, remedy_model)}"
+            )
         typer.echo(
             f"error during evaluation: {exc}{hint}\n  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)",
             err=True,
