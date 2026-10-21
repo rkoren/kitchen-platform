@@ -23,6 +23,11 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
+- Deprecation policy (CBB-037, `docs/kitchen/deprecation-policy.md`): public names, CLI options
+  and menu keys are removed only after one minor release behind a `DeprecationWarning` shim, with
+  CHANGELOG `Deprecated` then `Removed` entries. `kitchen._deprecation` (`warn_deprecated`,
+  `Deprecated`, `deprecated_getattr`) makes a shim a few lines. Prompted by `ExperimentConfig` /
+  `log_config` disappearing without a shim or changelog note (NB-001).
 - Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
   --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
   entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The
