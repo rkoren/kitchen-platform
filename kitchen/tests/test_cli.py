@@ -4912,3 +4912,114 @@ def test_leaderboard_no_holdout_column_when_absent():
     result = _lb_invoke(runs)
     assert result.exit_code == 0
     assert "holdout" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# CBB-027: evaluate feature-parity guard / CBB-039: evaluate --model
+# ---------------------------------------------------------------------------
+
+
+class _FeatModel:
+    def __init__(self, features):
+        self.features = features
+
+
+def _eval_with_processed(tmp_path, monkeypatch, model, cols, menu=None, evaluate=None):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ("menu.yaml" if menu else "params.yaml")).write_text(menu or EVAL_PARAMS)
+    proc = tmp_path / "data" / "processed"
+    proc.mkdir(parents=True)
+    pd.DataFrame({c: [1.0] for c in cols}).to_parquet(proc / "matchups.parquet")
+    fake_evaluate, calls, _ = _make_evaluate_mocks(monkeypatch, model=model)
+    fake_mod = type(sys)("src.evaluate.run")
+    fake_mod.evaluate = evaluate or fake_evaluate
+    monkeypatch.setitem(sys.modules, "src.evaluate.run", fake_mod)
+    return calls
+
+
+def test_run_evaluate_parity_guard_names_missing_columns(tmp_path, monkeypatch):
+    calls = _eval_with_processed(tmp_path, monkeypatch, _FeatModel(["a", "b", "d_kp_Exp"]), ["a", "b"])
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 1
+    assert "matchups.parquet, missing 1: d_kp_Exp" in result.output
+    assert "--skip-parity-check" in result.output
+    assert calls == []  # never reached the project's evaluate()
+
+
+def test_run_evaluate_parity_guard_passes_when_covered(tmp_path, monkeypatch):
+    calls = _eval_with_processed(tmp_path, monkeypatch, _FeatModel(["a", "b"]), ["a", "b", "y"])
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+
+
+def test_run_evaluate_skip_parity_check(tmp_path, monkeypatch):
+    calls = _eval_with_processed(tmp_path, monkeypatch, _FeatModel(["a", "zz"]), ["a"])
+    result = runner.invoke(app, ["run", "evaluate", "--skip-parity-check"])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+
+
+def test_run_evaluate_keyerror_not_in_index_gets_remedy(tmp_path, monkeypatch):
+    """Backstop: a model with no feature attrs still gets the remedy on pandas' KeyError."""
+
+    def boom(_m, _p, _s):
+        raise KeyError("['d_kp_Exp'] not in index")
+
+    _eval_with_processed(tmp_path, monkeypatch, object(), ["a"], evaluate=boom)
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 1
+    assert "columns the champion needs are missing" in result.output
+
+
+_EVAL_MODELS_MENU = """\
+project: cbb
+pipeline: []
+recipes:
+  evaluate: {kind: stage, source: src/evaluate/run.py}
+experiment: cbb
+models:
+  tournament:
+    model_name: cbb-tournament-model
+  reg:
+    model_name: cbb-reg-model
+    variant: reg_season
+variants:
+  reg_season:
+    recipes:
+      evaluate: {source: src/evaluate/reg.py}
+"""
+
+
+def test_run_evaluate_model_uses_its_champion_and_variant_source(tmp_path, monkeypatch):
+    seen = {}
+
+    def reg_eval(_m, p, _s):
+        seen["params"] = p
+        return {"brier_reg": 0.17}
+
+    _eval_with_processed(tmp_path, monkeypatch, object(), ["a"], menu=_EVAL_MODELS_MENU)
+    reg_mod = type(sys)("src.evaluate.reg")
+    reg_mod.evaluate = reg_eval
+    monkeypatch.setitem(sys.modules, "src.evaluate.reg", reg_mod)
+    result = runner.invoke(app, ["run", "evaluate", "--model", "reg"])
+    assert result.exit_code == 0, result.output
+    assert "cbb-reg-model@champion" in result.output
+    assert "brier_reg" in result.output  # the variant's evaluate source ran
+    assert "variants" not in seen["params"]
+
+
+def test_run_evaluate_without_model_keeps_project_champion(tmp_path, monkeypatch):
+    """Reads stay opt-in (CBB-020): a multi-model menu evaluates as before without --model."""
+    _eval_with_processed(tmp_path, monkeypatch, object(), ["a"], menu=_EVAL_MODELS_MENU)
+    result = runner.invoke(app, ["run", "evaluate"], env={"MLFLOW_MODEL_NAME": "cbb-tournament-model"})
+    assert result.exit_code == 0, result.output
+    assert "cbb-tournament-model@champion" in result.output
+
+
+def test_run_evaluate_unknown_model_errors(tmp_path, monkeypatch):
+    _eval_with_processed(tmp_path, monkeypatch, object(), ["a"], menu=_EVAL_MODELS_MENU)
+    result = runner.invoke(app, ["run", "evaluate", "--model", "nope"])
+    assert result.exit_code == 1
+    assert "no model 'nope'" in result.output
+

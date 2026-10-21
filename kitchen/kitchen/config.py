@@ -255,7 +255,9 @@ class ModelSpec(BaseModel):
     project's top-level ``experiment``; ``model_name`` (the registered champion) to
     ``f"{experiment}-model"``; ``metric``/``lower_is_better`` (the promote/rank metric) to the
     first ``thresholds`` key. ``variant`` names a ``variants:`` overlay the model trains with, so
-    ``--model X`` alone implies ``--variant <X.variant>`` (CBB-032). Single-model projects don't
+    ``--model X`` alone implies ``--variant <X.variant>`` (CBB-032). The variant is also how a
+    model gets its own stage code: ``recipes: {train: {source: src/train/reg.py}}`` (+
+    ``holdout: null`` to opt out of the project holdout) in the overlay (CBB-039). Single-model projects don't
     need a ``models:`` map at all.
     """
 

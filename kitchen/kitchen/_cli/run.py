@@ -946,6 +946,23 @@ def run_sweep(
     typer.echo(f"Promote it with: kitchen promote --run-id {best_run_id}")
 
 
+def _champion_variant(model_name: str | None, alias: str, model_uri: str) -> str | None:
+    """The ``model_variant`` tag of the run behind the evaluated model, best-effort."""
+    try:
+        from mlflow.tracking import MlflowClient
+
+        client = MlflowClient()
+        if model_name is not None:
+            run_id = client.get_model_version_by_alias(model_name, alias).run_id
+        elif model_uri.startswith("runs:/"):
+            run_id = model_uri[len("runs:/") :].split("/", 1)[0]
+        else:
+            return None
+        return client.get_run(run_id).data.tags.get("model_variant") or None
+    except Exception:  # noqa: BLE001 — only flavors the remedy text
+        return None
+
+
 @run_app.command("evaluate")
 def run_evaluate(
     params_file: Annotated[
@@ -961,9 +978,33 @@ def run_evaluate(
     flavor: Annotated[
         str, typer.Option("--flavor", help="MLflow loader flavor: sklearn, xgboost, pyfunc")
     ] = "sklearn",
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Select a model from the menu's `models:` map (multi-model projects): "
+            "evaluates that model's champion, with its declared variant applied (so a variant "
+            "that routes `recipes.evaluate.source` picks the model's own evaluate code). "
+            "Omitted → the project-level champion, as before.",
+        ),
+    ] = None,
+    skip_parity_check: Annotated[
+        bool,
+        typer.Option(
+            "--skip-parity-check",
+            help="Don't check that some data/processed/ parquet carries every feature the "
+            "champion reads (for an evaluate() that joins several files).",
+        ),
+    ] = False,
     debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
-    """Load a model from MLflow and run the project's evaluator."""
+    """Load a model from MLflow and run the project's evaluator.
+
+    Before predicting, checks that the champion's features (read from the model's own
+    ``features`` / ``*_features`` / ``feature_names_in_`` attributes) are all present in at
+    least one ``data/processed/`` parquet — or the ``feature_schema.file`` when declared — and
+    errors naming the missing columns otherwise (CBB-027).
+    """
     import sys
 
     params_file = _resolve_params_path(params_file)
@@ -977,12 +1018,36 @@ def run_evaluate(
 
     params = load_params(str(path))
 
+    # CBB-039: `--model X` evaluates that model's champion with its declared variant applied
+    # (reads stay opt-in, CBB-020 — no --model keeps the project-level champion).
+    resolved_model = None
+    if model is not None:
+        from kitchen.config import KitchenConfig, ModelNotFound, resolve_model
+
+        try:
+            resolved_model = resolve_model(KitchenConfig.from_yaml(str(path)), model)
+        except ModelNotFound as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1)
+        if resolved_model.variant:
+            from kitchen.menu import VariantNotFound, apply_variant
+
+            try:
+                apply_variant(params, resolved_model.variant)
+            except VariantNotFound as exc:
+                typer.echo(f"error: {exc}", err=True)
+                raise typer.Exit(1)
+    params.pop("variants", None)  # a menu definition, not a stage param
+
     model_name: str | None = None
     if model_uri is None:
-        from kitchen.config import KitchenConfig
+        if resolved_model is not None:
+            model_name = resolved_model.model_name
+        else:
+            from kitchen.config import KitchenConfig
 
-        cfg = KitchenConfig.from_yaml(str(path))
-        model_name = os.environ.get("MLFLOW_MODEL_NAME", f"{cfg.experiment}-model")
+            cfg = KitchenConfig.from_yaml(str(path))
+            model_name = os.environ.get("MLFLOW_MODEL_NAME", f"{cfg.experiment}-model")
         model_uri = f"models:/{model_name}@{alias}"
 
     from kitchen.tracking import configure_from_env
@@ -1084,6 +1149,31 @@ def run_evaluate(
             typer.echo()
             return
 
+    # CBB-027: fail with the missing columns + a remedy, not a raw pandas KeyError from inside
+    # the project's predict, when data/processed/ can't feed this champion.
+    champ_variant = _champion_variant(model_name, alias, model_uri)
+    if not skip_parity_check:
+        from kitchen.parity import check_processed_parity, model_feature_names, parity_remedy
+        from kitchen.store import DataStore
+
+        schema = params.get("feature_schema") or {}
+        parity = check_processed_parity(
+            model_feature_names(model),
+            DataStore().processed_dir,
+            schema_file=schema.get("file") if isinstance(schema, dict) else None,
+        )
+        if parity is not None and not parity.ok:
+            shown = ", ".join(parity.missing[:10])
+            more = f" (+{len(parity.missing) - 10} more)" if len(parity.missing) > 10 else ""
+            typer.echo(
+                f"error: no data/processed/ file has every feature the champion reads — closest is "
+                f"{parity.file.name}, missing {len(parity.missing)}: {shown}{more}\n"
+                f"  {parity_remedy(champ_variant)}\n"
+                f"  (--skip-parity-check if evaluate() joins several files)",
+                err=True,
+            )
+            raise typer.Exit(1)
+
     from kitchen.menu import load_stage_callable  # noqa: PLC0415
 
     try:
@@ -1102,8 +1192,13 @@ def run_evaluate(
     except Exception as exc:
         if _debug_enabled(debug):
             raise
+        hint = ""
+        if isinstance(exc, KeyError) and "not in index" in str(exc):
+            from kitchen.parity import parity_remedy
+
+            hint = f"\n  columns the champion needs are missing: {parity_remedy(champ_variant)}"
         typer.echo(
-            f"error during evaluation: {exc}\n  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)",
+            f"error during evaluation: {exc}{hint}\n  (re-run with --debug or KITCHEN_DEBUG=1 for the traceback)",
             err=True,
         )
         raise typer.Exit(1)

@@ -256,6 +256,30 @@ def test_pipeline_applies_variant_before_overrides(tmp_path, monkeypatch):
     assert "variants" not in seen  # the definition isn't logged as a run param
 
 
+def test_pipeline_variant_routes_train_source_and_disables_holdout(tmp_path, monkeypatch):
+    """CBB-039: a model's variant can point `train` at its own module and turn off the
+    project-level holdout (`holdout: null`) — no in-trainer target switch or params.pop."""
+    from kitchen.menu import stage_module_name
+
+    monkeypatch.chdir(tmp_path)
+    menu = tmp_path / "menu.yaml"
+    menu.write_text(
+        "project: p\npipeline: [train]\n"
+        "recipes:\n  train: {kind: stage, source: src/train/run.py}\n"
+        "holdout: {path: data/processed/holdout.parquet, label: y, metric: brier}\n"
+        "variants:\n  reg:\n    recipes: {train: {source: src/train/reg.py}}\n    holdout: null\n"
+    )
+    seen: dict = {}
+    with (
+        patch("kitchen.flows.train_flow._build"),
+        patch("kitchen.flows.train_flow._train", side_effect=lambda p, **kw: seen.update(p)),
+    ):
+        train_pipeline(params_file=str(menu), variant="reg")
+    assert stage_module_name("train", seen) == "src.train.reg"
+    assert seen["recipes"]["train"]["kind"] == "stage"  # deep-merged, not replaced
+    assert seen["holdout"] is None  # score_run_holdout no-ops on a falsy holdout
+
+
 # ---------------------------------------------------------------------------
 # CBB-031: --skip-features (train-only)
 # ---------------------------------------------------------------------------
