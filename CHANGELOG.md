@@ -23,6 +23,10 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
+- `kitchen menu show [--variant X | --model M] [--diff] [--section model]` prints the effective
+  params with provenance markers (CBB-035): `*` overridden by the variant (with the base value,
+  or a `+x -y` delta for lists), `=` set by the variant but equal to base, `+` added, blank =
+  inherited. Variants deep-merge silently, so this is how to see which keys a variant owns.
 - Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
   --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
   entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The

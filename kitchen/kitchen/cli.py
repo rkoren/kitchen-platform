@@ -3518,6 +3518,111 @@ def menu_schema(
         typer.echo(text, nl=False)
 
 
+_SHOW_MARK = {"inherited": " ", "overridden": "*", "same": "=", "added": "+"}
+
+
+def _show_value(value: object) -> str:
+    text = repr(value) if isinstance(value, (list, tuple)) else str(value)
+    if isinstance(value, (list, tuple)) and len(text) > _DIFF_VALUE_MAX:
+        return _items(len(value))
+    return _ellipsize(text)
+
+
+@menu_app.command("show")
+def menu_show(
+    params_file: Annotated[
+        str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
+    ] = "params.yaml",
+    variant: Annotated[
+        str | None,
+        typer.Option("--variant", help="Show the effective params of this `variants:` overlay"),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", help="Show the effective params of this `models:` entry's variant"),
+    ] = None,
+    only_owned: Annotated[
+        bool,
+        typer.Option("--diff", help="Only the keys the variant sets, with their base values"),
+    ] = False,
+    section: Annotated[
+        str | None,
+        typer.Option("--section", help="Only keys under this dotted prefix (e.g. model)"),
+    ] = None,
+) -> None:
+    """Print the effective params, marking what a variant overrides vs inherits (CBB-035).
+
+    Variants deep-merge onto the base menu, so a variant silently inherits every key it doesn't
+    set. Markers: `*` overridden, `=` set by the variant but equal to base, `+` added by the
+    variant, blank = inherited. With no --variant/--model, prints the base params.
+    """
+    from pydantic import ValidationError
+
+    from kitchen.config import KitchenConfig, ModelNotFound, resolve_model
+    from kitchen.menu import VariantNotFound, load_params, variant_provenance
+
+    params_file = resolve_params_path(params_file)
+    if not Path(params_file).exists():
+        typer.echo(f"error: file not found: {params_file}", err=True)
+        raise typer.Exit(1)
+    params = load_params(params_file)
+
+    if model:
+        try:
+            resolved = resolve_model(KitchenConfig.from_yaml(params_file), model)
+        except ModelNotFound as exc:
+            typer.echo(f"error: {exc.args[0]}", err=True)
+            raise typer.Exit(1)
+        except ValidationError as exc:
+            typer.echo(f"error: {params_file} is invalid — run `kitchen validate`:\n{exc}", err=True)
+            raise typer.Exit(1)
+        if variant and resolved.variant and variant != resolved.variant:
+            typer.echo(
+                f"error: --variant {variant!r} conflicts with model {model!r} "
+                f"(variant {resolved.variant!r})",
+                err=True,
+            )
+            raise typer.Exit(1)
+        variant = variant or resolved.variant
+        if variant is None:
+            typer.echo(f"model {model!r} declares no variant — it trains on the base params.")
+
+    try:
+        rows = variant_provenance(params, variant)
+    except VariantNotFound as exc:
+        typer.echo(f"error: {exc.args[0]}", err=True)
+        raise typer.Exit(1)
+    title = f"Effective params — variant {variant!r}" if variant else "Base params"
+
+    if section:
+        prefix = section.rstrip(".")
+        rows = [r for r in rows if r.key == prefix or r.key.startswith(f"{prefix}.")]
+    if only_owned and variant:
+        rows = [r for r in rows if r.status != "inherited"]
+
+    typer.echo(f"\n{title}  ({params_file})")
+    if variant:
+        typer.echo("  * overridden   = set by variant, same as base   + added   (blank) inherited")
+    if not rows:
+        typer.echo("  (variant sets no keys here)" if only_owned and variant else "  (no keys)")
+        typer.echo()
+        return
+    key_w = max(len(r.key) for r in rows)
+    for r in rows:
+        line = f"  {_SHOW_MARK[r.status] if variant else ' '} {r.key:<{key_w}}  {_show_value(r.value)}"
+        if r.status == "overridden":
+            if isinstance(r.value, list) and isinstance(r.base, list):
+                line += f"   ({_list_delta(r.base, r.value)})"
+            else:
+                line += f"   (base: {_show_value(r.base)})"
+        typer.echo(line.rstrip())
+    if not variant:
+        names = sorted((params.get("variants") or {}))
+        if names:
+            typer.echo(f"\n  variants: {', '.join(names)}  (show one with --variant <name>)")
+    typer.echo()
+
+
 @menu_app.command("materialize")
 def menu_materialize(
     menu_file: Annotated[str, typer.Option("--menu", help="Path to menu.yaml")] = "menu.yaml",

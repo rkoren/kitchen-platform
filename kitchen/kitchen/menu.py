@@ -14,6 +14,7 @@ recipe's kind-specific fields against the real ``RDSSpec``/``S3Spec``/… at loa
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import yaml
@@ -515,6 +516,81 @@ def _merge_feature_candidates(base: list[str], overlay: Any) -> list[str]:
         if f not in result:
             result.append(f)
     return result
+
+
+_MISSING = object()
+
+
+def _flatten(d: dict, prefix: str = "") -> dict[str, Any]:
+    """Dotted-key leaves of a nested dict; lists and scalars (incl. ``None``) are leaves."""
+    out: dict[str, Any] = {}
+    for key, value in d.items():
+        dotted = f"{prefix}{key}"
+        if isinstance(value, dict) and value:
+            out.update(_flatten(value, f"{dotted}."))
+        else:
+            out[dotted] = value
+    return out
+
+
+def _lookup(d: Any, dotted: str) -> Any:
+    for part in dotted.split("."):
+        if not isinstance(d, dict) or part not in d:
+            return _MISSING
+        d = d[part]
+    return d
+
+
+@dataclass(frozen=True)
+class ParamProvenance:
+    """One effective param of a variant and where it came from (CBB-035)."""
+
+    key: str  # dotted path, e.g. ``model.num_rounds``
+    value: Any  # effective value after the overlay
+    base: Any  # base value (``None`` when the variant adds the key)
+    status: str  # "inherited" | "overridden" | "same" (set by variant, equal to base) | "added"
+
+
+def variant_provenance(params: dict[str, Any], name: str | None) -> list[ParamProvenance]:
+    """Effective params of variant ``name``, each marked owned-vs-inherited (CBB-035).
+
+    ``apply_variant`` deep-merges silently, so a variant inherits every base key it doesn't
+    set and it's hard to tell which keys it actually owns. A key the overlay sets is
+    ``overridden`` (value changed), ``same`` (set, but equal to base — often a sign the line is
+    redundant) or ``added`` (absent from base); every other key is ``inherited``. A
+    ``feature_candidates`` overlay counts as owning the whole list. ``variants`` is excluded.
+    ``name=None`` returns the base params, all ``inherited``. Raises :class:`VariantNotFound`
+    like :func:`apply_variant`.
+    """
+    import copy
+
+    base = {k: v for k, v in params.items() if k != "variants"}
+    if name is None:
+        return [ParamProvenance(k, v, v, "inherited") for k, v in _flatten(base).items()]
+    effective = copy.deepcopy(params)
+    apply_variant(effective, name)
+    effective.pop("variants", None)
+
+    overlay = dict((params.get("variants") or {}).get(name) or {})
+    fc_owned = overlay.pop("feature_candidates", None) is not None
+    owned = set(_flatten(overlay)) | ({"feature_candidates"} if fc_owned else set())
+
+    rows: list[ParamProvenance] = []
+    for key, value in _flatten(effective).items():
+        # an owned key may be a leaf the overlay set, or sit under one (overlay set a dict)
+        owner = next((o for o in owned if key == o or key.startswith(f"{o}.")), None)
+        if owner is None:
+            rows.append(ParamProvenance(key, value, value, "inherited"))
+            continue
+        base_value = _lookup(base, key)
+        if base_value is _MISSING:
+            base_value, status = None, "added"
+        elif base_value == value:
+            status = "same"
+        else:
+            status = "overridden"
+        rows.append(ParamProvenance(key, value, base_value, status))
+    return rows
 
 
 def apply_variant(params: dict[str, Any], name: str) -> None:
