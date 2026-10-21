@@ -7,6 +7,12 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- The scaffolded `src/serve/predictor.py` now loads the registry champion by default
+  (CBB-036) instead of leaving `load_champion` commented out: `MODEL_NAME` / `MODEL_VERSION`
+  come from `KITCHEN_MODEL_NAME` (or `MLFLOW_MODEL_NAME`) / `KITCHEN_MODEL_VERSION`, defaulting
+  to `<project>-model` @ `champion`, and the load stays lazy. New `kitchen.serve.registry_uri(name,
+  version)` builds `models:/name@alias` or `models:/name/<n>` for a numeric version. Serving docs
+  gain "The registry is the source of truth".
 - The read/compare commands take `-C/--project DIR` like `kitchen run` (CBB-030): `status`,
   `leaderboard`, `diff`, `check`, `report`, `promote`, `log`, and `kitchen dashboard -C DIR …`.
   Every `-C` now also loads `DIR/.env` after the chdir (existing env vars win), so a relative

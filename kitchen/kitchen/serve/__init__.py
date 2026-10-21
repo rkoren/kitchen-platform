@@ -10,6 +10,7 @@ Public API::
     from kitchen.serve import PredictorBundle, PredictorLoadError, PredictFn
     from kitchen.serve import lazy_model  # defer model load to first prediction
     from kitchen.serve import load_champion  # load champion + explain artifact drift
+    from kitchen.serve import registry_uri  # models:/<name>@<alias> or models:/<name>/<version>
 """
 
 from kitchen.serve.loader import (
@@ -21,6 +22,7 @@ from kitchen.serve.loader import (
     load_champion,
     load_predictor,
     load_predictor_bundle,
+    registry_uri,
 )
 
 __all__ = [
@@ -32,4 +34,5 @@ __all__ = [
     "lazy_model",
     "LazyModel",
     "load_champion",
+    "registry_uri",
 ]

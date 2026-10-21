@@ -1309,16 +1309,32 @@ model identity on ``GET /metadata``.
 \"\"\"
 from __future__ import annotations
 
+import os
+
+from kitchen.serve import lazy_model, load_champion, registry_uri
+
 # ---------------------------------------------------------------------------
-# Uncomment once your champion model is promoted to the registry.
+# The registry is the source of truth for what serves: this loads whatever
+# `kitchen promote` / `--auto-promote` last aliased as champion. Don't serve a
+# file the trainer writes (e.g. data/processed/model.pkl) — every run, promoted
+# or not, would overwrite it and `@champion` would become a label.
+#
+# Pin a version (rollback, benchmark a candidate) without code changes:
+#   KITCHEN_MODEL_VERSION=7 kitchen serve local
 # lazy_model defers the (slow) load to the first prediction instead of import
 # time, so Lambda cold starts are faster; it loads once and caches thereafter.
 # load_champion translates an unreachable-artifact failure (e.g. after migrating
 # the tracking store from local SQLite to a remote server) into a clear error.
+# Pass flavor=\"sklearn\" (or your model's flavor) to get predict_proba & co.
 # ---------------------------------------------------------------------------
-# from kitchen.serve import lazy_model, load_champion
-# model = lazy_model(lambda: load_champion(\"models:/$name-model@champion\"))
-# # model.predict(...) works transparently and triggers the load on first use.
+MODEL_NAME = (
+    os.environ.get(\"KITCHEN_MODEL_NAME\")
+    or os.environ.get(\"MLFLOW_MODEL_NAME\")
+    or \"$name-model\"
+)
+MODEL_VERSION = os.environ.get(\"KITCHEN_MODEL_VERSION\", \"champion\")
+model = lazy_model(lambda: load_champion(registry_uri(MODEL_NAME, MODEL_VERSION)))
+# model.predict(...) works transparently and triggers the load on first use.
 
 # ---------------------------------------------------------------------------
 # Optional: typed OpenAPI schema (requires pydantic, already a FastAPI dep)
@@ -1334,12 +1350,10 @@ from __future__ import annotations
 #     score: float
 
 # ---------------------------------------------------------------------------
-# Optional: feature list + model identity — surfaced on GET /metadata so callers
-# know which input keys the model expects and which model is serving.
+# Optional: feature list — surfaced on GET /metadata (with MODEL_NAME /
+# MODEL_VERSION above) so callers know which input keys the model expects.
 # ---------------------------------------------------------------------------
 # FEATURES: list[str] = [\"feature_a\", \"feature_b\"]
-# MODEL_NAME = \"$name-model\"
-# MODEL_VERSION = \"champion\"
 
 
 def predict(payload: dict) -> dict:

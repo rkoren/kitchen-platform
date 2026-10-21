@@ -92,6 +92,17 @@ def lazy_model(loader: Callable[[], Any]) -> LazyModel:
     return LazyModel(loader)
 
 
+def registry_uri(model_name: str, version: str = "champion") -> str:
+    """``models:/`` URI for a registered model (CBB-036).
+
+    A numeric ``version`` pins that version (``models:/name/3``); anything else is an alias
+    (``models:/name@champion``), so the same setting serves the champion by default and lets a
+    benchmark or rollback pin a version without code changes.
+    """
+    version = str(version).strip()
+    return f"models:/{model_name}/{version}" if version.isdigit() else f"models:/{model_name}@{version}"
+
+
 def load_champion(model_uri: str, flavor: str = "pyfunc") -> Any:
     """Load a registered/logged model, translating artifact-location drift (MNT-003).
 
