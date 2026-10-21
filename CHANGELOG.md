@@ -6,6 +6,8 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-21
+
 ### Changed
 - The scaffolded `src/serve/predictor.py` now loads the registry champion by default
   (CBB-036) instead of leaving `load_champion` commented out: `MODEL_NAME` / `MODEL_VERSION`
@@ -35,6 +37,15 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
+- `kitchen menu show [--variant X | --model M] [--diff] [--section model]` prints the effective
+  params with provenance markers (CBB-035): `*` overridden by the variant (with the base value,
+  or a `+x -y` delta for lists), `=` set by the variant but equal to base, `+` added, blank =
+  inherited. Variants deep-merge silently, so this is how to see which keys a variant owns.
+- Deprecation policy (CBB-037, `docs/kitchen/deprecation-policy.md`): public names, CLI options
+  and menu keys are removed only after one minor release behind a `DeprecationWarning` shim, with
+  CHANGELOG `Deprecated` then `Removed` entries. `kitchen._deprecation` (`warn_deprecated`,
+  `Deprecated`, `deprecated_getattr`) makes a shim a few lines. Prompted by `ExperimentConfig` /
+  `log_config` disappearing without a shim or changelog note (NB-001).
 - Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
   --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
   entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The
