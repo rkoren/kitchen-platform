@@ -63,8 +63,9 @@ def test_public_api_is_frozen():
     the 1.x compatibility promise."""
     actual = set(kitchen.__all__)
     assert actual == set(PUBLIC_API), (
-        "kitchen.__all__ changed. If intentional, update PUBLIC_API here (and note it in the "
-        "release changelog).\n"
+        "kitchen.__all__ changed. If intentional, update PUBLIC_API here and note it in the "
+        "changelog. A *removal* must first ship one minor release behind a DeprecationWarning "
+        "shim (kitchen._deprecation; docs/kitchen/deprecation-policy.md — CBB-037).\n"
         f"  added:   {sorted(actual - PUBLIC_API)}\n"
         f"  removed: {sorted(PUBLIC_API - actual)}"
     )

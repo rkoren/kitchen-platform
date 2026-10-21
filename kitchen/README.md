@@ -39,7 +39,9 @@ kitchen menu run               # or run the whole pipeline from menu.yaml
 ## Stability
 
 The public Python API is the top-level `kitchen.__all__`; the `kitchen` CLI and the `menu.yaml`
-schema (`kitchen menu schema`) are the other supported surfaces. The package follows SemVer.
+schema (`kitchen menu schema`) are the other supported surfaces. The package follows SemVer;
+public names are removed only after one minor release of a `DeprecationWarning` shim (see the
+[deprecation policy](https://github.com/rkoren/kitchen-platform/blob/main/docs/kitchen/deprecation-policy.md)).
 
 See the [project repository](https://github.com/rkoren/kitchen-platform) for full docs.
 
