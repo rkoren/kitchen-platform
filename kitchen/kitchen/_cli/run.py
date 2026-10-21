@@ -62,8 +62,12 @@ def _try_auto_promote(
     tiebreak_metric: str | None = None,
     tiebreak_lower_is_better: bool = False,
     tie_tolerance: float = 0.0,
+    run_id: str | None = None,
 ) -> None:
     """Compare the latest run against the current champion; promote if it wins.
+
+    ``run_id`` (the run ``run train`` just produced) is the challenger when given (CBB-042) —
+    "newest run with the metric" could be another model's run in a shared experiment.
 
     ``experiment`` scopes the run search to a specific model's experiment (CBB-020); when
     omitted it falls back to the project's ``cfg.experiment`` (single-model / legacy path).
@@ -92,12 +96,15 @@ def _try_auto_promote(
         typer.echo(f"auto-promote: experiment {exp_name!r} not found.", err=True)
         return
 
-    new_runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        filter_string=f"metrics.{metric} > -99999",
-        order_by=["start_time DESC"],
-        max_results=1,
-    )
+    if run_id is not None:
+        new_runs = [client.get_run(run_id)]
+    else:
+        new_runs = client.search_runs(
+            experiment_ids=[exp.experiment_id],
+            filter_string=f"metrics.{metric} > -99999",
+            order_by=["start_time DESC"],
+            max_results=1,
+        )
     if not new_runs:
         typer.echo(f"auto-promote: no runs with metric {metric!r} in {exp_name!r}.")
         return
@@ -604,6 +611,12 @@ def run_train(
         from mlflow.tracking import MlflowClient
 
         MlflowClient().set_tag(run_id, "kitchen.from_run", from_run)
+    if run_id and resolved_model is not None and resolved_model.name:
+        from mlflow.tracking import MlflowClient
+
+        from kitchen.config import MODEL_TAG
+
+        MlflowClient().set_tag(run_id, MODEL_TAG, resolved_model.name)  # per-model reads (CBB-042)
 
     if auto_promote:
         ap_model_name = promote_model_name or (
@@ -619,6 +632,7 @@ def run_train(
             tiebreak_metric=tiebreak_metric,
             tiebreak_lower_is_better=tiebreak_lower_is_better,
             tie_tolerance=tie_tolerance,
+            run_id=run_id,
         )
 
 
