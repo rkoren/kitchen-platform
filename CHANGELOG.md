@@ -7,6 +7,10 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- `kitchen diff` shows what changed inside a list-valued param (CBB-029): instead of two
+  identically-ellipsized copies, the table shows `[48 items]` / `[49 items]` and a delta line
+  below it (`feature_candidates (a → b): +d_kp_Exp +d_kp_Bench -feat_47`). MLflow's
+  `Downloading artifacts` progress bars no longer leak into the output.
 - `kitchen run evaluate` checks feature parity before calling the project (CBB-027): the
   champion's features (from the model's `features` / `*_features` / `feature_names_in_`
   attributes) must all be present in some `data/processed/` parquet (or `feature_schema.file`),
