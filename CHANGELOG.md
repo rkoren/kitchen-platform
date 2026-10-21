@@ -35,6 +35,11 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
+- `kitchen --version` (and `kitchen version`) print the running version and, for an editable
+  install, its source path. `kitchen.__version__` is set too (CBB-044). An editable install's
+  dist-info version goes stale (cbb's reported `0.1.0`), so for such an install the version is
+  read from the source tree's `pyproject.toml`, and a warning says to re-run `pip install -e`
+  when the two disagree.
 - Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
   --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
   entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The
