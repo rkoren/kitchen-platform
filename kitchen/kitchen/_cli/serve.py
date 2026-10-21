@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 
+from kitchen._cli import ProjectOption, enter_project
 from kitchen._cli._templates import _DASHBOARD_GENERATED_HTML
 
 
@@ -203,6 +204,13 @@ def serve_local(
 
 
 dashboard_app = typer.Typer(help="Dashboard helpers.", no_args_is_help=True)
+
+
+@dashboard_app.callback()
+def _dashboard_callback(project: ProjectOption = None) -> None:
+    """Dashboard commands read the results branch and menu relative to the working dir, so
+    `-C <dir>` lets you run them from anywhere (CBB-030)."""
+    enter_project(project)
 
 
 

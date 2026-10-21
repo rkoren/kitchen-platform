@@ -7,6 +7,12 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- The read/compare commands take `-C/--project DIR` like `kitchen run` (CBB-030): `status`,
+  `leaderboard`, `diff`, `check`, `report`, `promote`, `log`, and `kitchen dashboard -C DIR …`.
+  Every `-C` now also loads `DIR/.env` after the chdir (existing env vars win), so a relative
+  `MLFLOW_TRACKING_URI` resolves to the driven project. The startup `.env` load now really
+  searches from the working directory (`find_dotenv(usecwd=True)`) — before, python-dotenv
+  searched upward from the installed `kitchen` package's directory instead.
 - `kitchen run evaluate` checks feature parity before calling the project (CBB-027): the
   champion's features (from the model's `features` / `*_features` / `feature_names_in_`
   attributes) must all be present in some `data/processed/` parquet (or `feature_schema.file`),

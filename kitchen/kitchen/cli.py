@@ -42,6 +42,7 @@ from typing import Annotated
 
 import typer
 
+from kitchen._cli import ProjectOption, enter_project
 from kitchen._cli._templates import (
     _BASELINE_PY,
     _CHALLENGER_PY,
@@ -104,11 +105,14 @@ from kitchen.config import resolve_params_path  # menu-aware path fallback (INT-
 # Load .env from the project root (CWD) so MLFLOW_TRACKING_URI and other
 # credentials are available to all commands without the user needing to
 # `source .env` first.  Variables already set in the environment take
-# precedence (override=False is the default).
+# precedence (override=False is the default). `usecwd=True` matters: without it
+# python-dotenv searches upward from *this module's* directory, not the CWD.
+# `-C DIR` loads DIR/.env after the chdir (`enter_project`, CBB-030).
 try:
+    from dotenv import find_dotenv as _find_dotenv
     from dotenv import load_dotenv as _load_dotenv
 
-    _load_dotenv()
+    _load_dotenv(_find_dotenv(usecwd=True))
 except ImportError:
     pass  # python-dotenv not installed — env vars must be set externally
 
@@ -231,11 +235,13 @@ def status(
         ),
     ] = None,
     n_runs: Annotated[int, typer.Option("--runs", "-n", help="Number of recent runs to show")] = 5,
+    project: ProjectOption = None,
 ) -> None:
     """One-screen project summary: champion, recent runs with thresholds, and submission file.
 
     Always exits 0 — informational only, even when thresholds are violated.
     """
+    enter_project(project)
 
     import mlflow.tracking
 
@@ -1211,6 +1217,7 @@ def leaderboard(
             help="Show only runs tagged run_type=exploratory",
         ),
     ] = False,
+    project: ProjectOption = None,
 ) -> None:
     """Rank runs by a metric; shows full run_id and lb_score for easy replay.
 
@@ -1225,6 +1232,7 @@ def leaderboard(
     kitchen.experiment(exploratory=True), so notebook sketches can be isolated
     from or suppressed in the ranked view.
     """
+    enter_project(project)
     if exclude_exploratory and only_exploratory:
         typer.echo(
             "error: --exclude-exploratory and --only-exploratory are mutually exclusive.",
@@ -1448,12 +1456,14 @@ def _ellipsize(value: str, width: int = _DIFF_VALUE_MAX) -> str:
 def diff(
     run_id_a: str = typer.Argument(..., help="First run ID (a)"),
     run_id_b: str = typer.Argument(..., help="Second run ID (b)"),
+    project: ProjectOption = None,
 ) -> None:
     """Show what changed between two MLflow runs.
 
     Prints a two-column table of params and metrics that differ; identical
     values are suppressed. Params are listed before metrics.
     """
+    enter_project(project)
     import mlflow.tracking
 
     from kitchen.tracking import configure_from_env
@@ -1588,8 +1598,7 @@ def ingest(
     from kitchen.ingest import source_from_params
     from kitchen.store import DataStore
 
-    if project:
-        os.chdir(project)  # resolve the menu + write data/raw under the project dir (DX-013)
+    enter_project(project)  # resolve the menu + write data/raw under the project dir (DX-013)
 
     params_file = resolve_params_path(params_file)
     path = Path(params_file)
@@ -1788,8 +1797,7 @@ def submit(
     from kitchen.store import DataStore
     from kitchen.submit import upload, validate_submission
 
-    if project:
-        os.chdir(project)  # resolve the menu, submission file + sample under the project dir (DX-013)
+    enter_project(project)  # resolve the menu, submission file + sample under the project dir (DX-013)
 
     if notebook:
         _submit_notebook(params_file, from_script, call, out, execute)
@@ -1931,8 +1939,7 @@ def score(
     import json as _json
     import sys
 
-    if project:
-        os.chdir(project)
+    enter_project(project)
 
     # Make the project's `src/` importable so a `source: src/score/run.py` scorer resolves.
     cwd = str(Path.cwd())
@@ -2074,6 +2081,7 @@ def log(
     tag: Annotated[
         list[str] | None, typer.Option("--tag", help="Tag key=value (repeatable)")
     ] = None,
+    project: ProjectOption = None,
 ) -> None:
     """Append a run record (params, metrics, tags) to a local run store (GEN-001).
 
@@ -2082,6 +2090,7 @@ def log(
     without kitchen can append a record directly. Concurrent `kitchen log` writers serialize on a
     file lock, so a parallel sweep won't corrupt the store.
     """
+    enter_project(project)
     from kitchen.runstore import DEFAULT_STORE, log_run, make_record
 
     params = _parse_kv(param, "param")
@@ -2126,8 +2135,7 @@ def stage(
     """
     import subprocess as _sp
 
-    if project:
-        os.chdir(project)
+    enter_project(project)
 
     params_file = resolve_params_path(params_file)
     path = Path(params_file)
@@ -2187,8 +2195,10 @@ def check(
     params_file: Annotated[
         str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
+    project: ProjectOption = None,
 ) -> None:
     """Check that all tools, credentials, and project files are ready."""
+    enter_project(project)
     import shutil
     import subprocess
     import sys
@@ -2576,8 +2586,10 @@ def report(
         str | None,
         typer.Option("--model-name", help="Registered model name for --compare champion lookup"),
     ] = None,
+    project: ProjectOption = None,
 ) -> None:
     """Write a metrics summary to stdout (pipe to $GITHUB_STEP_SUMMARY in CI)."""
+    enter_project(project)
     import json
 
     metrics_path = Path(metrics_file)
@@ -2815,6 +2827,7 @@ def promote(
             help="Logged-model name to register (default: mlflow.model_artifact_path, or 'model')",
         ),
     ] = None,
+    project: ProjectOption = None,
 ) -> None:
     """Promote a run to the model registry.
 
@@ -2826,6 +2839,7 @@ def promote(
     (e.g. an 80/20 holdout vs out-of-fold CV) since those numbers aren't comparable — narrow
     with --scheme, or target a specific run with --run-id.
     """
+    enter_project(project)
 
     import mlflow.tracking
 
@@ -3545,8 +3559,7 @@ def menu_run(
     from kitchen import menu_run as _menu_run
     from kitchen.menu import Menu
 
-    if project:
-        os.chdir(project)  # load the menu + import src/<stage> from the project dir (DX-012)
+    enter_project(project)  # load the menu + import src/<stage> from the project dir (DX-012)
 
     try:
         menu = Menu.from_yaml(menu_file)
