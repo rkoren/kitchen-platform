@@ -381,9 +381,20 @@ def run_train(
             "omit this.",
         ),
     ] = None,
+    skip_features: Annotated[
+        bool,
+        typer.Option(
+            "--skip-features",
+            help="Train on the existing data/processed/ outputs without re-running the "
+            "features stage first. Tagged kitchen.skip_features=true.",
+        ),
+    ] = False,
     debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
     """Run the full train pipeline: features → train → log to MLflow.
+
+    With --skip-features, the features stage is skipped and training reads the existing
+    data/processed/ outputs — a train-only retrain (CBB-031).
 
     With --auto-promote, compares the new run against the current champion on
     --promote-metric and promotes automatically if it wins. When --promote-metric
@@ -460,6 +471,19 @@ def run_train(
         parsed_overrides = parsed_overrides or {}
         parsed_overrides.setdefault("experiment", resolved_model.experiment)
 
+    # CBB-032: a `models:` entry may declare its `variant:` — `--model X` then implies
+    # `--variant <X.variant>`, so a multi-model project needs one flag per model, not two.
+    model_variant = resolved_model.variant if resolved_model is not None else None
+    if model_variant:
+        if variant and variant != model_variant:
+            typer.echo(
+                f"error: --variant {variant!r} conflicts with model {resolved_model.name!r}, "
+                f"which declares variant {model_variant!r}",
+                err=True,
+            )
+            raise typer.Exit(1)
+        variant = model_variant
+
     if variant:
         from kitchen.menu import load_params
 
@@ -490,7 +514,10 @@ def run_train(
 
     try:
         run_id = train_pipeline(
-            params_file=train_params_file, overrides=parsed_overrides, variant=variant
+            params_file=train_params_file,
+            overrides=parsed_overrides,
+            variant=variant,
+            skip_features=skip_features,
         )
     except ModuleNotFoundError as exc:
         typer.echo(

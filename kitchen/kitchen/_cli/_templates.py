@@ -1376,11 +1376,14 @@ def raw_row() -> pd.DataFrame:
     return pd.DataFrame([{}])
 
 
-def test_feature_builder_raises_not_implemented(raw_row):
-    # build() raises NotImplementedError until you implement it.
-    # Remove this test and add real assertions once build() is done.
-    with pytest.raises(NotImplementedError):
-        ${class_name}Features().build(raw_row, params={})
+def test_feature_builder_builds(raw_row):
+    # Skipped until build() is implemented, so CI stays green on a fresh scaffold.
+    # Then replace raw_row with a real row and add real assertions.
+    try:
+        out = ${class_name}Features().build(raw_row, params={})
+    except NotImplementedError:
+        pytest.skip("build() not implemented yet")
+    assert isinstance(out, pd.DataFrame)
 
 
 def test_features_list_is_defined():
@@ -1747,6 +1750,9 @@ jobs:
       - name: Install project
         run: pip install -e ".[dev]"
 
+      - name: Test
+        run: pytest -q
+
       # Persistent backend only: resolve MLFLOW_TRACKING_URI from the secrets manifest into
       # the GitHub env file so the steps below use the RDS store (needs AWS creds — add an
       # aws-actions/configure-aws-credentials step with your OIDC role first). The `secrets`
@@ -1939,6 +1945,9 @@ jobs:
 
       - name: Install project
         run: pip install -e ".[dev]"
+
+      - name: Test
+        run: pytest -q
 
       - name: Ingest data
         # Write ~/.kaggle/kaggle.json from the secrets rather than relying on
@@ -2751,7 +2760,7 @@ stages:
       - data/processed/
 
   train:
-    cmd: kitchen run train
+    cmd: kitchen run train --skip-features  # features is its own stage above
     deps:
       - src/train/run.py
       - data/processed/
@@ -2798,7 +2807,7 @@ stages:
       - data/processed/
 
   train:
-    cmd: kitchen run train
+    cmd: kitchen run train --skip-features  # features is its own stage above
     deps:
       - src/train/run.py
       - data/processed/

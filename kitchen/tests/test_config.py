@@ -485,6 +485,19 @@ def test_resolve_model_single_entry_auto_selected():
     assert r.name == "only" and r.experiment == "e" and r.metric == "m"
 
 
+def test_resolve_model_carries_variant():
+    """CBB-032: a models: entry's `variant` flows through to the resolved identity."""
+    from kitchen.config import KitchenConfig, resolve_model
+
+    cfg = KitchenConfig(
+        experiment="p",
+        models={"reg": {"experiment": "e", "variant": "reg_season"}, "t": {"experiment": "t"}},
+    )
+    assert resolve_model(cfg, "reg").variant == "reg_season"
+    assert resolve_model(cfg, "t").variant is None
+    assert resolve_model(KitchenConfig(experiment="solo"), None).variant is None
+
+
 def test_model_spec_rejects_unknown_key():
     import pytest
 

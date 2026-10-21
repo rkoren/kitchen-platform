@@ -254,7 +254,9 @@ class ModelSpec(BaseModel):
     All fields default sensibly so a minimal entry works: ``experiment`` falls back to the
     project's top-level ``experiment``; ``model_name`` (the registered champion) to
     ``f"{experiment}-model"``; ``metric``/``lower_is_better`` (the promote/rank metric) to the
-    first ``thresholds`` key. Single-model projects don't need a ``models:`` map at all.
+    first ``thresholds`` key. ``variant`` names a ``variants:`` overlay the model trains with, so
+    ``--model X`` alone implies ``--variant <X.variant>`` (CBB-032). Single-model projects don't
+    need a ``models:`` map at all.
     """
 
     model_config = ConfigDict(extra="forbid", protected_namespaces=())
@@ -263,6 +265,7 @@ class ModelSpec(BaseModel):
     model_name: str | None = None  # registered champion model name (default: f"{experiment}-model")
     metric: str | None = None  # promote/rank metric (default: first thresholds key)
     lower_is_better: bool = False  # metric direction for promotion/ranking
+    variant: str | None = None  # `variants:` overlay this model trains with (`--model` implies it)
 
 
 class ModelNotFound(KeyError):
@@ -278,6 +281,7 @@ class ResolvedModel:
     model_name: str
     metric: str | None
     lower_is_better: bool
+    variant: str | None = None
 
 
 def resolve_model(cfg: "KitchenConfig", model: str | None = None) -> ResolvedModel:
@@ -317,7 +321,15 @@ def resolve_model(cfg: "KitchenConfig", model: str | None = None) -> ResolvedMod
     )
     metric = spec.metric if spec else None
     lower = spec.lower_is_better if spec else False
-    return ResolvedModel(name=name, experiment=experiment, model_name=model_name, metric=metric, lower_is_better=lower)
+    variant = spec.variant if spec else None
+    return ResolvedModel(
+        name=name,
+        experiment=experiment,
+        model_name=model_name,
+        metric=metric,
+        lower_is_better=lower,
+        variant=variant,
+    )
 
 
 class FeatureSchemaSpec(BaseModel):

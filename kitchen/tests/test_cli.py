@@ -544,7 +544,7 @@ def test_run_train_invokes_pipeline(tmp_path, monkeypatch):
 
     calls = []
 
-    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None):
+    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None, skip_features=False):
         calls.append(params_file)
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -560,7 +560,7 @@ def test_run_train_custom_params(tmp_path, monkeypatch):
 
     calls = []
 
-    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None):
+    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None, skip_features=False):
         calls.append(params_file)
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -573,7 +573,7 @@ def test_run_train_missing_src_module(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "params.yaml").write_text("experiment: test\n")
 
-    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None):
+    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None, skip_features=False):
         raise ModuleNotFoundError("No module named 'src.features.run'")
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -594,7 +594,7 @@ def _captured_overrides(tmp_path, monkeypatch):
     (tmp_path / "params.yaml").write_text("experiment: test\n")
     captured = {}
 
-    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None):
+    def fake_pipeline(params_file="params.yaml", overrides=None, variant=None, skip_features=False):
         captured["overrides"] = overrides
 
     monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake_pipeline)
@@ -738,7 +738,7 @@ def test_reproduced_params_errors_on_unknown_run(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _fake_pipeline_noop(params_file="params.yaml", overrides=None, variant=None):  # pylint: disable=unused-argument
+def _fake_pipeline_noop(params_file="params.yaml", overrides=None, variant=None, skip_features=False):  # pylint: disable=unused-argument
     pass
 
 
@@ -2028,6 +2028,15 @@ def test_init_ci_workflow_contains_expected_steps(_ci_local):
     assert "Evaluate" in step_names
     assert "Report" in step_names
     assert "Upload metrics" in step_names
+
+
+def test_init_ci_workflow_runs_pytest_before_train(_ci_local):
+    """CBB-033: the scaffolded CI runs the project's tests before training."""
+    _, data = _ci_local
+    steps = data["jobs"]["train-evaluate"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    assert names.index("Test") < names.index("Train")
+    assert steps[names.index("Test")]["run"] == "pytest -q"
 
 
 def test_init_ci_workflow_substitutes_project_name(_ci_local):
@@ -4715,6 +4724,82 @@ def test_run_train_unknown_model_errors(tmp_path, monkeypatch):
         result = runner.invoke(app, ["run", "train", "--model", "nope"])
     assert result.exit_code != 0
     assert "no model 'nope'" in result.output
+
+
+_VARIANT_MODEL_MENU = """\
+project: cbb
+pipeline: []
+recipes: {}
+experiment: cbb
+models:
+  tournament:
+    experiment: cbb-tournament
+  reg:
+    experiment: cbb-reg
+    variant: reg_season
+variants:
+  reg_season:
+    model: {target: reg_season}
+  other:
+    model: {target: other}
+"""
+
+
+def _capture_pipeline(monkeypatch):
+    seen = {}
+
+    def fake(params_file="params.yaml", overrides=None, variant=None, skip_features=False):
+        seen.update(variant=variant, skip_features=skip_features)
+
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", fake)
+    return seen
+
+
+def test_run_train_model_implies_its_variant(tmp_path, monkeypatch):
+    """CBB-032: `--model reg` applies the variant the reg entry declares — one flag, not two."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_VARIANT_MODEL_MENU)
+    seen = _capture_pipeline(monkeypatch)
+    result = runner.invoke(app, ["run", "train", "--model", "reg"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert seen["variant"] == "reg_season"
+
+
+def test_run_train_model_variant_matching_flag_ok(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_VARIANT_MODEL_MENU)
+    seen = _capture_pipeline(monkeypatch)
+    result = runner.invoke(app, ["run", "train", "--model", "reg", "--variant", "reg_season"])
+    assert result.exit_code == 0, result.output
+    assert seen["variant"] == "reg_season"
+
+
+def test_run_train_model_variant_conflict_errors(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_VARIANT_MODEL_MENU)
+    _capture_pipeline(monkeypatch)
+    result = runner.invoke(app, ["run", "train", "--model", "reg", "--variant", "other"])
+    assert result.exit_code == 1
+    assert "conflicts with model 'reg'" in result.output
+
+
+def test_run_train_model_without_variant_leaves_variant_unset(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_VARIANT_MODEL_MENU)
+    seen = _capture_pipeline(monkeypatch)
+    result = runner.invoke(app, ["run", "train", "--model", "tournament"])
+    assert result.exit_code == 0, result.output
+    assert seen["variant"] is None
+
+
+def test_run_train_skip_features_flag_passes_through(tmp_path, monkeypatch):
+    """CBB-031: --skip-features reaches train_pipeline."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("experiment: test\n")
+    seen = _capture_pipeline(monkeypatch)
+    result = runner.invoke(app, ["run", "train", "--skip-features"])
+    assert result.exit_code == 0, result.output
+    assert seen["skip_features"] is True
 
 
 def test_leaderboard_model_scopes_experiment(tmp_path, monkeypatch):
