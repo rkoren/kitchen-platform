@@ -28,8 +28,11 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   attributes) must all be present in some `data/processed/` parquet (or `feature_schema.file`),
   else it **exits 1** with the missing columns and a remedy instead of a raw pandas `KeyError`.
   A champion whose features were since dropped from the pipeline now fails here until it is
-  retrained and promoted. `--skip-parity-check` opts out for an `evaluate()` that joins several
-  files.
+  retrained and promoted, and that is the only fix: `--skip-parity-check` is for an
+  `evaluate()` that joins several files, not a workaround (it just moves the failure to a
+  `KeyError` on the same columns), and the error now says so (CBB-040). New
+  `kitchen run evaluate --run-id <id>` evaluates a run's logged model, so a retrained
+  challenger can be checked before it is promoted.
 - `kitchen status` Recent Runs no longer prints a vacuous `PASS` for a run that logged none of
   the gated threshold metrics — it shows `n/a (no threshold metric logged)`. A pass decided by a
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).

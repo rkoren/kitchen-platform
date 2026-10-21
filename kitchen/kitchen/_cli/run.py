@@ -1037,6 +1037,14 @@ def run_evaluate(
         str | None,
         typer.Option("--model-uri", help="MLflow model URI (runs:/… or models:/name@alias)"),
     ] = None,
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id",
+            help="Evaluate a run's logged model (`runs:/<id>/model`) instead of the champion — "
+            "check a challenger before promoting it.",
+        ),
+    ] = None,
     alias: Annotated[
         str, typer.Option("--alias", help="Registry alias when model-uri is not set")
     ] = "champion",
@@ -1058,7 +1066,8 @@ def run_evaluate(
         typer.Option(
             "--skip-parity-check",
             help="Don't check that some data/processed/ parquet carries every feature the "
-            "champion reads (for an evaluate() that joins several files).",
+            "model reads. Only for an evaluate() that joins several files — it is not a "
+            "workaround for a champion whose features were dropped (retrain and promote).",
         ),
     ] = False,
     debug: Annotated[bool, _DEBUG_OPTION] = False,
@@ -1071,6 +1080,12 @@ def run_evaluate(
     errors naming the missing columns otherwise (CBB-027).
     """
     import sys
+
+    if run_id is not None and model_uri is not None:
+        typer.echo("error: pass --run-id or --model-uri, not both", err=True)
+        raise typer.Exit(1)
+    if run_id is not None:
+        model_uri = f"runs:/{run_id}/model"
 
     params_file = _resolve_params_path(params_file)
     path = Path(params_file)
@@ -1232,11 +1247,12 @@ def run_evaluate(
             shown = ", ".join(parity.missing[:10])
             more = f" (+{len(parity.missing) - 10} more)" if len(parity.missing) > 10 else ""
             files = ", ".join(p.name for p in (parity.file, *parity.tied))
+            subject = "the champion" if model_name is not None else "the model"
             typer.echo(
-                f"error: no data/processed/ file has every feature the champion reads — closest: "
+                f"error: no data/processed/ file has every feature {subject} reads — closest: "
                 f"{files}, missing {len(parity.missing)}: {shown}{more}\n"
                 f"  {parity_remedy(champ_variant, remedy_model)}\n"
-                f"  (--skip-parity-check if evaluate() joins several files)",
+                f"  (--skip-parity-check is only for an evaluate() that joins several files)",
                 err=True,
             )
             raise typer.Exit(1)
@@ -1264,7 +1280,7 @@ def run_evaluate(
             from kitchen.parity import parity_remedy
 
             hint = (
-                "\n  columns the champion needs are missing: "
+                "\n  columns the model needs are missing — "
                 f"{parity_remedy(champ_variant, remedy_model)}"
             )
         typer.echo(
