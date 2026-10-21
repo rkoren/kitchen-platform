@@ -107,7 +107,9 @@ def parity_remedy(variant: str | None, model: str | None = None) -> str:
     Two causes, two fixes: the processed data came from another variant (rebuild it), or the
     feature set itself has moved on since the champion trained (retrain + promote). ``model``
     (a ``models:`` key) wins over ``variant`` in the suggested command, since a multi-model
-    project's ``run train`` requires ``--model``.
+    project's ``run train`` requires ``--model``. The second cause has no workaround —
+    ``--skip-parity-check`` only defers the failure to a ``KeyError`` inside ``evaluate()``
+    (CBB-040) — so the text says so.
     """
     if model:
         rebuild = (
@@ -122,6 +124,8 @@ def parity_remedy(variant: str | None, model: str | None = None) -> str:
     else:
         rebuild = "re-run `kitchen run features` with the params the champion trained on"
     return (
-        f"{rebuild}, or — if those features were since dropped — retrain and promote a new "
-        "champion"
+        f"if the processed data came from another variant: {rebuild}.\n"
+        "  If those features were since dropped from the pipeline, the only fix is to retrain "
+        "and promote a new champion — skipping the check just fails later on the same columns. "
+        "Check a challenger first with `kitchen run evaluate --run-id <id>`."
     )

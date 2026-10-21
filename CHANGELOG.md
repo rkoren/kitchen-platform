@@ -28,8 +28,11 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   attributes) must all be present in some `data/processed/` parquet (or `feature_schema.file`),
   else it **exits 1** with the missing columns and a remedy instead of a raw pandas `KeyError`.
   A champion whose features were since dropped from the pipeline now fails here until it is
-  retrained and promoted. `--skip-parity-check` opts out for an `evaluate()` that joins several
-  files.
+  retrained and promoted, and that is the only fix: `--skip-parity-check` is for an
+  `evaluate()` that joins several files, not a workaround (it just moves the failure to a
+  `KeyError` on the same columns), and the error now says so (CBB-040). New
+  `kitchen run evaluate --run-id <id>` evaluates a run's logged model, so a retrained
+  challenger can be checked before it is promoted.
 - `kitchen status` Recent Runs no longer prints a vacuous `PASS` for a run that logged none of
   the gated threshold metrics — it shows `n/a (no threshold metric logged)`. A pass decided by a
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
@@ -42,6 +45,11 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   variant (`model_variant` tag), and a `--run-id` trained under a different variant is refused
   rather than registered under the wrong model. `--lower-is-better` now defaults to the entry's
   direction (still higher-is-better without `--model`).
+- `kitchen --version` (and `kitchen version`) print the running version and, for an editable
+  install, its source path. `kitchen.__version__` is set too (CBB-044). An editable install's
+  dist-info version goes stale (cbb's reported `0.1.0`), so for such an install the version is
+  read from the source tree's `pyproject.toml`, and a warning says to re-run `pip install -e`
+  when the two disagree.
 - Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
   --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
   entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The

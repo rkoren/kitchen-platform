@@ -5157,7 +5157,8 @@ def test_run_evaluate_keyerror_not_in_index_gets_remedy(tmp_path, monkeypatch):
     _eval_with_processed(tmp_path, monkeypatch, object(), ["a"], evaluate=boom)
     result = runner.invoke(app, ["run", "evaluate"])
     assert result.exit_code == 1
-    assert "columns the champion needs are missing" in result.output
+    assert "columns the model needs are missing" in result.output
+    assert "the only fix is to retrain and promote" in result.output
 
 
 _EVAL_MODELS_MENU = """\
@@ -5339,3 +5340,28 @@ def test_promote_project_flag_finds_menu_without_params(tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, result.output
     assert mock_gbr.call_args[0][:2] == ("cbb-tournament", "brier")
+
+def test_run_evaluate_run_id_evaluates_that_run(tmp_path, monkeypatch):
+    """CBB-040: a challenger can be evaluated before it is promoted."""
+    calls = _eval_with_processed(tmp_path, monkeypatch, _FeatModel(["a"]), ["a"])
+    result = runner.invoke(app, ["run", "evaluate", "--run-id", "abc123"])
+    assert result.exit_code == 0, result.output
+    assert "runs:/abc123/model" in result.output
+    assert len(calls) == 1
+
+
+def test_run_evaluate_run_id_and_model_uri_conflict(tmp_path, monkeypatch):
+    _eval_with_processed(tmp_path, monkeypatch, object(), ["a"])
+    result = runner.invoke(app, ["run", "evaluate", "--run-id", "abc", "--model-uri", "runs:/x/model"])
+    assert result.exit_code == 1
+    assert "not both" in result.output
+
+
+def test_run_evaluate_parity_error_says_skip_is_no_fix(tmp_path, monkeypatch):
+    """CBB-040: dropped features have one fix (retrain + promote); the skip flag isn't it."""
+    _eval_with_processed(tmp_path, monkeypatch, _FeatModel(["a", "d_kp_Exp"]), ["a"])
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 1
+    assert "the only fix is to retrain and promote" in result.output
+    assert "--skip-parity-check is only for an evaluate() that joins several files" in result.output
+    assert "kitchen run evaluate --run-id" in result.output

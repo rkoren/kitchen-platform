@@ -1,4 +1,5 @@
 from kitchen import evaluate, registry, search, tracking
+from kitchen._version import version_info as _version_info
 from kitchen.config import KitchenConfig
 from kitchen.experiment import experiment, init_run
 from kitchen.holdout import score_run_holdout
@@ -26,6 +27,10 @@ from kitchen.search import bayes_search, grid_search, random_search
 from kitchen.steps import Evaluator, FeatureBuilder, Trainer
 from kitchen.store import DataStore
 from kitchen.tracking import Tracker
+
+# The running code's version — the source tree's for an editable install, whose dist-info
+# metadata goes stale (CBB-044). A dunder, so not part of the frozen ``__all__``.
+__version__: str = _version_info().version
 
 __all__ = [
     "DataStore",
