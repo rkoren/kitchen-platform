@@ -18,6 +18,9 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   A champion whose features were since dropped from the pipeline now fails here until it is
   retrained and promoted. `--skip-parity-check` opts out for an `evaluate()` that joins several
   files.
+- `kitchen status` Recent Runs no longer prints a vacuous `PASS` for a run that logged none of
+  the gated threshold metrics — it shows `n/a (no threshold metric logged)`. A pass decided by a
+  threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
 - Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
