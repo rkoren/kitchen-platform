@@ -85,3 +85,58 @@ def test_check_C_reads_menu_from_project(tmp_path, monkeypatch):
     result = runner.invoke(app, ["check", "-C", str(proj)])
     assert "not found (run from a project directory)" not in result.output
     assert "menu.yaml" in result.output  # found (and validated) in the project dir
+
+
+# ── CBB-046: top-level `kitchen -C DIR <cmd>` + models.X.variant validation ──
+
+
+def test_top_level_C_runs_any_command_in_project(tmp_path, monkeypatch):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["-C", str(proj), "log", "--metric", "acc=0.5"])
+    assert result.exit_code == 0, result.output
+    assert (proj / "runs.jsonl").exists()
+    assert not (tmp_path / "runs.jsonl").exists()
+
+
+def test_top_level_C_composes_with_subcommand_C_like_git(tmp_path, monkeypatch):
+    (tmp_path / "outer" / "inner").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["-C", "outer", "log", "-C", "inner", "--metric", "acc=0.5"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "outer" / "inner" / "runs.jsonl").exists()
+
+
+_BAD_VARIANT_MENU = """\
+project: p
+pipeline: []
+models:
+  reg: {model_name: r, variant: reg_seasn}
+variants:
+  reg_season: {model: {a: 1}}
+"""
+
+
+def test_menu_rejects_model_with_undeclared_variant(tmp_path):
+    from kitchen.menu import Menu
+
+    path = tmp_path / "menu.yaml"
+    path.write_text(_BAD_VARIANT_MENU)
+    with pytest.raises(ValueError, match=r"models\.reg\.variant: 'reg_seasn' is not a declared"):
+        Menu.from_yaml(str(path))
+
+
+def test_check_flags_model_with_undeclared_variant(tmp_path, monkeypatch):
+    (tmp_path / "menu.yaml").write_text(_BAD_VARIANT_MENU)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["check"])
+    assert result.exit_code != 0
+    assert "reg_seasn" in result.output and "reg_season" in result.output
+
+
+def test_check_lists_models(tmp_path, monkeypatch):
+    (tmp_path / "menu.yaml").write_text(_BAD_VARIANT_MENU.replace("reg_seasn", "reg_season"))
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["check"])
+    assert "reg (variant reg_season)" in result.output

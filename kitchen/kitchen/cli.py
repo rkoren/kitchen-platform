@@ -133,6 +133,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def _root(
+    project: ProjectOption = None,
     show_version: Annotated[
         bool,
         typer.Option(
@@ -144,6 +145,9 @@ def _root(
     ] = False,
 ) -> None:
     """kitchen ML platform CLI"""
+    # CBB-046: git-style `kitchen -C DIR <cmd>` for every command. A subcommand's own `-C`
+    # still works and, like git, resolves relative to this one.
+    enter_project(project)
 
 
 @app.command()
@@ -2435,6 +2439,14 @@ def check(
 
             cfg = KitchenConfig.from_yaml(str(params_path))
             _ok(params_file, f"experiment={cfg.experiment!r}")
+            if cfg.models:  # CBB-046: variant references were validated at load
+                _ok(
+                    "models",
+                    ", ".join(
+                        f"{n} (variant {m.variant})" if m.variant else n
+                        for n, m in cfg.models.items()
+                    ),
+                )
             if cfg.monitor:
                 output = cfg.monitor.report_bucket or cfg.monitor.local_path
                 _ok("monitor config", f"output={output}")
@@ -2497,8 +2509,13 @@ def check(
                         _fail(f"feature schema: {_fs.file}", _detail or "schema mismatch")
                     except Exception as _exc:  # noqa: BLE001 — unreadable file shouldn't crash check
                         _fail(f"feature schema: {_fs.file}", f"could not read — {_exc}")
-        except ValidationError:
-            _fail(params_file, f"invalid — run `kitchen validate {params_file}`")
+        except ValidationError as exc:
+            # name the first problem (e.g. a models.X.variant typo, CBB-046), not just "invalid"
+            first = exc.errors()[0].get("msg", "") if exc.errors() else ""
+            first = first.removeprefix("Value error, ").splitlines()[0] if first else ""
+            more = f" (+{exc.error_count() - 1} more)" if exc.error_count() > 1 else ""
+            detail = f"{first}{more} — " if first else ""
+            _fail(params_file, f"invalid: {detail}run `kitchen validate {params_file}`")
         except Exception as exc:
             _fail(params_file, str(exc))
     else:
