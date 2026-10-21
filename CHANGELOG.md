@@ -16,6 +16,11 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   files.
 
 ### Added
+- Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
+  --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
+  entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The
+  challenger still needs a strict tiebreak improvement; the reason line names the deciding
+  metric and the promoted run is tagged `kitchen.promoted_by_metric`.
 - `kitchen run train --skip-features` trains on the existing `data/processed/` outputs without
   re-running the features stage (CBB-031) — a train-only retrain. The run is tagged
   `kitchen.skip_features=true`. The scaffolded `dvc.yaml` train stage now uses it, since

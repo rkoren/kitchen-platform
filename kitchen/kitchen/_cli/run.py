@@ -57,11 +57,20 @@ def _try_auto_promote(
     lower_is_better: bool,
     model_name: str | None,
     experiment: str | None = None,
+    tiebreak_metric: str | None = None,
+    tiebreak_lower_is_better: bool = False,
+    tie_tolerance: float = 0.0,
 ) -> None:
     """Compare the latest run against the current champion; promote if it wins.
 
     ``experiment`` scopes the run search to a specific model's experiment (CBB-020); when
     omitted it falls back to the project's ``cfg.experiment`` (single-model / legacy path).
+
+    ``tiebreak_metric`` (CBB-034) is consulted only when the primary metric ties — equal
+    within ``tie_tolerance`` (default: exactly equal). The challenger then wins only on a
+    strict tiebreak improvement, so a gain that only shows on a secondary head (e.g. a
+    total-MAE gain with the margin Brier unchanged) can promote without a manual
+    ``kitchen promote --run-id``. The deciding metric is logged and tagged on the run.
     """
 
     import mlflow.tracking
@@ -100,11 +109,14 @@ def _try_auto_promote(
     # Look up current champion score + validation scheme (None if no champion yet).
     champ_score: float | None = None
     champ_scheme: str | None = None
+    champ_tiebreak: float | None = None
     try:
         mv = client.get_model_version_by_alias(resolved_model, "champion")
         champ_run = client.get_run(mv.run_id)
         champ_score = champ_run.data.metrics.get(metric)
         champ_scheme = champ_run.data.tags.get(VALIDATION_SCHEME_TAG)
+        if tiebreak_metric:
+            champ_tiebreak = champ_run.data.metrics.get(tiebreak_metric)
     except Exception:
         pass
 
@@ -122,8 +134,25 @@ def _try_auto_promote(
         return
 
     direction_label = "lower=better" if lower_is_better else "higher=better"
+    decided_by = metric
     if champ_score is None:
         wins, reason = True, "no current champion"
+    elif tiebreak_metric and abs(new_score - champ_score) <= tie_tolerance:
+        decided_by = tiebreak_metric
+        tie = f"tie on {metric} ({new_score:.6f} vs {champ_score:.6f})"
+        new_tb = new_run.data.metrics.get(tiebreak_metric)
+        tb_label = "lower=better" if tiebreak_lower_is_better else "higher=better"
+        if new_tb is None or champ_tiebreak is None:
+            side = "challenger" if new_tb is None else "champion"
+            wins, reason = False, f"{tie}; tiebreak {tiebreak_metric!r} missing from {side}"
+        elif tiebreak_lower_is_better:
+            wins = new_tb < champ_tiebreak
+            op = "<" if wins else ">="
+            reason = f"{tie}; tiebreak {tiebreak_metric} {new_tb:.6f} {op} {champ_tiebreak:.6f} ({tb_label})"
+        else:
+            wins = new_tb > champ_tiebreak
+            op = ">" if wins else "<="
+            reason = f"{tie}; tiebreak {tiebreak_metric} {new_tb:.6f} {op} {champ_tiebreak:.6f} ({tb_label})"
     elif lower_is_better:
         wins = new_score < champ_score
         reason = f"{new_score:.6f} < {champ_score:.6f} ({direction_label})"
@@ -138,6 +167,10 @@ def _try_auto_promote(
             new_run.info.run_id, cfg.mlflow.model_artifact_path, resolved_model
         )
         promote_model(resolved_model, reg_version, alias="champion")
+        try:
+            client.set_tag(new_run.info.run_id, "kitchen.promoted_by_metric", decided_by)
+        except Exception:
+            pass  # the tag is an audit nicety; never fail a promotion over it
         typer.echo(f"auto-promote: {new_run.info.run_id[:8]} → champion  ({reason})")
         typer.echo(f"             {resolved_model} v{reg_version} @ champion")
         # Write run_id to metrics.json so `kitchen push` can resolve the champion.
@@ -339,6 +372,30 @@ def run_train(
             "--lower-is-better/--higher-is-better", help="Metric direction for promotion comparison"
         ),
     ] = False,
+    tiebreak_metric: Annotated[
+        str | None,
+        typer.Option(
+            "--tiebreak-metric",
+            help="Auto-promote: secondary metric that decides when the promote metric ties "
+            "(within --tie-tolerance). Default: the `models:` entry's tiebreak_metric.",
+        ),
+    ] = None,
+    tiebreak_lower_is_better: Annotated[
+        bool,
+        typer.Option(
+            "--tiebreak-lower-is-better/--tiebreak-higher-is-better",
+            help="Direction for --tiebreak-metric",
+        ),
+    ] = False,
+    tie_tolerance: Annotated[
+        float,
+        typer.Option(
+            "--tie-tolerance",
+            min=0.0,
+            help="Auto-promote: promote-metric scores within this distance count as a tie "
+            "(only meaningful with a tiebreak metric). Default: exact equality.",
+        ),
+    ] = 0.0,
     promote_model_name: Annotated[
         str | None,
         typer.Option(
@@ -451,6 +508,11 @@ def run_train(
                 )
                 raise typer.Exit(1)
             promote_metric, lower_is_better = detected
+        # Tiebreak (CBB-034): explicit --tiebreak-metric owns its direction flag; else the
+        # selected model's declared tiebreak.
+        if not tiebreak_metric and resolved_model is not None and resolved_model.tiebreak_metric:
+            tiebreak_metric = resolved_model.tiebreak_metric
+            tiebreak_lower_is_better = resolved_model.tiebreak_lower_is_better
 
     parsed_overrides: dict | None = None
     if override:
@@ -553,6 +615,9 @@ def run_train(
             lower_is_better,
             ap_model_name,
             experiment=ap_experiment,
+            tiebreak_metric=tiebreak_metric,
+            tiebreak_lower_is_better=tiebreak_lower_is_better,
+            tie_tolerance=tie_tolerance,
         )
 
 

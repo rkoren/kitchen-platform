@@ -744,7 +744,7 @@ def _fake_pipeline_noop(params_file="params.yaml", overrides=None, variant=None,
 
 def _auto_promote_invoke(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     tmp_path, monkeypatch, extra_args, champion_score=None, new_score=0.15, metric="loto_brier",
-    new_scheme=None, champion_scheme=None,
+    new_scheme=None, champion_scheme=None, new_extra=None, champion_extra=None, clients=None,
 ):
     """Helper: set up a fake pipeline + MLflow client and invoke run train with extra_args.
 
@@ -756,18 +756,20 @@ def _auto_promote_invoke(  # pylint: disable=too-many-arguments,too-many-positio
 
     new_run = MagicMock()
     new_run.info.run_id = "newrun" + "0" * 26
-    new_run.data.metrics = {metric: new_score}
+    new_run.data.metrics = {metric: new_score, **(new_extra or {})}
     new_run.data.tags = {"validation_scheme": new_scheme} if new_scheme else {}
 
     def make_client():
         client = MagicMock()
+        if clients is not None:
+            clients.append(client)
         client.get_experiment_by_name.return_value.experiment_id = "1"
         client.search_runs.return_value = [new_run]
         if champion_score is not None:
             mv = MagicMock()
             mv.run_id = "champrun" + "0" * 24
             champ_run = MagicMock()
-            champ_run.data.metrics = {metric: champion_score}
+            champ_run.data.metrics = {metric: champion_score, **(champion_extra or {})}
             champ_run.data.tags = {"validation_scheme": champion_scheme} if champion_scheme else {}
             client.get_model_version_by_alias.return_value = mv
             client.get_run.return_value = champ_run
@@ -893,6 +895,81 @@ def test_auto_promote_loses_to_champion_skips(tmp_path, monkeypatch):
     mock_reg.assert_not_called()
     mock_prom.assert_not_called()
     assert "skipped" in result.output
+
+
+_TB_ARGS = [
+    "--auto-promote", "--promote-metric", "loto_brier", "--lower-is-better",
+    "--tiebreak-metric", "total_mae", "--tiebreak-lower-is-better",
+]
+
+
+def test_auto_promote_tie_without_tiebreak_skips(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch,
+        ["--auto-promote", "--promote-metric", "loto_brier", "--lower-is-better"],
+        champion_score=0.17, new_score=0.17,
+        new_extra={"total_mae": 9.0}, champion_extra={"total_mae": 10.0},
+    )
+    assert result.exit_code == 0
+    mock_reg.assert_not_called()  # strict improvement still required without a tiebreak
+    assert "skipped" in result.output
+
+
+def test_auto_promote_tiebreak_promotes_on_secondary_gain(tmp_path, monkeypatch):
+    # CBB-034: primary unchanged, total-MAE better → promote, and say which metric decided.
+    clients: list = []
+    result, mock_reg, mock_prom = _auto_promote_invoke(
+        tmp_path, monkeypatch, _TB_ARGS,
+        champion_score=0.17, new_score=0.17,
+        new_extra={"total_mae": 9.0}, champion_extra={"total_mae": 10.0}, clients=clients,
+    )
+    assert result.exit_code == 0, result.output
+    mock_reg.assert_called_once()
+    mock_prom.assert_called_once()
+    assert "tie on loto_brier" in result.output
+    assert "tiebreak total_mae 9.000000 < 10.000000" in result.output
+    clients[0].set_tag.assert_called_once_with(
+        "newrun" + "0" * 26, "kitchen.promoted_by_metric", "total_mae"
+    )
+
+
+def test_auto_promote_tiebreak_loses_skips(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch, _TB_ARGS,
+        champion_score=0.17, new_score=0.17,
+        new_extra={"total_mae": 10.0}, champion_extra={"total_mae": 10.0},
+    )
+    mock_reg.assert_not_called()  # an equal tiebreak is still a tie → keep the champion
+    assert "tiebreak total_mae 10.000000 >= 10.000000" in result.output
+
+
+def test_auto_promote_tiebreak_not_consulted_when_primary_differs(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch, _TB_ARGS,
+        champion_score=0.16, new_score=0.17,  # primary worse
+        new_extra={"total_mae": 1.0}, champion_extra={"total_mae": 10.0},
+    )
+    mock_reg.assert_not_called()
+    assert "tiebreak" not in result.output
+
+
+def test_auto_promote_tie_tolerance_widens_tie(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch, [*_TB_ARGS, "--tie-tolerance", "0.001"],
+        champion_score=0.1700, new_score=0.1705,  # within tolerance → tie → tiebreak decides
+        new_extra={"total_mae": 9.0}, champion_extra={"total_mae": 10.0},
+    )
+    mock_reg.assert_called_once()
+    assert "tie on loto_brier" in result.output
+
+
+def test_auto_promote_tiebreak_missing_on_champion_skips(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch, _TB_ARGS,
+        champion_score=0.17, new_score=0.17, new_extra={"total_mae": 9.0},
+    )
+    mock_reg.assert_not_called()
+    assert "tiebreak 'total_mae' missing from champion" in result.output
 
 
 def test_auto_promote_higher_is_better(tmp_path, monkeypatch):
@@ -4704,6 +4781,31 @@ def test_run_train_model_scopes_auto_promote(tmp_path, monkeypatch):
     # champion registered under the reg model's name, in the reg experiment
     assert mock_reg.call_args.args[2] == "cbb-reg-model"
     assert "cbb-reg" in seen_experiments
+
+
+def test_run_train_model_tiebreak_flows_to_auto_promote(tmp_path, monkeypatch):
+    """CBB-034: `--model reg` picks up the entry's tiebreak; an explicit flag overrides it."""
+    menu = _MULTI_MODEL_MENU.replace(
+        "    metric: loto_brier_reg\n",
+        "    metric: loto_brier_reg\n    tiebreak_metric: total_mae\n"
+        "    tiebreak_lower_is_better: true\n",
+    )
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(menu)
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "kitchen._cli.run._try_auto_promote", lambda *a, **kw: calls.append(kw)
+    )
+    base = ["run", "train", "--model", "reg", "--auto-promote"]
+    assert runner.invoke(app, base, catch_exceptions=False).exit_code == 0
+    assert runner.invoke(
+        app, [*base, "--tiebreak-metric", "acc", "--tiebreak-higher-is-better"],
+        catch_exceptions=False,
+    ).exit_code == 0
+    assert (calls[0]["tiebreak_metric"], calls[0]["tiebreak_lower_is_better"]) == ("total_mae", True)
+    assert (calls[1]["tiebreak_metric"], calls[1]["tiebreak_lower_is_better"]) == ("acc", False)
+    assert calls[0]["tie_tolerance"] == 0.0
 
 
 def test_run_train_multi_model_requires_model_flag(tmp_path, monkeypatch):
