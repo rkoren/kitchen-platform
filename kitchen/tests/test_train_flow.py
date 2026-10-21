@@ -256,6 +256,65 @@ def test_pipeline_applies_variant_before_overrides(tmp_path, monkeypatch):
     assert "variants" not in seen  # the definition isn't logged as a run param
 
 
+def test_pipeline_variant_routes_train_source_and_disables_holdout(tmp_path, monkeypatch):
+    """CBB-039: a model's variant can point `train` at its own module and turn off the
+    project-level holdout (`holdout: null`) — no in-trainer target switch or params.pop."""
+    from kitchen.menu import stage_module_name
+
+    monkeypatch.chdir(tmp_path)
+    menu = tmp_path / "menu.yaml"
+    menu.write_text(
+        "project: p\npipeline: [train]\n"
+        "recipes:\n  train: {kind: stage, source: src/train/run.py}\n"
+        "holdout: {path: data/processed/holdout.parquet, label: y, metric: brier}\n"
+        "variants:\n  reg:\n    recipes: {train: {source: src/train/reg.py}}\n    holdout: null\n"
+    )
+    seen: dict = {}
+    with (
+        patch("kitchen.flows.train_flow._build"),
+        patch("kitchen.flows.train_flow._train", side_effect=lambda p, **kw: seen.update(p)),
+    ):
+        train_pipeline(params_file=str(menu), variant="reg")
+    assert stage_module_name("train", seen) == "src.train.reg"
+    assert seen["recipes"]["train"]["kind"] == "stage"  # deep-merged, not replaced
+    assert seen["holdout"] is None  # score_run_holdout no-ops on a falsy holdout
+
+
+# ---------------------------------------------------------------------------
+# CBB-031: --skip-features (train-only)
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_skip_features_does_not_build(tmp_path, monkeypatch, capsys):
+    """skip_features=True trains on existing data/processed/ without running the features stage."""
+    monkeypatch.chdir(tmp_path)
+    params_file = _write_params(tmp_path)
+    with (
+        patch("kitchen.flows.train_flow._build") as mock_build,
+        patch("kitchen.flows.train_flow._train", return_value="rid") as mock_train,
+    ):
+        train_pipeline(params_file=params_file, skip_features=True)
+    mock_build.assert_not_called()
+    assert mock_train.call_args.kwargs["skip_features"] is True
+    assert "skipping features" in capsys.readouterr().out
+
+
+def test_train_tags_skip_features(monkeypatch, train_env):
+    """A train-only run is tagged kitchen.skip_features=true for provenance."""
+    _inject_train_mod(monkeypatch)
+    with patch("kitchen.flows.train_flow.mlflow") as mock_mlflow:
+        _train(PARAMS, skip_features=True)
+    mock_mlflow.set_tag.assert_any_call("kitchen.skip_features", "true")
+
+
+def test_train_default_sets_no_skip_features_tag(monkeypatch, train_env):
+    _inject_train_mod(monkeypatch)
+    with patch("kitchen.flows.train_flow.mlflow") as mock_mlflow:
+        _train(PARAMS)
+    tagged = [c.args[0] for c in mock_mlflow.set_tag.call_args_list if c.args]
+    assert "kitchen.skip_features" not in tagged
+
+
 # ---------------------------------------------------------------------------
 # train_pipeline (wiring)
 # ---------------------------------------------------------------------------
@@ -414,7 +473,7 @@ def test_pipeline_passes_overrides_to_train_task(tmp_path, monkeypatch):
         patch("kitchen.flows.train_flow._build"),
         patch(
             "kitchen.flows.train_flow._train",
-            side_effect=lambda p, overrides=None, variant=None: captured.update({"overrides": overrides}),
+            side_effect=lambda p, overrides=None, variant=None, skip_features=False: captured.update({"overrides": overrides}),
         ),
     ):
         train_pipeline(params_file=params_file, overrides={"model.max_depth": 6})
@@ -429,7 +488,7 @@ def test_pipeline_no_overrides_passes_none_to_train(tmp_path, monkeypatch):
         patch("kitchen.flows.train_flow._build"),
         patch(
             "kitchen.flows.train_flow._train",
-            side_effect=lambda p, overrides=None, variant=None: captured.update({"overrides": overrides}),
+            side_effect=lambda p, overrides=None, variant=None, skip_features=False: captured.update({"overrides": overrides}),
         ),
     ):
         train_pipeline(params_file=params_file)

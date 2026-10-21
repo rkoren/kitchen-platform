@@ -121,7 +121,12 @@ def _holdout_lines(results: dict[str, float]) -> list[str]:
     ]
 
 
-def _train(params: dict, overrides: dict | None = None, variant: str | None = None) -> str | None:
+def _train(
+    params: dict,
+    overrides: dict | None = None,
+    variant: str | None = None,
+    skip_features: bool = False,
+) -> str | None:
     from kitchen.menu import load_stage_callable
 
     train = load_stage_callable("train", "train", params)  # honors a menu source (S-8)
@@ -134,6 +139,8 @@ def _train(params: dict, overrides: dict | None = None, variant: str | None = No
             mlflow.set_tag("model_variant", variant)  # leaderboard/diff/status group by this
         if overrides:
             mlflow.set_tags({f"override.{k}": str(v) for k, v in overrides.items()})
+        if skip_features:
+            mlflow.set_tag("kitchen.skip_features", "true")  # provenance: trained on prebuilt data
         train(params, DataStore(), tracker)
         run_id = active_run.info.run_id
 
@@ -154,8 +161,13 @@ def train_pipeline(
     params_file: str = "params.yaml",
     overrides: dict | None = None,
     variant: str | None = None,
+    skip_features: bool = False,
 ) -> str | None:
     """Run a single training pass: features → train → log to MLflow.
+
+    ``skip_features`` skips the features stage and trains on the existing ``data/processed/``
+    outputs (CBB-031) — for retraining without rebuilding every processed file. The run is
+    tagged ``kitchen.skip_features=true``.
 
     Composition order is base config → ``--variant`` overlay → ``--override`` scalars (so an
     override always wins on a conflict). The ``variants:`` definition itself is dropped from
@@ -173,8 +185,11 @@ def train_pipeline(
     params.pop("variants", None)  # a menu definition, not a run param
     if overrides:
         _apply_overrides(params, overrides)
-    _build(params)
-    return _train(params, overrides=overrides, variant=variant)
+    if skip_features:
+        print("skipping features — training on existing data/processed/")
+    else:
+        _build(params)
+    return _train(params, overrides=overrides, variant=variant, skip_features=skip_features)
 
 
 if __name__ == "__main__":
