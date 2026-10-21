@@ -13,6 +13,12 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   to `<project>-model` @ `champion`, and the load stays lazy. New `kitchen.serve.registry_uri(name,
   version)` builds `models:/name@alias` or `models:/name/<n>` for a numeric version. Serving docs
   gain "The registry is the source of truth".
+- The read/compare commands take `-C/--project DIR` like `kitchen run` (CBB-030): `status`,
+  `leaderboard`, `diff`, `check`, `report`, `promote`, `log`, and `kitchen dashboard -C DIR …`.
+  Every `-C` now also loads `DIR/.env` after the chdir (existing env vars win), so a relative
+  `MLFLOW_TRACKING_URI` resolves to the driven project. The startup `.env` load now really
+  searches from the working directory (`find_dotenv(usecwd=True)`) — before, python-dotenv
+  searched upward from the installed `kitchen` package's directory instead.
 - `kitchen diff` shows what changed inside a list-valued param (CBB-029): instead of two
   identically-ellipsized copies, the table shows `[48 items]` / `[49 items]` and a delta line
   below it (`feature_candidates (a → b): +d_kp_Exp +d_kp_Bench -feat_47`). MLflow's

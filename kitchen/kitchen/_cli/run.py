@@ -6,6 +6,8 @@ from typing import Annotated
 
 import typer
 
+from kitchen._cli import enter_project
+
 _DEBUG_OPTION = typer.Option(
     "--debug", help="Show the full traceback on failure (or set KITCHEN_DEBUG=1)"
 )
@@ -283,8 +285,7 @@ def _run_callback(
 ) -> None:
     """Stage runners load the manifest and import `src/<stage>` relative to the working dir, so
     `-C <dir>` lets you run them from anywhere (DX-012)."""
-    if project:
-        os.chdir(project)
+    enter_project(project)
 
 
 @run_app.command("features")
@@ -875,8 +876,7 @@ def run_sweep(
         if metric is None:
             typer.echo("error: --metric is required with --run.", err=True)
             raise typer.Exit(1)
-        if project:
-            os.chdir(project)
+        enter_project(project)
         _generic_sweep(
             param=param,
             run_template=run,
