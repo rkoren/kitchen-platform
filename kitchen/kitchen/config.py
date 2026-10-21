@@ -255,7 +255,8 @@ class ModelSpec(BaseModel):
     project's top-level ``experiment``; ``model_name`` (the registered champion) to
     ``f"{experiment}-model"``; ``metric``/``lower_is_better`` (the promote/rank metric) to the
     first ``thresholds`` key. ``variant`` names a ``variants:`` overlay the model trains with, so
-    ``--model X`` alone implies ``--variant <X.variant>`` (CBB-032). The variant is also how a
+    ``--model X`` alone implies ``--variant <X.variant>`` (CBB-032). ``tiebreak_metric`` (+
+    ``tiebreak_lower_is_better``) decides auto-promote when ``metric`` ties (CBB-034). The variant is also how a
     model gets its own stage code: ``recipes: {train: {source: src/train/reg.py}}`` (+
     ``holdout: null`` to opt out of the project holdout) in the overlay (CBB-039). Single-model projects don't
     need a ``models:`` map at all.
@@ -268,6 +269,8 @@ class ModelSpec(BaseModel):
     metric: str | None = None  # promote/rank metric (default: first thresholds key)
     lower_is_better: bool = False  # metric direction for promotion/ranking
     variant: str | None = None  # `variants:` overlay this model trains with (`--model` implies it)
+    tiebreak_metric: str | None = None  # auto-promote: decides when `metric` ties (CBB-034)
+    tiebreak_lower_is_better: bool = False  # direction for tiebreak_metric
 
 
 class ModelNotFound(KeyError):
@@ -284,6 +287,8 @@ class ResolvedModel:
     metric: str | None
     lower_is_better: bool
     variant: str | None = None
+    tiebreak_metric: str | None = None
+    tiebreak_lower_is_better: bool = False
 
 
 def resolve_model(cfg: "KitchenConfig", model: str | None = None) -> ResolvedModel:
@@ -331,6 +336,8 @@ def resolve_model(cfg: "KitchenConfig", model: str | None = None) -> ResolvedMod
         metric=metric,
         lower_is_better=lower,
         variant=variant,
+        tiebreak_metric=spec.tiebreak_metric if spec else None,
+        tiebreak_lower_is_better=spec.tiebreak_lower_is_better if spec else False,
     )
 
 
