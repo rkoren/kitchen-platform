@@ -133,22 +133,24 @@ def predict(payload: dict) -> dict:
     ...
 ```
 
-A complete example loading the MLflow champion model:
+The scaffold already loads the registry champion. A complete example:
 
 ```python
-import mlflow
+import os
 from pydantic import BaseModel
-from kitchen.serve import lazy_model
+from kitchen.serve import lazy_model, load_champion, registry_uri
+
+# Model identity, overridable per deployment — also surfaced on GET /metadata.
+MODEL_NAME = os.environ.get("KITCHEN_MODEL_NAME", "my-project-model")
+MODEL_VERSION = os.environ.get("KITCHEN_MODEL_VERSION", "champion")  # alias, or "7" to pin
 
 # lazy_model defers the load to the first prediction instead of module import,
 # so Lambda cold starts are faster; it loads once and caches thereafter.
-# (Use mlflow.pyfunc.load_model for flavor-agnostic loading if you don't need
-# predict_proba.)
-model = lazy_model(lambda: mlflow.sklearn.load_model("models:/my-project@champion"))
+# flavor="sklearn" keeps predict_proba (the default pyfunc flavor only has predict).
+model = lazy_model(
+    lambda: load_champion(registry_uri(MODEL_NAME, MODEL_VERSION), flavor="sklearn")
+)
 
-# Optional: surface model identity + feature list on GET /metadata
-MODEL_NAME = "my-project-model"
-MODEL_VERSION = "champion"
 FEATURES = ["home_court", "elo_diff", "pace", "fg_pct_diff"]
 
 class RequestModel(BaseModel):
@@ -168,6 +170,25 @@ def predict(payload: dict) -> dict:
     prob = float(model.predict_proba(X)[0][pred])
     return {"prediction": pred, "probability": prob}
 ```
+
+### The registry is the source of truth
+
+Serve what the registry says is champion — never a file the trainer writes. A trainer that
+also dumps `data/processed/model.pkl` overwrites it on **every** run, promoted or not, so
+whatever reads that file serves the latest experiment while `@champion` becomes a label.
+(cbb hit exactly this: its slate came from an unpromoted run while `@champion` pointed at an
+older version.)
+
+- Load with `load_champion(registry_uri(name, version))`. `version` defaults to the
+  `champion` alias, and a numeric value pins a version — `KITCHEN_MODEL_VERSION=7` rolls back
+  or benchmarks a candidate without a code change.
+- Batch jobs, notebooks and scripts load the same way. Wrap it once (e.g. a project
+  `load_model()` helper) instead of reading a path in each consumer.
+- If something genuinely needs a file (an offline container with no registry access), export
+  it from the registry at build time — `mlflow.artifacts.download_artifacts("models:/<name>@champion")`
+  — so the file is always a promoted model, not a training by-product.
+- Fail loudly when the registry is unreachable. A silent fallback to a stale file is the
+  failure mode this rule exists to prevent.
 
 ---
 

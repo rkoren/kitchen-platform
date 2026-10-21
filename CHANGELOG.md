@@ -7,6 +7,18 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- The scaffolded `src/serve/predictor.py` now loads the registry champion by default
+  (CBB-036) instead of leaving `load_champion` commented out: `MODEL_NAME` / `MODEL_VERSION`
+  come from `KITCHEN_MODEL_NAME` (or `MLFLOW_MODEL_NAME`) / `KITCHEN_MODEL_VERSION`, defaulting
+  to `<project>-model` @ `champion`, and the load stays lazy. New `kitchen.serve.registry_uri(name,
+  version)` builds `models:/name@alias` or `models:/name/<n>` for a numeric version. Serving docs
+  gain "The registry is the source of truth".
+- The read/compare commands take `-C/--project DIR` like `kitchen run` (CBB-030): `status`,
+  `leaderboard`, `diff`, `check`, `report`, `promote`, `log`, and `kitchen dashboard -C DIR …`.
+  Every `-C` now also loads `DIR/.env` after the chdir (existing env vars win), so a relative
+  `MLFLOW_TRACKING_URI` resolves to the driven project. The startup `.env` load now really
+  searches from the working directory (`find_dotenv(usecwd=True)`) — before, python-dotenv
+  searched upward from the installed `kitchen` package's directory instead.
 - `kitchen diff` shows what changed inside a list-valued param (CBB-029): instead of two
   identically-ellipsized copies, the table shows `[48 items]` / `[49 items]` and a delta line
   below it (`feature_candidates (a → b): +d_kp_Exp +d_kp_Bench -feat_47`). MLflow's
@@ -23,10 +35,6 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
-- `kitchen menu show [--variant X | --model M] [--diff] [--section model]` prints the effective
-  params with provenance markers (CBB-035): `*` overridden by the variant (with the base value,
-  or a `+x -y` delta for lists), `=` set by the variant but equal to base, `+` added, blank =
-  inherited. Variants deep-merge silently, so this is how to see which keys a variant owns.
 - Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
   --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
   entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The

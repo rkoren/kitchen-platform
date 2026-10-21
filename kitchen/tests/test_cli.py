@@ -2007,13 +2007,37 @@ def test_init_scaffolds_src_serve_init_py(tmp_path, monkeypatch):
     assert init_path.exists(), "src/serve/__init__.py must be scaffolded"
 
 
-def test_init_predictor_py_has_mlflow_comment(tmp_path, monkeypatch):
-    """Scaffolded predictor.py includes a comment showing how to load the champion model."""
+def test_init_predictor_py_loads_champion_by_default(tmp_path, monkeypatch):
+    """CBB-036: the scaffolded predictor serves the registry champion — live code, not a comment.
+
+    Importing it must not touch MLflow (lazy load), and KITCHEN_MODEL_NAME/VERSION steer it."""
+    import importlib.util
+
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init", "my-proj"], catch_exceptions=False)
-    content = (tmp_path / "my-proj" / "src" / "serve" / "predictor.py").read_text()
-    assert "load_champion" in content
-    assert "models:/my-proj-model@champion" in content
+    path = tmp_path / "my-proj" / "src" / "serve" / "predictor.py"
+    content = path.read_text()
+    assert "\n# from kitchen.serve import" not in content  # not commented out any more
+
+    def _import(name):
+        spec = importlib.util.spec_from_file_location(name, path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    loaded: list[str] = []
+    monkeypatch.setattr("kitchen.serve.load_champion", lambda uri, **kw: loaded.append(uri))
+    for var in ("KITCHEN_MODEL_NAME", "MLFLOW_MODEL_NAME", "KITCHEN_MODEL_VERSION"):
+        monkeypatch.delenv(var, raising=False)
+    mod = _import("_pred_default")
+    assert (mod.MODEL_NAME, mod.MODEL_VERSION) == ("my-proj-model", "champion")
+    assert loaded == []  # import is cheap — nothing loaded until first use
+    mod.model.unwrap()
+    assert loaded == ["models:/my-proj-model@champion"]
+
+    monkeypatch.setenv("KITCHEN_MODEL_VERSION", "7")
+    _import("_pred_pinned").model.unwrap()
+    assert loaded[-1] == "models:/my-proj-model/7"
 
 
 def test_init_predictor_py_has_pydantic_comment(tmp_path, monkeypatch):
