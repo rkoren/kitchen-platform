@@ -33,9 +33,15 @@ runner = CliRunner()
     ],
 )
 def test_project_scoped_command_accepts_C(argv):
-    result = runner.invoke(app, [*argv, "--help"])
-    assert result.exit_code == 0, result.output
-    assert "--project" in result.output and "-C" in result.output
+    # Inspect the declared options, not `--help` text: Rich colors help output in CI, and the
+    # ANSI codes split `--project` so a substring check passes locally and fails there.
+    import typer.main
+
+    cmd = typer.main.get_command(app)
+    for name in argv:
+        cmd = cmd.commands[name]
+    opts = {opt for param in cmd.params for opt in param.opts}
+    assert {"--project", "-C"} <= opts
 
 
 def test_enter_project_chdirs_and_loads_project_env(tmp_path, monkeypatch):
