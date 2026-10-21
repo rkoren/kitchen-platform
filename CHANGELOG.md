@@ -13,6 +13,10 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   `MLFLOW_TRACKING_URI` resolves to the driven project. The startup `.env` load now really
   searches from the working directory (`find_dotenv(usecwd=True)`) — before, python-dotenv
   searched upward from the installed `kitchen` package's directory instead.
+- `kitchen diff` shows what changed inside a list-valued param (CBB-029): instead of two
+  identically-ellipsized copies, the table shows `[48 items]` / `[49 items]` and a delta line
+  below it (`feature_candidates (a → b): +d_kp_Exp +d_kp_Bench -feat_47`). MLflow's
+  `Downloading artifacts` progress bars no longer leak into the output.
 - `kitchen run evaluate` checks feature parity before calling the project (CBB-027): the
   champion's features (from the model's `features` / `*_features` / `feature_names_in_`
   attributes) must all be present in some `data/processed/` parquet (or `feature_schema.file`),
@@ -20,8 +24,16 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   A champion whose features were since dropped from the pipeline now fails here until it is
   retrained and promoted. `--skip-parity-check` opts out for an `evaluate()` that joins several
   files.
+- `kitchen status` Recent Runs no longer prints a vacuous `PASS` for a run that logged none of
+  the gated threshold metrics — it shows `n/a (no threshold metric logged)`. A pass decided by a
+  threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
+- Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
+  --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
+  entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The
+  challenger still needs a strict tiebreak improvement; the reason line names the deciding
+  metric and the promoted run is tagged `kitchen.promoted_by_metric`.
 - `kitchen run train --skip-features` trains on the existing `data/processed/` outputs without
   re-running the features stage (CBB-031) — a train-only retrain. The run is tagged
   `kitchen.skip_features=true`. The scaffolded `dvc.yaml` train stage now uses it, since

@@ -245,6 +245,46 @@ def test_threshold_fail_exits_zero(tmp_path, monkeypatch):
     assert result.exit_code == 0
 
 
+def _invoke_thresholds(tmp_path, monkeypatch, thresholds_yaml, runs):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text(f"experiment: my-exp\nthresholds:\n{thresholds_yaml}")
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient") as mock_client_cls,
+    ):
+        client = mock_client_cls.return_value
+        client.get_experiment_by_name.return_value = MagicMock(experiment_id="1")
+        client.search_runs.return_value = runs
+        client.get_model_version_by_alias.side_effect = mlflow.exceptions.MlflowException("nf")
+        return runner.invoke(app, ["status"])
+
+
+def test_threshold_none_logged_is_na_not_pass(tmp_path, monkeypatch):
+    """CBB-028: a run logging none of the gated metrics is n/a — not a vacuous PASS."""
+    runs = [_make_run("a" * 32, metrics={"something_else": 1.0})]
+    result = _invoke_thresholds(tmp_path, monkeypatch, "  val_accuracy: 0.80\n", runs)
+    assert result.exit_code == 0
+    assert "n/a" in result.output
+    assert "PASS" not in result.output
+
+
+def test_threshold_pass_via_other_metric_names_it(tmp_path, monkeypatch):
+    """CBB-028: when the displayed metric is absent but another threshold passed, say which."""
+    runs = [_make_run("a" * 32, metrics={"loto_brier_reg": 0.17})]
+    result = _invoke_thresholds(
+        tmp_path, monkeypatch, "  loto_brier: {max: 0.175}\n  loto_brier_reg: {max: 0.19}\n", runs
+    )
+    assert result.exit_code == 0
+    assert "PASS  (via loto_brier_reg)" in result.output
+
+
+def test_threshold_pass_on_displayed_metric_is_plain(tmp_path, monkeypatch):
+    runs = [_make_run("a" * 32, metrics={"val_accuracy": 0.91})]
+    result = _invoke_thresholds(tmp_path, monkeypatch, "  val_accuracy: 0.80\n", runs)
+    assert "PASS" in result.output
+    assert "via" not in result.output
+
+
 def test_no_status_column_without_thresholds():
     runs = [_make_run("a" * 32, metrics={"val_accuracy": 0.85})]
     result = _invoke(runs=runs)

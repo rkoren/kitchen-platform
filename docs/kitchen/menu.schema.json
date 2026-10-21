@@ -319,7 +319,7 @@
     },
     "ModelSpec": {
       "additionalProperties": false,
-      "description": "One entry in the ``models:`` map \u2014 a distinct model in a multi-model project (CBB-020).\n\nA project that grows a second model (e.g. cbb's tournament Brier model **and** a\nregular-season margin/total model) declares each here so the platform can scope\nauto-promote, the champion, and the read commands per-model instead of guessing from a\nsingle shared experiment + the first ``thresholds`` key. ``--model <name>`` on the\n``run train``/``leaderboard``/``status`` commands selects an entry.\n\nAll fields default sensibly so a minimal entry works: ``experiment`` falls back to the\nproject's top-level ``experiment``; ``model_name`` (the registered champion) to\n``f\"{experiment}-model\"``; ``metric``/``lower_is_better`` (the promote/rank metric) to the\nfirst ``thresholds`` key. ``variant`` names a ``variants:`` overlay the model trains with, so\n``--model X`` alone implies ``--variant <X.variant>`` (CBB-032). The variant is also how a\nmodel gets its own stage code: ``recipes: {train: {source: src/train/reg.py}}`` (+\n``holdout: null`` to opt out of the project holdout) in the overlay (CBB-039). Single-model projects don't\nneed a ``models:`` map at all.",
+      "description": "One entry in the ``models:`` map \u2014 a distinct model in a multi-model project (CBB-020).\n\nA project that grows a second model (e.g. cbb's tournament Brier model **and** a\nregular-season margin/total model) declares each here so the platform can scope\nauto-promote, the champion, and the read commands per-model instead of guessing from a\nsingle shared experiment + the first ``thresholds`` key. ``--model <name>`` on the\n``run train``/``leaderboard``/``status`` commands selects an entry.\n\nAll fields default sensibly so a minimal entry works: ``experiment`` falls back to the\nproject's top-level ``experiment``; ``model_name`` (the registered champion) to\n``f\"{experiment}-model\"``; ``metric``/``lower_is_better`` (the promote/rank metric) to the\nfirst ``thresholds`` key. ``variant`` names a ``variants:`` overlay the model trains with, so\n``--model X`` alone implies ``--variant <X.variant>`` (CBB-032). ``tiebreak_metric`` (+\n``tiebreak_lower_is_better``) decides auto-promote when ``metric`` ties (CBB-034). The variant is also how a\nmodel gets its own stage code: ``recipes: {train: {source: src/train/reg.py}}`` (+\n``holdout: null`` to opt out of the project holdout) in the overlay (CBB-039). Single-model projects don't\nneed a ``models:`` map at all.",
       "properties": {
         "experiment": {
           "anyOf": [
@@ -373,6 +373,23 @@
           ],
           "default": null,
           "title": "Variant"
+        },
+        "tiebreak_metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tiebreak Metric"
+        },
+        "tiebreak_lower_is_better": {
+          "default": false,
+          "title": "Tiebreak Lower Is Better",
+          "type": "boolean"
         }
       },
       "title": "ModelSpec",

@@ -498,6 +498,23 @@ def test_resolve_model_carries_variant():
     assert resolve_model(KitchenConfig(experiment="solo"), None).variant is None
 
 
+def test_resolve_model_carries_tiebreak():
+    """CBB-034: a models: entry's tiebreak metric + direction reach the resolved identity."""
+    from kitchen.config import KitchenConfig, resolve_model
+
+    cfg = KitchenConfig(
+        experiment="p",
+        models={
+            "reg": {"metric": "loto_brier_reg", "tiebreak_metric": "total_mae",
+                    "tiebreak_lower_is_better": True},
+            "t": {},
+        },
+    )
+    reg = resolve_model(cfg, "reg")
+    assert (reg.tiebreak_metric, reg.tiebreak_lower_is_better) == ("total_mae", True)
+    assert resolve_model(cfg, "t").tiebreak_metric is None
+
+
 def test_model_spec_rejects_unknown_key():
     import pytest
 

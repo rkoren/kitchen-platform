@@ -744,7 +744,7 @@ def _fake_pipeline_noop(params_file="params.yaml", overrides=None, variant=None,
 
 def _auto_promote_invoke(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     tmp_path, monkeypatch, extra_args, champion_score=None, new_score=0.15, metric="loto_brier",
-    new_scheme=None, champion_scheme=None,
+    new_scheme=None, champion_scheme=None, new_extra=None, champion_extra=None, clients=None,
 ):
     """Helper: set up a fake pipeline + MLflow client and invoke run train with extra_args.
 
@@ -756,18 +756,20 @@ def _auto_promote_invoke(  # pylint: disable=too-many-arguments,too-many-positio
 
     new_run = MagicMock()
     new_run.info.run_id = "newrun" + "0" * 26
-    new_run.data.metrics = {metric: new_score}
+    new_run.data.metrics = {metric: new_score, **(new_extra or {})}
     new_run.data.tags = {"validation_scheme": new_scheme} if new_scheme else {}
 
     def make_client():
         client = MagicMock()
+        if clients is not None:
+            clients.append(client)
         client.get_experiment_by_name.return_value.experiment_id = "1"
         client.search_runs.return_value = [new_run]
         if champion_score is not None:
             mv = MagicMock()
             mv.run_id = "champrun" + "0" * 24
             champ_run = MagicMock()
-            champ_run.data.metrics = {metric: champion_score}
+            champ_run.data.metrics = {metric: champion_score, **(champion_extra or {})}
             champ_run.data.tags = {"validation_scheme": champion_scheme} if champion_scheme else {}
             client.get_model_version_by_alias.return_value = mv
             client.get_run.return_value = champ_run
@@ -893,6 +895,81 @@ def test_auto_promote_loses_to_champion_skips(tmp_path, monkeypatch):
     mock_reg.assert_not_called()
     mock_prom.assert_not_called()
     assert "skipped" in result.output
+
+
+_TB_ARGS = [
+    "--auto-promote", "--promote-metric", "loto_brier", "--lower-is-better",
+    "--tiebreak-metric", "total_mae", "--tiebreak-lower-is-better",
+]
+
+
+def test_auto_promote_tie_without_tiebreak_skips(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch,
+        ["--auto-promote", "--promote-metric", "loto_brier", "--lower-is-better"],
+        champion_score=0.17, new_score=0.17,
+        new_extra={"total_mae": 9.0}, champion_extra={"total_mae": 10.0},
+    )
+    assert result.exit_code == 0
+    mock_reg.assert_not_called()  # strict improvement still required without a tiebreak
+    assert "skipped" in result.output
+
+
+def test_auto_promote_tiebreak_promotes_on_secondary_gain(tmp_path, monkeypatch):
+    # CBB-034: primary unchanged, total-MAE better → promote, and say which metric decided.
+    clients: list = []
+    result, mock_reg, mock_prom = _auto_promote_invoke(
+        tmp_path, monkeypatch, _TB_ARGS,
+        champion_score=0.17, new_score=0.17,
+        new_extra={"total_mae": 9.0}, champion_extra={"total_mae": 10.0}, clients=clients,
+    )
+    assert result.exit_code == 0, result.output
+    mock_reg.assert_called_once()
+    mock_prom.assert_called_once()
+    assert "tie on loto_brier" in result.output
+    assert "tiebreak total_mae 9.000000 < 10.000000" in result.output
+    clients[0].set_tag.assert_called_once_with(
+        "newrun" + "0" * 26, "kitchen.promoted_by_metric", "total_mae"
+    )
+
+
+def test_auto_promote_tiebreak_loses_skips(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch, _TB_ARGS,
+        champion_score=0.17, new_score=0.17,
+        new_extra={"total_mae": 10.0}, champion_extra={"total_mae": 10.0},
+    )
+    mock_reg.assert_not_called()  # an equal tiebreak is still a tie → keep the champion
+    assert "tiebreak total_mae 10.000000 >= 10.000000" in result.output
+
+
+def test_auto_promote_tiebreak_not_consulted_when_primary_differs(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch, _TB_ARGS,
+        champion_score=0.16, new_score=0.17,  # primary worse
+        new_extra={"total_mae": 1.0}, champion_extra={"total_mae": 10.0},
+    )
+    mock_reg.assert_not_called()
+    assert "tiebreak" not in result.output
+
+
+def test_auto_promote_tie_tolerance_widens_tie(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch, [*_TB_ARGS, "--tie-tolerance", "0.001"],
+        champion_score=0.1700, new_score=0.1705,  # within tolerance → tie → tiebreak decides
+        new_extra={"total_mae": 9.0}, champion_extra={"total_mae": 10.0},
+    )
+    mock_reg.assert_called_once()
+    assert "tie on loto_brier" in result.output
+
+
+def test_auto_promote_tiebreak_missing_on_champion_skips(tmp_path, monkeypatch):
+    result, mock_reg, _ = _auto_promote_invoke(
+        tmp_path, monkeypatch, _TB_ARGS,
+        champion_score=0.17, new_score=0.17, new_extra={"total_mae": 9.0},
+    )
+    mock_reg.assert_not_called()
+    assert "tiebreak 'total_mae' missing from champion" in result.output
 
 
 def test_auto_promote_higher_is_better(tmp_path, monkeypatch):
@@ -4706,6 +4783,31 @@ def test_run_train_model_scopes_auto_promote(tmp_path, monkeypatch):
     assert "cbb-reg" in seen_experiments
 
 
+def test_run_train_model_tiebreak_flows_to_auto_promote(tmp_path, monkeypatch):
+    """CBB-034: `--model reg` picks up the entry's tiebreak; an explicit flag overrides it."""
+    menu = _MULTI_MODEL_MENU.replace(
+        "    metric: loto_brier_reg\n",
+        "    metric: loto_brier_reg\n    tiebreak_metric: total_mae\n"
+        "    tiebreak_lower_is_better: true\n",
+    )
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(menu)
+    monkeypatch.setattr("kitchen.flows.train_flow.train_pipeline", _fake_pipeline_noop)
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "kitchen._cli.run._try_auto_promote", lambda *a, **kw: calls.append(kw)
+    )
+    base = ["run", "train", "--model", "reg", "--auto-promote"]
+    assert runner.invoke(app, base, catch_exceptions=False).exit_code == 0
+    assert runner.invoke(
+        app, [*base, "--tiebreak-metric", "acc", "--tiebreak-higher-is-better"],
+        catch_exceptions=False,
+    ).exit_code == 0
+    assert (calls[0]["tiebreak_metric"], calls[0]["tiebreak_lower_is_better"]) == ("total_mae", True)
+    assert (calls[1]["tiebreak_metric"], calls[1]["tiebreak_lower_is_better"]) == ("acc", False)
+    assert calls[0]["tie_tolerance"] == 0.0
+
+
 def test_run_train_multi_model_requires_model_flag(tmp_path, monkeypatch):
     """A multi-model project must say which model — `run train` without --model errors clearly."""
     monkeypatch.chdir(tmp_path)
@@ -4865,17 +4967,79 @@ def test_status_model_scopes_experiment_and_champion(tmp_path, monkeypatch):
 
 
 def test_diff_ellipsizes_long_param_value():
-    # CBB-021: a long list-valued param (stringified feature_candidates) must not blow the
-    # value column out — it's ellipsized for display, and no output line runs absurdly long.
-    long_val = str([f"feat_{i}" for i in range(60)])  # ~600+ chars
-    run_a = _make_diff_run("a" * 32, {"feature_candidates": long_val}, {})
-    run_b = _make_diff_run("b" * 32, {"feature_candidates": "['feat_0']"}, {})
+    # CBB-021: a long non-list param must not blow the value column out — it's ellipsized
+    # for display, and no output line runs absurdly long.
+    long_val = ",".join(f"feat_{i}" for i in range(60))  # ~500 chars, not a list literal
+    run_a = _make_diff_run("a" * 32, {"feature_spec": long_val}, {})
+    run_b = _make_diff_run("b" * 32, {"feature_spec": "feat_0"}, {})
     result = _diff_invoke(run_a, run_b)
     assert result.exit_code == 0
-    assert "feature_candidates" in result.output
+    assert "feature_spec" in result.output
     assert "…" in result.output  # the long value was truncated
     assert long_val not in result.output  # the full ~600-char value is never printed
     assert max(len(line) for line in result.output.splitlines()) < 160  # table stays bounded
+
+
+def test_diff_list_param_shows_element_delta():
+    # CBB-029: two ellipsized copies of a list share a prefix — show sizes + what changed.
+    base = [f"feat_{i}" for i in range(48)]
+    rich = [*base[:-1], "d_kp_Exp", "d_kp_Bench"]
+    run_a = _make_diff_run("a" * 32, {"feature_candidates": str(base)}, {})
+    run_b = _make_diff_run("b" * 32, {"feature_candidates": str(rich)}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "[48 items]" in result.output and "[49 items]" in result.output
+    assert "feature_candidates (a → b): +d_kp_Exp +d_kp_Bench -feat_47" in result.output
+    assert str(base) not in result.output
+    assert max(len(line) for line in result.output.splitlines()) < 160
+
+
+def test_diff_list_param_delta_caps_tokens():
+    run_a = _make_diff_run("a" * 32, {"cols": str([f"c{i}" for i in range(40)])}, {})
+    run_b = _make_diff_run("b" * 32, {"cols": "[]"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert result.exit_code == 0
+    assert "[0 items]" in result.output
+    assert "… (+28 more)" in result.output
+
+
+def test_diff_list_param_reorder_only():
+    run_a = _make_diff_run("a" * 32, {"cols": "['x', 'y']"}, {})
+    run_b = _make_diff_run("b" * 32, {"cols": "['y', 'x']"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert "(same elements, reordered)" in result.output
+
+
+def test_diff_unparseable_bracket_param_falls_back_to_raw():
+    run_a = _make_diff_run("a" * 32, {"x": "[not a literal"}, {})
+    run_b = _make_diff_run("b" * 32, {"x": "[1, 2]"}, {})
+    result = _diff_invoke(run_a, run_b)
+    assert "[not a literal" in result.output
+    assert "(a → b)" not in result.output
+
+
+def test_diff_disables_artifact_progress_bar(monkeypatch):
+    import os
+
+    key = "MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR"
+    monkeypatch.delenv(key, raising=False)
+    seen: list[str | None] = []
+    run_a = _make_diff_run("a" * 32, {"k": "1"}, {})
+    run_b = _make_diff_run("b" * 32, {"k": "2"}, {})
+
+    def fake_download(run_id, artifact_path, dst_path):
+        seen.append(os.environ.get(key))
+        raise Exception("no artifact")
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", return_value=MagicMock(
+            get_run=MagicMock(side_effect=[run_a, run_b]))),
+        patch("mlflow.artifacts.download_artifacts", side_effect=fake_download),
+    ):
+        runner.invoke(app, ["diff", "a" * 32, "b" * 32], catch_exceptions=False)
+    assert seen == ["false", "false"]  # bars off while downloading…
+    assert key not in os.environ  # …and the caller's environment is restored
 
 
 def test_diff_short_param_value_not_truncated():
