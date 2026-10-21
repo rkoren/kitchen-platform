@@ -38,6 +38,13 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
+- `kitchen promote --model X` (CBB-041) fills in the `models:` entry's experiment,
+  `model_name`, metric and direction (explicit flags still win), so
+  `kitchen promote -C DIR --model reg_season --run-id <id>` replaces restating
+  `--model-name … --lower-is-better loto_brier_reg`. Metric ranking is scoped to the entry's
+  variant (`model_variant` tag), and a `--run-id` trained under a different variant is refused
+  rather than registered under the wrong model. `--lower-is-better` now defaults to the entry's
+  direction (still higher-is-better without `--model`).
 - `kitchen --version` (and `kitchen version`) print the running version and, for an editable
   install, its source path. `kitchen.__version__` is set too (CBB-044). An editable install's
   dist-info version goes stale (cbb's reported `0.1.0`), so for such an install the version is

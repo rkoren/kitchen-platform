@@ -2889,7 +2889,23 @@ def promote(
         str | None, typer.Option("--model-name", help="Registered model name")
     ] = None,
     alias: Annotated[str, typer.Option("--alias", help="Model alias to set")] = "champion",
-    lower_is_better: Annotated[bool, typer.Option("--lower-is-better/--higher-is-better")] = False,
+    lower_is_better: Annotated[
+        bool | None,
+        typer.Option(
+            "--lower-is-better/--higher-is-better",
+            help="Ranking direction (default: the --model entry's, else higher-is-better)",
+        ),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Select a model from the menu's `models:` map: supplies its experiment, "
+            "model_name, metric and direction (explicit flags still win). Metric ranking is "
+            "scoped to the model's variant, and a --run-id trained under another variant is "
+            "refused.",
+        ),
+    ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Show winner without registering")
     ] = False,
@@ -2923,6 +2939,9 @@ def promote(
     Metric ranking refuses to compare runs that declare different ``validation_scheme`` tags
     (e.g. an 80/20 holdout vs out-of-fold CV) since those numbers aren't comparable — narrow
     with --scheme, or target a specific run with --run-id.
+
+    In a multi-model menu, ``--model X`` fills in the entry's experiment, model_name, metric
+    and direction: ``kitchen promote -C DIR --model reg_season --run-id <id>``.
     """
     enter_project(project)
 
@@ -2932,6 +2951,28 @@ def promote(
     from kitchen.tracking import configure_from_env
 
     configure_from_env()
+
+    # CBB-041: --model X supplies everything the models: entry already declares.
+    resolved = None
+    if model is not None:
+        from kitchen.config import KitchenConfig, ModelNotFound, resolve_model, resolve_params_path
+
+        menu_path = Path(resolve_params_path(params_file))
+        if not menu_path.exists():
+            typer.echo(f"error: --model {model!r} given but {params_file!r} not found", err=True)
+            raise typer.Exit(1)
+        try:
+            resolved = resolve_model(KitchenConfig.from_yaml(str(menu_path)), model)
+        except ModelNotFound as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1)
+        experiment = experiment or resolved.experiment
+        model_name = model_name or resolved.model_name
+        if metric is None:
+            metric = resolved.metric  # ranks, or (with --run-id) is shown for context
+        if lower_is_better is None:
+            lower_is_better = resolved.lower_is_better
+    lower_is_better = bool(lower_is_better)
 
     if run_id is None and metric is None:
         typer.echo(
@@ -2953,7 +2994,10 @@ def promote(
             typer.echo(f"error: could not fetch run {run_id!r}: {exc}", err=True)
             raise typer.Exit(1)
     else:
-        tag_filter = {"validation_scheme": scheme} if scheme else None
+        tag_filter = {"validation_scheme": scheme} if scheme else {}
+        if resolved is not None and resolved.variant:
+            tag_filter["model_variant"] = resolved.variant  # don't rank another model's runs
+        tag_filter = tag_filter or None
         try:
             run = get_best_run(
                 exp_name, metric, lower_is_better=lower_is_better, tag_filter=tag_filter
@@ -2965,6 +3009,16 @@ def promote(
     actual_run_id = run.info.run_id
     variant = run.data.tags.get("model_variant", "")
     variant_str = f" ({variant})" if variant else ""
+    if resolved is not None and variant != (resolved.variant or ""):
+        trained = f"variant {variant!r}" if variant else "no variant"
+        expected = f"variant {resolved.variant!r}" if resolved.variant else "no variant"
+        typer.echo(
+            f"error: run {actual_run_id[:8]} was trained with {trained}, but model {model!r} "
+            f"uses {expected} — refusing to register it as {model_name!r}. Promote it under "
+            "its own model, or drop --model and pass --model-name to override.",
+            err=True,
+        )
+        raise typer.Exit(1)
 
     typer.echo(f"\nExperiment : {exp_name}")
     if metric:
