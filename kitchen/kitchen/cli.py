@@ -3788,6 +3788,15 @@ def menu_run(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print the pipeline plan without executing")
     ] = False,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Run the pipeline for one `models:` entry: its variant's `recipes:` overlay "
+            "applies to stage args/cmd, and features/train/evaluate get `--model` (replacing "
+            "any `--model` in their args).",
+        ),
+    ] = None,
 ) -> None:
     """Run the menu's `pipeline` end-to-end: provision → stages → serve → monitor.
 
@@ -3806,17 +3815,27 @@ def menu_run(
     enter_project(project)  # load the menu + import src/<stage> from the project dir (DX-012)
 
     try:
-        menu = Menu.from_yaml(menu_file)
+        menu = (
+            _menu_run.menu_for_model(menu_file, model) if model else Menu.from_yaml(menu_file)
+        )
     except FileNotFoundError:
         typer.echo(f"error: menu not found: {menu_file}", err=True)
         raise typer.Exit(1)
     except ValidationError as exc:
         typer.echo(f"error: invalid menu — {exc}", err=True)
         raise typer.Exit(1)
+    except _menu_run.PipelineError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
 
     try:
         _menu_run.run_pipeline(
-            menu, menu_path=menu_file, state_bucket=state_bucket, dry_run=dry_run, echo=typer.echo
+            menu,
+            menu_path=menu_file,
+            state_bucket=state_bucket,
+            dry_run=dry_run,
+            echo=typer.echo,
+            model=model,
         )
     except (_menu_run.PipelineError, _subprocess.CalledProcessError) as exc:
         typer.echo(f"error: {exc}", err=True)

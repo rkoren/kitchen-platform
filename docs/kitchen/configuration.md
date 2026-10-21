@@ -285,7 +285,10 @@ A command stage inherits the process environment and working directory. **Metric
 job** — call `kitchen log` (framework-agnostic tracking) or write `metrics.json` from inside it to
 feed `leaderboard`/`thresholds`. Run one stage in isolation with `kitchen stage <name>` (add
 `--dry-run` to preview the exact argv, or `-C <dir>` to run from elsewhere); `kitchen menu run`
-runs the whole pipeline.
+runs the whole pipeline. In a multi-model menu, `kitchen menu run --model X` runs it for one
+`models:` entry: the entry's variant `recipes:` overlay applies to stage `args`/`cmd`, and the
+`features`/`train`/`evaluate` stages get `--model X` (replacing any `--model` in their `args`), so
+each one applies the rest of the variant itself.
 
 To scaffold a lean project built around a command stage — no `FeatureBuilder`/`Trainer`/`Evaluator`
 ABCs — use `kitchen init <name> --kind pipeline` (vs the default `--kind tabular`). It generates a
