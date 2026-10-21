@@ -368,10 +368,12 @@ def status(
             row = f"  {rank:<4}  {run_id_short:<10}  {variant:<12}  {val:>{metric_w}}"
             if has_thresholds:
                 fails: list[str] = []
+                gated: list[str] = []  # threshold metrics this run actually logged
                 for tname, spec in thresholds.items():
                     actual = run.data.metrics.get(tname)
                     if actual is None:
                         continue
+                    gated.append(tname)
                     if isinstance(spec, (int, float)):
                         if actual < spec:
                             fails.append(f"{tname}<{spec:.4f}")
@@ -380,9 +382,16 @@ def status(
                             fails.append(f"{tname}<{spec.min:.4f}")
                         if spec.max is not None and actual > spec.max:
                             fails.append(f"{tname}>{spec.max:.4f}")
-                row += f"  {'FAIL' if fails else 'PASS'}"
-                if fails:
-                    row += f"  ({', '.join(fails)})"
+                # CBB-028: a run that logged none of the gated metrics is n/a, not a vacuous
+                # PASS; and a PASS decided by a threshold other than the displayed metric says so.
+                if not gated:
+                    row += "  n/a  (no threshold metric logged)"
+                elif fails:
+                    row += f"  FAIL  ({', '.join(fails)})"
+                elif display_metric not in gated:
+                    row += f"  PASS  (via {', '.join(gated)})"
+                else:
+                    row += "  PASS"
             typer.echo(row)
 
     typer.echo()
