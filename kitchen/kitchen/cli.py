@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import os
 import re
-from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Annotated
 
@@ -124,10 +123,35 @@ app = typer.Typer(
 )
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        from kitchen._version import describe
+
+        typer.echo(describe())
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    show_version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=_version_callback,
+            is_eager=True,
+            help="Print the kitchen version (and source path for an editable install) and exit.",
+        ),
+    ] = False,
+) -> None:
+    """kitchen ML platform CLI"""
+
+
 @app.command()
 def version() -> None:
-    """Print the kitchen version."""
-    typer.echo(f"kitchen {_pkg_version('rkoren-kitchen')}")
+    """Print the kitchen version (and source path for an editable install)."""
+    from kitchen._version import describe
+
+    typer.echo(describe())
 
 
 @app.command()

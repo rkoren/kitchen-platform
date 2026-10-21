@@ -20,6 +20,12 @@ For a local development install from the repo:
 pip install -e path/to/kitchen-platform/kitchen
 ```
 
+`kitchen --version` shows which kitchen is running and, for an editable install, its source
+path. An editable install records its version when it is installed and never refreshes it, so
+re-run `pip install -e` after the platform's version is bumped. Otherwise a project pin such as
+`rkoren-kitchen>=1.2.0` sees the stale version and `pip install` may swap in the PyPI build
+(`kitchen --version` warns when this has happened).
+
 ## Scaffold a new competition project
 
 ```bash
