@@ -300,6 +300,14 @@ def run_features(
     params_file: Annotated[
         str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Build features for a `models:` entry, with its declared variant applied "
+            "(what `run train --model` builds before training).",
+        ),
+    ] = None,
     debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
     """Run the feature engineering step: raw → processed features.
@@ -323,6 +331,18 @@ def run_features(
     from kitchen.menu import load_params  # noqa: PLC0415
 
     params = load_params(str(path))
+    if model is not None:  # CBB-043: same params `run train --model` builds with
+        from kitchen.config import KitchenConfig, ModelNotFound, resolve_model
+        from kitchen.menu import VariantNotFound, apply_variant
+
+        try:
+            resolved = resolve_model(KitchenConfig.from_yaml(str(path)), model)
+            if resolved.variant:
+                apply_variant(params, resolved.variant)
+        except (ModelNotFound, VariantNotFound) as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1)
+    params.pop("variants", None)  # a menu definition, not a stage param
 
     from kitchen.menu import load_stage_callable, stage_module_name  # noqa: PLC0415
     from kitchen.store import DataStore  # noqa: PLC0415

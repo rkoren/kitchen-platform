@@ -5372,6 +5372,18 @@ def test_run_evaluate_parity_error_says_skip_is_no_fix(tmp_path, monkeypatch):
     assert "kitchen run evaluate --run-id" in result.output
 
 
+def test_run_features_model_applies_its_variant(tmp_path, monkeypatch):
+    """CBB-043: `run features --model reg` builds with the reg entry's variant applied."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_VARIANT_MODEL_MENU)
+    calls = _make_features_mock(monkeypatch)
+    result = runner.invoke(app, ["run", "features", "--model", "reg"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    params = calls[0][0]
+    assert params["model"]["target"] == "reg_season"
+    assert "variants" not in params
+    bad = runner.invoke(app, ["run", "features", "--model", "nope"])
+    assert bad.exit_code == 1 and "no model 'nope'" in bad.output
 # ---------------------------------------------------------------------------
 # CBB-042: --model reads/writes see only that model's runs
 # ---------------------------------------------------------------------------

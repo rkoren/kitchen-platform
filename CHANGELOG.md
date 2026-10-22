@@ -38,6 +38,12 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
+- `kitchen menu run --model X` (CBB-043) runs the pipeline for one `models:` entry. The
+  entry's variant `recipes:` overlay is merged onto the base recipes (per-model stage
+  `args`/`cmd`), and `features`/`train`/`evaluate` get `--model X`, replacing any `--model` in
+  their base `args`. A second model can now go through the pipeline instead of being trained by
+  hand. `kitchen run features --model X` builds with the entry's variant applied, matching
+  what `run train --model X` builds.
 - Per-model runs in a shared experiment (CBB-042): `run train --model X` tags the run
   `kitchen.model=X`, and `status`/`leaderboard`/`promote --model X` show and rank only that
   model's runs. Untagged runs from before this release are attributed by `model_variant`: an
