@@ -522,3 +522,38 @@ def test_model_spec_rejects_unknown_key():
 
     with pytest.raises(Exception, match="typo"):
         KitchenConfig(experiment="p", models={"a": {"experiment": "e", "typo": 1}})
+
+
+def test_resolved_model_owns_run():
+    """CBB-042: kitchen.model decides; untagged runs fall back to the variant tag."""
+    from kitchen.config import ResolvedModel
+
+    reg = ResolvedModel("reg", "cbb", "cbb-reg-model", "m", True, variant="reg_season")
+    tourn = ResolvedModel(
+        "tournament", "cbb", "cbb-tournament-model", "m", True,
+        other_variants=frozenset({"reg_season"}),
+    )
+    legacy = ResolvedModel(None, "cbb", "cbb-model", None, False)
+    assert reg.owns_run({"kitchen.model": "reg"})
+    assert not reg.owns_run({"kitchen.model": "tournament", "model_variant": "reg_season"})
+    assert reg.owns_run({"model_variant": "reg_season"})
+    assert not reg.owns_run({})
+    assert tourn.owns_run({}) and not tourn.owns_run({"model_variant": "reg_season"})
+    # the model's own experimental variants stay its runs (cbb: baseline, kenpom_rich)
+    assert tourn.owns_run({"model_variant": "baseline"})
+    assert tourn.owns_run({"model_variant": "kenpom_rich"})
+    assert legacy.owns_run({"model_variant": "anything"})
+
+
+def test_resolve_model_collects_other_variants(tmp_path):
+    from kitchen.config import resolve_model
+
+    menu = tmp_path / "menu.yaml"
+    menu.write_text(
+        "project: cbb\npipeline: []\nexperiment: cbb\nmodels:\n"
+        "  tournament: {model_name: t}\n  reg: {model_name: r, variant: reg_season}\n"
+        "variants:\n  reg_season: {model: {a: 1}}\n"
+    )
+    cfg = KitchenConfig.from_yaml(str(menu))
+    assert resolve_model(cfg, "tournament").other_variants == {"reg_season"}
+    assert resolve_model(cfg, "reg").other_variants == frozenset()
