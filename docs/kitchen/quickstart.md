@@ -26,6 +26,10 @@ re-run `pip install -e` after the platform's version is bumped. Otherwise a proj
 `rkoren-kitchen>=1.2.0` sees the stale version and `pip install` may swap in the PyPI build
 (`kitchen --version` warns when this has happened).
 
+To drive a project from another directory, put `-C` first, as with git:
+`kitchen -C ~/my-project status`. kitchen moves into the project and loads its `.env`. A
+subcommand's own `-C` (`kitchen status -C DIR`, `kitchen run -C DIR train`) works too.
+
 ## Scaffold a new competition project
 
 ```bash

@@ -38,6 +38,13 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
 
 ### Added
+- A git-style top-level `kitchen -C DIR <command>` works for every command (CBB-046).
+  `-C` placement had been per command (`status -C DIR` vs `run -C DIR train`). The
+  per-command forms remain, and a subcommand's `-C` resolves relative to the top-level one,
+  as in git. A `models.<name>.variant` naming an undeclared variant now fails when the menu
+  loads (so `kitchen check` reports it), not first at `run train`/`evaluate --model`.
+  `kitchen check` lists the declared models and names the first validation error rather
+  than just "invalid".
 - `kitchen menu run --model X` (CBB-043) runs the pipeline for one `models:` entry. The
   entry's variant `recipes:` overlay is merged onto the base recipes (per-model stage
   `args`/`cmd`), and `features`/`train`/`evaluate` get `--model X`, replacing any `--model` in
