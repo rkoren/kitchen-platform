@@ -277,6 +277,9 @@ class ModelNotFound(KeyError):
     """A ``--model`` name has no entry in the menu's ``models:`` map (or one is required)."""
 
 
+MODEL_TAG = "kitchen.model"  # run tag: the models: key a run was trained for (CBB-042)
+
+
 @dataclass(frozen=True)
 class ResolvedModel:
     """The concrete identity a ``--model`` selection resolves to (CBB-020)."""
@@ -289,6 +292,28 @@ class ResolvedModel:
     variant: str | None = None
     tiebreak_metric: str | None = None
     tiebreak_lower_is_better: bool = False
+    # variants the *other* models: entries declare — how an untagged run is attributed
+    other_variants: frozenset[str] = frozenset()
+
+    def owns_run(self, tags: dict) -> bool:
+        """Was a run (given its tags) trained for this model? (CBB-042)
+
+        ``run train --model X`` tags ``kitchen.model=X``; that tag decides when present. An
+        untagged run (trained before the tag existed, or without ``--model``) is attributed by
+        its ``model_variant`` tag, so existing history stays visible: a model that declares a
+        variant owns runs of that variant; a model without one owns every untagged run whose
+        variant no *other* entry claims (its own experimental variants — ``baseline``,
+        ``kenpom_rich`` — included). A single-model identity (``name`` None) owns every run.
+        """
+        if self.name is None:
+            return True
+        tagged = tags.get(MODEL_TAG)
+        if tagged:
+            return tagged == self.name
+        run_variant = tags.get("model_variant") or ""
+        if self.variant:
+            return run_variant == self.variant
+        return run_variant not in self.other_variants
 
 
 def resolve_model(cfg: "KitchenConfig", model: str | None = None) -> ResolvedModel:
@@ -338,6 +363,9 @@ def resolve_model(cfg: "KitchenConfig", model: str | None = None) -> ResolvedMod
         variant=variant,
         tiebreak_metric=spec.tiebreak_metric if spec else None,
         tiebreak_lower_is_better=spec.tiebreak_lower_is_better if spec else False,
+        other_variants=frozenset(
+            s.variant for n, s in models.items() if n != name and s.variant
+        ),
     )
 
 

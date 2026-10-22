@@ -304,3 +304,23 @@ def test_get_champion_metrics_default_alias_is_champion():
         client.get_run.return_value.data.metrics = {}
         get_champion_metrics("my-model")
     client.get_model_version_by_alias.assert_called_once_with("my-model", "champion")
+
+
+def test_get_best_run_run_filter_drops_runs_before_ranking():
+    """CBB-042: run_filter keeps only matching runs; the best of those wins."""
+    from kitchen.registry import get_best_run
+
+    def run(rid, tags):
+        r = MagicMock()
+        r.info.run_id = rid
+        r.data.tags = tags
+        r.data.metrics = {"m": 0.1}
+        return r
+
+    client = MagicMock()
+    client.search_runs.return_value = [run("other", {"kitchen.model": "a"}), run("mine", {"kitchen.model": "b"})]
+    with patch("mlflow.tracking.MlflowClient", return_value=client):
+        best = get_best_run("exp", "m", run_filter=lambda r: r.data.tags.get("kitchen.model") == "b")
+        assert best.info.run_id == "mine"
+        with pytest.raises(ValueError, match="matching the model"):
+            get_best_run("exp", "m", run_filter=lambda r: False)

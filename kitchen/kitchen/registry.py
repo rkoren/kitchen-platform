@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import mlflow
 import mlflow.exceptions
 import mlflow.tracking
@@ -77,6 +79,7 @@ def get_best_run(
     metric: str,
     lower_is_better: bool = True,
     tag_filter: dict[str, str] | None = None,
+    run_filter: Callable[[mlflow.entities.Run], bool] | None = None,
 ) -> mlflow.entities.Run:
     """Find the run with the best metric value in an experiment.
 
@@ -88,6 +91,8 @@ def get_best_run(
                     (e.g. {"model_variant": "challenger"}). Include
                     ``{VALIDATION_SCHEME_TAG: "..."}`` to rank within one scheme and
                     bypass the comparability guard below.
+        run_filter: Optional predicate applied to the fetched runs, for conditions MLflow's
+                    filter string can't express (e.g. ``ResolvedModel.owns_run``, CBB-042).
 
     Returns:
         The Run object with the best metric value.
@@ -110,8 +115,11 @@ def get_best_run(
         order_by=[f"metrics.{metric} {order}"],
         max_results=_SCHEME_INSPECT_LIMIT,
     )
+    if run_filter is not None:
+        runs = [r for r in runs if run_filter(r)]
     if not runs:
         desc = f" with tags {tag_filter}" if tag_filter else ""
+        desc += " matching the model" if run_filter is not None else ""
         raise ValueError(f"No runs found in experiment {experiment_name!r}{desc}")
 
     # Comparability guard (S6E7-002): ranking a metric across runs computed under different
