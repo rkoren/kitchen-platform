@@ -45,6 +45,21 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   loads (so `kitchen check` reports it), not first at `run train`/`evaluate --model`.
   `kitchen check` lists the declared models and names the first validation error rather
   than just "invalid".
+- `kitchen menu run --model X` (CBB-043) runs the pipeline for one `models:` entry. The
+  entry's variant `recipes:` overlay is merged onto the base recipes (per-model stage
+  `args`/`cmd`), and `features`/`train`/`evaluate` get `--model X`, replacing any `--model` in
+  their base `args`. A second model can now go through the pipeline instead of being trained by
+  hand. `kitchen run features --model X` builds with the entry's variant applied, matching
+  what `run train --model X` builds.
+- Per-model runs in a shared experiment (CBB-042): `run train --model X` tags the run
+  `kitchen.model=X`, and `status`/`leaderboard`/`promote --model X` show and rank only that
+  model's runs. Untagged runs from before this release are attributed by `model_variant`: an
+  entry with a `variant` owns runs of that variant, and an entry without one owns every run
+  whose variant no other entry claims, its own experimental variants included. `status --model`
+  displays the entry's metric (no longer the alphabetically first threshold), and
+  `run train --auto-promote` compares the run it just trained (not the experiment's newest run
+  with the metric). Fixes `promote --model`'s variant guard, which refused a variant-less
+  model's `baseline`-tagged runs.
 - `kitchen promote --model X` (CBB-041) fills in the `models:` entry's experiment,
   `model_name`, metric and direction (explicit flags still win), so
   `kitchen promote -C DIR --model reg_season --run-id <id>` replaces restating

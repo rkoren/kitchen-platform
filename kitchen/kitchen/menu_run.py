@@ -26,6 +26,9 @@ from pathlib import Path
 from kitchen.menu import Menu, RecipeEntry
 from kitchen.menu_resolve import resolve_mlflow_env
 
+# `kitchen run <stage>` commands that take `--model` (and apply its variant themselves).
+MODEL_AWARE_STAGES = frozenset({"features", "train", "evaluate"})
+
 
 class PipelineError(RuntimeError):
     """A pipeline could not run (e.g. a required input is missing)."""
@@ -82,6 +85,53 @@ def run_command_stage(
         echo(f"  warning: stage {name!r} declared output(s) not found: {', '.join(missing_out)}")
 
 
+def menu_for_model(menu_path: str, model: str) -> Menu:
+    """The menu as model ``model`` sees it (CBB-043): its variant's ``recipes:`` overlay
+    deep-merged onto the base recipes, so per-model stage ``args``/``cmd`` apply.
+
+    Only the ``recipes`` subtree is overlaid here — the stages themselves get ``--model`` and
+    apply the rest of the variant (params, stage ``source``) to their own params. Raises
+    :class:`PipelineError` for an unknown model or an undeclared variant.
+    """
+    import yaml
+
+    from kitchen.menu import _deep_merge
+
+    with open(menu_path, encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    models = raw.get("models") or {}
+    if model not in models:
+        have = ", ".join(sorted(models)) or "(no models: map defined)"
+        raise PipelineError(f"no model {model!r} in menu — available: {have}")
+    variant = (models[model] or {}).get("variant")
+    if variant:
+        variants = raw.get("variants") or {}
+        if variant not in variants:
+            raise PipelineError(f"model {model!r} names undeclared variant {variant!r}")
+        overlay = (variants[variant] or {}).get("recipes")
+        if overlay:
+            raw["recipes"] = raw.get("recipes") or {}
+            _deep_merge(raw["recipes"], overlay)
+    return Menu.model_validate(raw)
+
+
+def _with_model(args: list[str], model: str) -> list[str]:
+    """``args`` with any ``--model <x>`` / ``--model=<x>`` replaced by ``--model <model>``."""
+    out: list[str] = []
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+            continue
+        if a == "--model":
+            skip = True
+            continue
+        if a.startswith("--model="):
+            continue
+        out.append(a)
+    return [*out, "--model", model]
+
+
 def _provision(menu_path: str, state_bucket: str) -> None:
     """Provision the menu's infra recipes in-process (S-7). Raises on any provisioning error."""
     from kitchen.recipes.cli import apply_spec
@@ -98,10 +148,15 @@ def run_pipeline(
     run: Callable[[list[str]], None] = _run,
     provision: Callable[[str, str], None] = _provision,
     echo: Callable[[str], None] = lambda _msg: None,
+    model: str | None = None,
 ) -> None:
     """Execute ``menu.pipeline`` in order. ``run``/``provision`` are injectable for testing;
     ``--dry-run`` prints the plan without executing. Raises :class:`PipelineError` / propagates
-    the failing step's error (fail-fast)."""
+    the failing step's error (fail-fast).
+
+    ``model`` (a ``models:`` key, CBB-043) is passed as ``--model`` to the stages in
+    :data:`MODEL_AWARE_STAGES`, replacing any ``--model`` in their ``args``; pair it with
+    :func:`menu_for_model` so the model's variant ``recipes:`` overlay applies too."""
     for step in menu.pipeline:
         if step == "provision":
             if not state_bucket:
@@ -132,6 +187,8 @@ def run_pipeline(
                 # An in-process `source` stage — shell out to `kitchen run <step>`. A stage may
                 # carry CLI flags via `args:` (e.g. `--auto-promote` on train).
                 extra_args = list(entry.fields.get("args") or [])
+                if model is not None and step in MODEL_AWARE_STAGES:
+                    extra_args = _with_model(extra_args, model)
                 echo(f"→ {step}: kitchen run {step} {' '.join(extra_args)}".rstrip())
                 if not dry_run:
                     # Pass the manifest explicitly so the stage loads the menu's project
