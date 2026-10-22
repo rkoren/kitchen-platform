@@ -209,3 +209,94 @@ def test_stage_command_project_flag_runs_from_dir(tmp_path, monkeypatch):
     result = runner.invoke(app, ["stage", "track", "-C", str(proj)])
     assert result.exit_code == 0, result.output
     assert (proj / "out.txt").exists()
+
+
+# ── CBB-043: menu run --model ─────────────────────────────────────────────────
+
+_MODEL_MENU = """\
+project: cbb
+experiment: cbb
+pipeline: [features, train, evaluate, track]
+recipes:
+  features: {kind: stage, source: src/features/run.py}
+  train: {kind: stage, source: src/train/run.py, args: ["--model", "tournament", "--auto-promote"]}
+  evaluate: {kind: stage, source: src/evaluate/run.py, args: ["--model=tournament"]}
+  track: {kind: stage, cmd: ["python", "track.py"]}
+models:
+  tournament: {model_name: t}
+  reg: {model_name: r, variant: reg_season}
+variants:
+  reg_season:
+    model: {num_rounds: 700}
+    recipes:
+      train: {source: src/train/reg.py, args: ["--auto-promote", "--skip-features"]}
+      track: {cmd: ["python", "track.py", "--reg"]}
+"""
+
+
+def _model_menu(tmp_path):
+    p = tmp_path / "menu.yaml"
+    p.write_text(_MODEL_MENU)
+    return str(p)
+
+
+def test_menu_for_model_overlays_variant_recipes(tmp_path):
+    from kitchen.menu_run import menu_for_model
+
+    menu = menu_for_model(_model_menu(tmp_path), "reg")
+    assert menu.recipes["train"].fields["args"] == ["--auto-promote", "--skip-features"]
+    assert menu.recipes["train"].source == "src/train/reg.py"
+    assert menu.recipes["track"].cmd == ["python", "track.py", "--reg"]
+    assert menu.recipes["evaluate"].fields["args"] == ["--model=tournament"]  # not overlaid
+
+
+def test_menu_for_model_without_variant_is_base(tmp_path):
+    from kitchen.menu_run import menu_for_model
+
+    menu = menu_for_model(_model_menu(tmp_path), "tournament")
+    assert menu.recipes["train"].fields["args"] == ["--model", "tournament", "--auto-promote"]
+
+
+def test_menu_for_model_unknown_model(tmp_path):
+    from kitchen.menu_run import menu_for_model
+
+    with pytest.raises(PipelineError, match="no model 'nope'"):
+        menu_for_model(_model_menu(tmp_path), "nope")
+
+
+def test_pipeline_model_passes_model_to_model_aware_stages(tmp_path):
+    from kitchen.menu_run import menu_for_model
+
+    path = _model_menu(tmp_path)
+    calls: list[list[str]] = []
+    run_pipeline(menu_for_model(path, "reg"), menu_path=path, run=calls.append, model="reg")
+    assert calls == [
+        ["kitchen", "run", "features", "--params", path, "--model", "reg"],
+        ["kitchen", "run", "train", "--params", path, "--auto-promote", "--skip-features",
+         "--model", "reg"],
+        ["kitchen", "run", "evaluate", "--params", path, "--model", "reg"],  # --model= replaced
+        ["python", "track.py", "--reg"],
+    ]
+
+
+def test_pipeline_without_model_unchanged(tmp_path):
+    path = _model_menu(tmp_path)
+    calls: list[list[str]] = []
+    run_pipeline(Menu.from_yaml(path), menu_path=path, run=calls.append)
+    assert calls[1] == ["kitchen", "run", "train", "--params", path, "--model", "tournament",
+                        "--auto-promote"]
+    assert calls[0] == ["kitchen", "run", "features", "--params", path]
+
+
+def test_menu_run_cli_model_dry_run(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from kitchen.cli import app
+
+    _model_menu(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(app, ["menu", "run", "--model", "reg", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "→ train: kitchen run train --auto-promote --skip-features --model reg" in result.output
+    bad = CliRunner().invoke(app, ["menu", "run", "--model", "nope", "--dry-run"])
+    assert bad.exit_code == 1 and "no model 'nope'" in bad.output

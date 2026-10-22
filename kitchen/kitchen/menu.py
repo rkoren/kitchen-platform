@@ -211,6 +211,16 @@ class Menu(BaseModel):
                     "(in-process callable or subprocess command)."
                 )
 
+        # Every `models.<name>.variant` names a declared variant (CBB-046) — caught at load, not
+        # first at `run train`/`evaluate --model`.
+        for name, spec in self.models.items():
+            if spec.variant and spec.variant not in self.variants:
+                have = ", ".join(sorted(self.variants)) or "(none defined)"
+                errors.append(
+                    f"models.{name}.variant: '{spec.variant}' is not a declared variant "
+                    f"(have: {have})."
+                )
+
         # Every `{from_role}` reference resolves to some recipe's `role`.
         roles = {r.role for r in self.recipes.values() if r.role is not None}
         for label, value in (

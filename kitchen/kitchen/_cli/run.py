@@ -62,8 +62,12 @@ def _try_auto_promote(
     tiebreak_metric: str | None = None,
     tiebreak_lower_is_better: bool = False,
     tie_tolerance: float = 0.0,
+    run_id: str | None = None,
 ) -> None:
     """Compare the latest run against the current champion; promote if it wins.
+
+    ``run_id`` (the run ``run train`` just produced) is the challenger when given (CBB-042) —
+    "newest run with the metric" could be another model's run in a shared experiment.
 
     ``experiment`` scopes the run search to a specific model's experiment (CBB-020); when
     omitted it falls back to the project's ``cfg.experiment`` (single-model / legacy path).
@@ -92,12 +96,15 @@ def _try_auto_promote(
         typer.echo(f"auto-promote: experiment {exp_name!r} not found.", err=True)
         return
 
-    new_runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        filter_string=f"metrics.{metric} > -99999",
-        order_by=["start_time DESC"],
-        max_results=1,
-    )
+    if run_id is not None:
+        new_runs = [client.get_run(run_id)]
+    else:
+        new_runs = client.search_runs(
+            experiment_ids=[exp.experiment_id],
+            filter_string=f"metrics.{metric} > -99999",
+            order_by=["start_time DESC"],
+            max_results=1,
+        )
     if not new_runs:
         typer.echo(f"auto-promote: no runs with metric {metric!r} in {exp_name!r}.")
         return
@@ -293,6 +300,14 @@ def run_features(
     params_file: Annotated[
         str, typer.Option("--params", help="Path to menu.yaml (or legacy params.yaml)")
     ] = "params.yaml",
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Build features for a `models:` entry, with its declared variant applied "
+            "(what `run train --model` builds before training).",
+        ),
+    ] = None,
     debug: Annotated[bool, _DEBUG_OPTION] = False,
 ) -> None:
     """Run the feature engineering step: raw → processed features.
@@ -316,6 +331,18 @@ def run_features(
     from kitchen.menu import load_params  # noqa: PLC0415
 
     params = load_params(str(path))
+    if model is not None:  # CBB-043: same params `run train --model` builds with
+        from kitchen.config import KitchenConfig, ModelNotFound, resolve_model
+        from kitchen.menu import VariantNotFound, apply_variant
+
+        try:
+            resolved = resolve_model(KitchenConfig.from_yaml(str(path)), model)
+            if resolved.variant:
+                apply_variant(params, resolved.variant)
+        except (ModelNotFound, VariantNotFound) as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1)
+    params.pop("variants", None)  # a menu definition, not a stage param
 
     from kitchen.menu import load_stage_callable, stage_module_name  # noqa: PLC0415
     from kitchen.store import DataStore  # noqa: PLC0415
@@ -604,6 +631,12 @@ def run_train(
         from mlflow.tracking import MlflowClient
 
         MlflowClient().set_tag(run_id, "kitchen.from_run", from_run)
+    if run_id and resolved_model is not None and resolved_model.name:
+        from mlflow.tracking import MlflowClient
+
+        from kitchen.config import MODEL_TAG
+
+        MlflowClient().set_tag(run_id, MODEL_TAG, resolved_model.name)  # per-model reads (CBB-042)
 
     if auto_promote:
         ap_model_name = promote_model_name or (
@@ -619,6 +652,7 @@ def run_train(
             tiebreak_metric=tiebreak_metric,
             tiebreak_lower_is_better=tiebreak_lower_is_better,
             tie_tolerance=tie_tolerance,
+            run_id=run_id,
         )
 
 
@@ -1037,6 +1071,14 @@ def run_evaluate(
         str | None,
         typer.Option("--model-uri", help="MLflow model URI (runs:/… or models:/name@alias)"),
     ] = None,
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id",
+            help="Evaluate a run's logged model (`runs:/<id>/model`) instead of the champion — "
+            "check a challenger before promoting it.",
+        ),
+    ] = None,
     alias: Annotated[
         str, typer.Option("--alias", help="Registry alias when model-uri is not set")
     ] = "champion",
@@ -1058,7 +1100,8 @@ def run_evaluate(
         typer.Option(
             "--skip-parity-check",
             help="Don't check that some data/processed/ parquet carries every feature the "
-            "champion reads (for an evaluate() that joins several files).",
+            "model reads. Only for an evaluate() that joins several files — it is not a "
+            "workaround for a champion whose features were dropped (retrain and promote).",
         ),
     ] = False,
     debug: Annotated[bool, _DEBUG_OPTION] = False,
@@ -1071,6 +1114,12 @@ def run_evaluate(
     errors naming the missing columns otherwise (CBB-027).
     """
     import sys
+
+    if run_id is not None and model_uri is not None:
+        typer.echo("error: pass --run-id or --model-uri, not both", err=True)
+        raise typer.Exit(1)
+    if run_id is not None:
+        model_uri = f"runs:/{run_id}/model"
 
     params_file = _resolve_params_path(params_file)
     path = Path(params_file)
@@ -1232,11 +1281,12 @@ def run_evaluate(
             shown = ", ".join(parity.missing[:10])
             more = f" (+{len(parity.missing) - 10} more)" if len(parity.missing) > 10 else ""
             files = ", ".join(p.name for p in (parity.file, *parity.tied))
+            subject = "the champion" if model_name is not None else "the model"
             typer.echo(
-                f"error: no data/processed/ file has every feature the champion reads — closest: "
+                f"error: no data/processed/ file has every feature {subject} reads — closest: "
                 f"{files}, missing {len(parity.missing)}: {shown}{more}\n"
                 f"  {parity_remedy(champ_variant, remedy_model)}\n"
-                f"  (--skip-parity-check if evaluate() joins several files)",
+                f"  (--skip-parity-check is only for an evaluate() that joins several files)",
                 err=True,
             )
             raise typer.Exit(1)
@@ -1264,7 +1314,7 @@ def run_evaluate(
             from kitchen.parity import parity_remedy
 
             hint = (
-                "\n  columns the champion needs are missing: "
+                "\n  columns the model needs are missing — "
                 f"{parity_remedy(champ_variant, remedy_model)}"
             )
         typer.echo(

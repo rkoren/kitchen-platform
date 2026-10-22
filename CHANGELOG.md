@@ -30,8 +30,11 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   attributes) must all be present in some `data/processed/` parquet (or `feature_schema.file`),
   else it **exits 1** with the missing columns and a remedy instead of a raw pandas `KeyError`.
   A champion whose features were since dropped from the pipeline now fails here until it is
-  retrained and promoted. `--skip-parity-check` opts out for an `evaluate()` that joins several
-  files.
+  retrained and promoted, and that is the only fix: `--skip-parity-check` is for an
+  `evaluate()` that joins several files, not a workaround (it just moves the failure to a
+  `KeyError` on the same columns), and the error now says so (CBB-040). New
+  `kitchen run evaluate --run-id <id>` evaluates a run's logged model, so a retrained
+  challenger can be checked before it is promoted.
 - `kitchen status` Recent Runs no longer prints a vacuous `PASS` for a run that logged none of
   the gated threshold metrics — it shows `n/a (no threshold metric logged)`. A pass decided by a
   threshold other than the displayed metric names it: `PASS (via loto_brier_reg)` (CBB-028).
@@ -46,6 +49,40 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   CHANGELOG `Deprecated` then `Removed` entries. `kitchen._deprecation` (`warn_deprecated`,
   `Deprecated`, `deprecated_getattr`) makes a shim a few lines. Prompted by `ExperimentConfig` /
   `log_config` disappearing without a shim or changelog note (NB-001).
+- A git-style top-level `kitchen -C DIR <command>` works for every command (CBB-046).
+  `-C` placement had been per command (`status -C DIR` vs `run -C DIR train`). The
+  per-command forms remain, and a subcommand's `-C` resolves relative to the top-level one,
+  as in git. A `models.<name>.variant` naming an undeclared variant now fails when the menu
+  loads (so `kitchen check` reports it), not first at `run train`/`evaluate --model`.
+  `kitchen check` lists the declared models and names the first validation error rather
+  than just "invalid".
+- `kitchen menu run --model X` (CBB-043) runs the pipeline for one `models:` entry. The
+  entry's variant `recipes:` overlay is merged onto the base recipes (per-model stage
+  `args`/`cmd`), and `features`/`train`/`evaluate` get `--model X`, replacing any `--model` in
+  their base `args`. A second model can now go through the pipeline instead of being trained by
+  hand. `kitchen run features --model X` builds with the entry's variant applied, matching
+  what `run train --model X` builds.
+- Per-model runs in a shared experiment (CBB-042): `run train --model X` tags the run
+  `kitchen.model=X`, and `status`/`leaderboard`/`promote --model X` show and rank only that
+  model's runs. Untagged runs from before this release are attributed by `model_variant`: an
+  entry with a `variant` owns runs of that variant, and an entry without one owns every run
+  whose variant no other entry claims, its own experimental variants included. `status --model`
+  displays the entry's metric (no longer the alphabetically first threshold), and
+  `run train --auto-promote` compares the run it just trained (not the experiment's newest run
+  with the metric). Fixes `promote --model`'s variant guard, which refused a variant-less
+  model's `baseline`-tagged runs.
+- `kitchen promote --model X` (CBB-041) fills in the `models:` entry's experiment,
+  `model_name`, metric and direction (explicit flags still win), so
+  `kitchen promote -C DIR --model reg_season --run-id <id>` replaces restating
+  `--model-name … --lower-is-better loto_brier_reg`. Metric ranking is scoped to the entry's
+  variant (`model_variant` tag), and a `--run-id` trained under a different variant is refused
+  rather than registered under the wrong model. `--lower-is-better` now defaults to the entry's
+  direction (still higher-is-better without `--model`).
+- `kitchen --version` (and `kitchen version`) print the running version and, for an editable
+  install, its source path. `kitchen.__version__` is set too (CBB-044). An editable install's
+  dist-info version goes stale (cbb's reported `0.1.0`), so for such an install the version is
+  read from the source tree's `pyproject.toml`, and a warning says to re-run `pip install -e`
+  when the two disagree.
 - Auto-promote tie-break (CBB-034): `kitchen run train --auto-promote --tiebreak-metric total_mae
   --tiebreak-lower-is-better` (or `tiebreak_metric` / `tiebreak_lower_is_better` on a `models:`
   entry) decides when the promote metric ties — exactly, or within `--tie-tolerance`. The

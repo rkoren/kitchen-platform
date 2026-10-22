@@ -5157,7 +5157,8 @@ def test_run_evaluate_keyerror_not_in_index_gets_remedy(tmp_path, monkeypatch):
     _eval_with_processed(tmp_path, monkeypatch, object(), ["a"], evaluate=boom)
     result = runner.invoke(app, ["run", "evaluate"])
     assert result.exit_code == 1
-    assert "columns the champion needs are missing" in result.output
+    assert "columns the model needs are missing" in result.output
+    assert "the only fix is to retrain and promote" in result.output
 
 
 _EVAL_MODELS_MENU = """\
@@ -5224,3 +5225,292 @@ def test_run_evaluate_parity_remedy_uses_model_flag(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "kitchen run train --model reg" in result.output
 
+
+
+# ---------------------------------------------------------------------------
+# CBB-041: kitchen promote --model
+# ---------------------------------------------------------------------------
+
+_PROMOTE_MODELS_MENU = """\
+project: cbb
+pipeline: []
+experiment: cbb-tournament
+models:
+  tournament:
+    model_name: cbb-tournament-model
+    metric: brier
+    lower_is_better: true
+  reg_season:
+    model_name: cbb-reg-model
+    variant: reg_season
+    metric: loto_brier_reg
+    lower_is_better: true
+variants:
+  reg_season:
+    model: {num_rounds: 700}
+"""
+
+
+def _promote_model_invoke(tmp_path, monkeypatch, args, run_tags=None, best_tags=None):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_PROMOTE_MODELS_MENU)
+    run = _make_promote_run("abc123" + "0" * 26, {"loto_brier_reg": 0.17})
+    run.data.tags = dict(run_tags or {})
+    best = _make_promote_run("bst123" + "0" * 26, {"loto_brier_reg": 0.16})
+    best.data.tags = {"model_variant": "reg_season"} if best_tags is None else dict(best_tags)
+
+    def make_client():
+        client = MagicMock()
+        client.get_run.return_value = run
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+        patch("kitchen.registry.get_best_run", return_value=best) as mock_gbr,
+        patch("kitchen.registry.register_model", return_value="14") as mock_reg,
+        patch("kitchen.registry.promote_model"),
+        patch("kitchen.registry.get_production_uri", return_value=None),
+    ):
+        result = runner.invoke(app, ["promote", *args], catch_exceptions=False)
+    return result, mock_gbr, mock_reg
+
+
+def test_promote_model_fills_metric_direction_and_scopes_variant(tmp_path, monkeypatch):
+    result, mock_gbr, mock_reg = _promote_model_invoke(
+        tmp_path, monkeypatch, ["--model", "reg_season"]
+    )
+    assert result.exit_code == 0, result.output
+    args, kwargs = mock_gbr.call_args
+    assert args[:2] == ("cbb-tournament", "loto_brier_reg")
+    assert kwargs["lower_is_better"] is True
+    owns = kwargs["run_filter"]  # CBB-042: ranks only the model's runs
+    tagged = lambda tags: MagicMock(data=MagicMock(tags=tags))  # noqa: E731
+    assert owns(tagged({"model_variant": "reg_season"}))
+    assert owns(tagged({"kitchen.model": "reg_season"}))
+    assert not owns(tagged({}))
+    assert not owns(tagged({"kitchen.model": "tournament", "model_variant": "reg_season"}))
+    assert mock_reg.call_args[0][2] == "cbb-reg-model"
+    assert "lower=better" in result.output
+
+
+def test_promote_model_run_id_shows_model_metric(tmp_path, monkeypatch):
+    result, _, mock_reg = _promote_model_invoke(
+        tmp_path,
+        monkeypatch,
+        ["--model", "reg_season", "--run-id", "abc123" + "0" * 26],
+        run_tags={"model_variant": "reg_season"},
+    )
+    assert result.exit_code == 0, result.output
+    assert "loto_brier_reg=0.170000" in result.output
+    assert mock_reg.call_args[0][2] == "cbb-reg-model"
+
+
+def test_promote_model_refuses_run_from_other_variant(tmp_path, monkeypatch):
+    result, _, mock_reg = _promote_model_invoke(
+        tmp_path, monkeypatch, ["--model", "reg_season", "--run-id", "abc123" + "0" * 26]
+    )
+    assert result.exit_code == 1
+    assert "trained with no variant" in result.output
+    mock_reg.assert_not_called()
+
+
+def test_promote_model_explicit_flags_win(tmp_path, monkeypatch):
+    result, mock_gbr, mock_reg = _promote_model_invoke(
+        tmp_path,
+        monkeypatch,
+        ["other_metric", "--model", "reg_season", "--higher-is-better", "--model-name", "x-model"],
+    )
+    assert result.exit_code == 0, result.output
+    args, kwargs = mock_gbr.call_args
+    assert args[1] == "other_metric" and kwargs["lower_is_better"] is False
+    assert mock_reg.call_args[0][2] == "x-model"
+
+
+def test_promote_model_unknown_errors(tmp_path, monkeypatch):
+    result, _, _ = _promote_model_invoke(tmp_path, monkeypatch, ["--model", "nope"])
+    assert result.exit_code == 1
+    assert "no model 'nope'" in result.output
+
+
+def test_promote_project_flag_finds_menu_without_params(tmp_path, monkeypatch):
+    """`-C DIR` + default --params resolves DIR/menu.yaml (no --params menu.yaml needed)."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "menu.yaml").write_text(_PROMOTE_MODELS_MENU)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    result, mock_gbr, _ = _promote_model_invoke(
+        elsewhere, monkeypatch, ["-C", str(proj), "--model", "tournament"], best_tags={}
+    )
+    assert result.exit_code == 0, result.output
+    assert mock_gbr.call_args[0][:2] == ("cbb-tournament", "brier")
+
+def test_run_evaluate_run_id_evaluates_that_run(tmp_path, monkeypatch):
+    """CBB-040: a challenger can be evaluated before it is promoted."""
+    calls = _eval_with_processed(tmp_path, monkeypatch, _FeatModel(["a"]), ["a"])
+    result = runner.invoke(app, ["run", "evaluate", "--run-id", "abc123"])
+    assert result.exit_code == 0, result.output
+    assert "runs:/abc123/model" in result.output
+    assert len(calls) == 1
+
+
+def test_run_evaluate_run_id_and_model_uri_conflict(tmp_path, monkeypatch):
+    _eval_with_processed(tmp_path, monkeypatch, object(), ["a"])
+    result = runner.invoke(app, ["run", "evaluate", "--run-id", "abc", "--model-uri", "runs:/x/model"])
+    assert result.exit_code == 1
+    assert "not both" in result.output
+
+
+def test_run_evaluate_parity_error_says_skip_is_no_fix(tmp_path, monkeypatch):
+    """CBB-040: dropped features have one fix (retrain + promote); the skip flag isn't it."""
+    _eval_with_processed(tmp_path, monkeypatch, _FeatModel(["a", "d_kp_Exp"]), ["a"])
+    result = runner.invoke(app, ["run", "evaluate"])
+    assert result.exit_code == 1
+    assert "the only fix is to retrain and promote" in result.output
+    assert "--skip-parity-check is only for an evaluate() that joins several files" in result.output
+    assert "kitchen run evaluate --run-id" in result.output
+
+
+def test_run_features_model_applies_its_variant(tmp_path, monkeypatch):
+    """CBB-043: `run features --model reg` builds with the reg entry's variant applied."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_VARIANT_MODEL_MENU)
+    calls = _make_features_mock(monkeypatch)
+    result = runner.invoke(app, ["run", "features", "--model", "reg"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    params = calls[0][0]
+    assert params["model"]["target"] == "reg_season"
+    assert "variants" not in params
+    bad = runner.invoke(app, ["run", "features", "--model", "nope"])
+    assert bad.exit_code == 1 and "no model 'nope'" in bad.output
+# ---------------------------------------------------------------------------
+# CBB-042: --model reads/writes see only that model's runs
+# ---------------------------------------------------------------------------
+
+_SHARED_EXP_MENU = """\
+project: cbb
+pipeline: []
+recipes: {}
+experiment: cbb-tournament
+models:
+  tournament:
+    model_name: cbb-tournament-model
+    metric: loto_brier
+    lower_is_better: true
+  reg:
+    model_name: cbb-reg-model
+    variant: reg_season
+    metric: loto_brier_reg
+    lower_is_better: true
+variants:
+  reg_season:
+    model: {num_rounds: 700}
+thresholds:
+  aaa_first_threshold:
+    max: 1.0
+"""
+
+
+def _tagged_run(run_id, tags, metrics):
+    run = MagicMock()
+    run.info.run_id = run_id
+    run.info.run_name = ""
+    run.info.start_time = 0
+    run.data.tags = tags
+    run.data.metrics = metrics
+    run.data.params = {}
+    return run
+
+
+_SHARED_RUNS = [
+    _tagged_run("tourn001" + "0" * 24, {}, {"loto_brier": 0.17, "loto_brier_reg": 0.10}),
+    _tagged_run("tourn002" + "0" * 24, {"model_variant": "baseline"}, {"loto_brier": 0.171}),
+    _tagged_run("regold01" + "0" * 24, {"model_variant": "reg_season"}, {"loto_brier_reg": 0.168}),
+    _tagged_run("regnew01" + "0" * 24, {"kitchen.model": "reg", "model_variant": "reg_season"},
+                {"loto_brier_reg": 0.167}),
+]
+
+
+def _shared_client():
+    client = MagicMock()
+    exp = MagicMock()
+    exp.experiment_id = "1"
+    client.get_experiment_by_name.return_value = exp
+    client.search_runs.return_value = list(_SHARED_RUNS)
+    client.get_model_version_by_alias.side_effect = mlflow.exceptions.MlflowException("no alias")
+    return client
+
+
+def test_leaderboard_model_shows_only_its_runs(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_SHARED_EXP_MENU)
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=_shared_client),
+    ):
+        result = runner.invoke(app, ["leaderboard", "--model", "reg"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert "regold01" in result.output and "regnew01" in result.output
+    assert "tourn001" not in result.output  # logged loto_brier_reg, but isn't a reg run
+
+
+def test_status_model_shows_only_its_runs_on_its_metric(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_SHARED_EXP_MENU)
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=_shared_client),
+    ):
+        result = runner.invoke(app, ["status", "--model", "tournament"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert "tourn001" in result.output
+    assert "tourn002" in result.output  # its own experimental variant is still a tournament run
+    assert "regold01" not in result.output and "regnew01" not in result.output
+    # the entry's metric, not the first threshold key (`sorted(thresholds)[0]`)
+    assert "Recent Runs (last 5)  —  loto_brier\n" in result.output
+
+
+def test_run_train_model_tags_run_and_auto_promotes_that_run(tmp_path, monkeypatch):
+    """The challenger is the run just trained — not the newest run in the shared experiment."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "menu.yaml").write_text(_SHARED_EXP_MENU)
+    trained = _tagged_run("trained1" + "0" * 24, {}, {"loto_brier_reg": 0.15})
+    monkeypatch.setattr(
+        "kitchen.flows.train_flow.train_pipeline", lambda **kw: trained.info.run_id
+    )
+    clients = []
+
+    def make_client():
+        client = _shared_client()
+        client.search_runs.return_value = [_SHARED_RUNS[0]]  # newest: a tournament run
+        client.get_run.return_value = trained
+        clients.append(client)
+        return client
+
+    with (
+        patch("kitchen.tracking.configure_from_env"),
+        patch("mlflow.tracking.MlflowClient", side_effect=make_client),
+        patch("kitchen.registry.register_model", return_value="1") as mock_reg,
+        patch("kitchen.registry.promote_model"),
+    ):
+        result = runner.invoke(
+            app, ["run", "train", "--model", "reg", "--auto-promote"], catch_exceptions=False
+        )
+    assert result.exit_code == 0, result.output
+    set_tags = [c.args for cl in clients for c in cl.set_tag.call_args_list]
+    assert (trained.info.run_id, "kitchen.model", "reg") in set_tags
+    assert mock_reg.call_args.args[0] == trained.info.run_id
+    assert mock_reg.call_args.args[2] == "cbb-reg-model"
+
+
+def test_promote_model_without_variant_accepts_its_experimental_variant(tmp_path, monkeypatch):
+    """CBB-042 fix to CBB-041's guard: a tournament run tagged `baseline` is a tournament run."""
+    result, _, mock_reg = _promote_model_invoke(
+        tmp_path,
+        monkeypatch,
+        ["--model", "tournament", "--run-id", "abc123" + "0" * 26],
+        run_tags={"model_variant": "baseline"},
+    )
+    assert result.exit_code == 0, result.output
+    assert mock_reg.call_args[0][2] == "cbb-tournament-model"

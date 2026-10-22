@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import os
 import re
-from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Annotated
 
@@ -124,10 +123,39 @@ app = typer.Typer(
 )
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        from kitchen._version import describe
+
+        typer.echo(describe())
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    project: ProjectOption = None,
+    show_version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=_version_callback,
+            is_eager=True,
+            help="Print the kitchen version (and source path for an editable install) and exit.",
+        ),
+    ] = False,
+) -> None:
+    """kitchen ML platform CLI"""
+    # CBB-046: git-style `kitchen -C DIR <cmd>` for every command. A subcommand's own `-C`
+    # still works and, like git, resolves relative to this one.
+    enter_project(project)
+
+
 @app.command()
 def version() -> None:
-    """Print the kitchen version."""
-    typer.echo(f"kitchen {_pkg_version('rkoren-kitchen')}")
+    """Print the kitchen version (and source path for an editable install)."""
+    from kitchen._version import describe
+
+    typer.echo(describe())
 
 
 @app.command()
@@ -273,6 +301,7 @@ def status(
         raise typer.Exit(1)
 
     # CBB-020: --model scopes the summary to that model's experiment + champion.
+    _rm = None
     if model is not None:
         if cfg is None:
             typer.echo(f"error: --model {model!r} given but no menu was found to resolve it", err=True)
@@ -331,12 +360,16 @@ def status(
     recent = client.search_runs(
         experiment_ids=[exp.experiment_id],
         order_by=["start_time DESC"],
-        max_results=n_runs,
+        # CBB-042: over-fetch so filtering to this model's runs still fills the table.
+        max_results=n_runs if _rm is None else max(n_runs * 20, 200),
     )
+    if _rm is not None:
+        recent = [r for r in recent if _rm.owns_run(r.data.tags)][:n_runs]
 
-    # Pick the primary display metric: first threshold key, then priority list, then first non-fi
-    display_metric: str | None = None
-    if thresholds:
+    # Pick the primary display metric: the --model entry's metric, then first threshold key,
+    # then priority list, then first non-fi
+    display_metric: str | None = _rm.metric if _rm is not None else None
+    if display_metric is None and thresholds:
         display_metric = sorted(thresholds.keys())[0]
     if display_metric is None:
         for candidate in ("loto_brier", "val_accuracy", "val_brier", "val_log_loss", "val_auc"):
@@ -1276,6 +1309,8 @@ def leaderboard(
             model_name = _rm.model_name
         if metric is None and _rm.metric:
             metric, higher_is_better = _rm.metric, not _rm.lower_is_better
+    else:
+        _rm = None
 
     client = mlflow.tracking.MlflowClient()
     exp = client.get_experiment_by_name(exp_name)
@@ -1290,7 +1325,7 @@ def leaderboard(
     # Over-fetch when an exploratory filter is active so post-filtering still
     # yields up to `limit` rows (MLflow's filter_string can't reliably express
     # "tag absent or != value", so run_type filtering is done in Python below).
-    filtering = exclude_exploratory or only_exploratory
+    filtering = exclude_exploratory or only_exploratory or _rm is not None
     fetch_n = max(limit * 5, 100) if filtering else limit
     runs = client.search_runs(
         experiment_ids=[exp.experiment_id],
@@ -1317,6 +1352,9 @@ def leaderboard(
         typer.echo(msg)
         return
 
+    # CBB-042: only this model's runs (kitchen.model tag, or matching variant for older runs).
+    if _rm is not None:
+        runs = [r for r in runs if _rm.owns_run(r.data.tags)]
     # NB-007: filter notebook sketches in/out by the run_type tag.
     if only_exploratory:
         runs = [r for r in runs if r.data.tags.get("run_type") == "exploratory"]
@@ -1324,8 +1362,9 @@ def leaderboard(
         runs = [r for r in runs if r.data.tags.get("run_type") != "exploratory"]
     runs = runs[:limit]
     if not runs:
-        which = "exploratory" if only_exploratory else "non-exploratory"
-        typer.echo(f"No {which} runs with metric {metric!r} found in {exp_name!r}.")
+        which = "exploratory " if only_exploratory else "non-exploratory " if exclude_exploratory else ""
+        for_model = f" for model {_rm.name!r}" if _rm is not None else ""
+        typer.echo(f"No {which}runs{for_model} with metric {metric!r} found in {exp_name!r}.")
         return
 
     # Resolve the champion run_id from the model registry (best-effort — no crash if absent).
@@ -2411,6 +2450,14 @@ def check(
 
             cfg = KitchenConfig.from_yaml(str(params_path))
             _ok(params_file, f"experiment={cfg.experiment!r}")
+            if cfg.models:  # CBB-046: variant references were validated at load
+                _ok(
+                    "models",
+                    ", ".join(
+                        f"{n} (variant {m.variant})" if m.variant else n
+                        for n, m in cfg.models.items()
+                    ),
+                )
             if cfg.monitor:
                 output = cfg.monitor.report_bucket or cfg.monitor.local_path
                 _ok("monitor config", f"output={output}")
@@ -2473,8 +2520,13 @@ def check(
                         _fail(f"feature schema: {_fs.file}", _detail or "schema mismatch")
                     except Exception as _exc:  # noqa: BLE001 — unreadable file shouldn't crash check
                         _fail(f"feature schema: {_fs.file}", f"could not read — {_exc}")
-        except ValidationError:
-            _fail(params_file, f"invalid — run `kitchen validate {params_file}`")
+        except ValidationError as exc:
+            # name the first problem (e.g. a models.X.variant typo, CBB-046), not just "invalid"
+            first = exc.errors()[0].get("msg", "") if exc.errors() else ""
+            first = first.removeprefix("Value error, ").splitlines()[0] if first else ""
+            more = f" (+{exc.error_count() - 1} more)" if exc.error_count() > 1 else ""
+            detail = f"{first}{more} — " if first else ""
+            _fail(params_file, f"invalid: {detail}run `kitchen validate {params_file}`")
         except Exception as exc:
             _fail(params_file, str(exc))
     else:
@@ -2865,7 +2917,23 @@ def promote(
         str | None, typer.Option("--model-name", help="Registered model name")
     ] = None,
     alias: Annotated[str, typer.Option("--alias", help="Model alias to set")] = "champion",
-    lower_is_better: Annotated[bool, typer.Option("--lower-is-better/--higher-is-better")] = False,
+    lower_is_better: Annotated[
+        bool | None,
+        typer.Option(
+            "--lower-is-better/--higher-is-better",
+            help="Ranking direction (default: the --model entry's, else higher-is-better)",
+        ),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Select a model from the menu's `models:` map: supplies its experiment, "
+            "model_name, metric and direction (explicit flags still win). Metric ranking is "
+            "scoped to the model's variant, and a --run-id trained under another variant is "
+            "refused.",
+        ),
+    ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Show winner without registering")
     ] = False,
@@ -2899,6 +2967,9 @@ def promote(
     Metric ranking refuses to compare runs that declare different ``validation_scheme`` tags
     (e.g. an 80/20 holdout vs out-of-fold CV) since those numbers aren't comparable — narrow
     with --scheme, or target a specific run with --run-id.
+
+    In a multi-model menu, ``--model X`` fills in the entry's experiment, model_name, metric
+    and direction: ``kitchen promote -C DIR --model reg_season --run-id <id>``.
     """
     enter_project(project)
 
@@ -2908,6 +2979,28 @@ def promote(
     from kitchen.tracking import configure_from_env
 
     configure_from_env()
+
+    # CBB-041: --model X supplies everything the models: entry already declares.
+    resolved = None
+    if model is not None:
+        from kitchen.config import KitchenConfig, ModelNotFound, resolve_model, resolve_params_path
+
+        menu_path = Path(resolve_params_path(params_file))
+        if not menu_path.exists():
+            typer.echo(f"error: --model {model!r} given but {params_file!r} not found", err=True)
+            raise typer.Exit(1)
+        try:
+            resolved = resolve_model(KitchenConfig.from_yaml(str(menu_path)), model)
+        except ModelNotFound as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1)
+        experiment = experiment or resolved.experiment
+        model_name = model_name or resolved.model_name
+        if metric is None:
+            metric = resolved.metric  # ranks, or (with --run-id) is shown for context
+        if lower_is_better is None:
+            lower_is_better = resolved.lower_is_better
+    lower_is_better = bool(lower_is_better)
 
     if run_id is None and metric is None:
         typer.echo(
@@ -2930,9 +3023,15 @@ def promote(
             raise typer.Exit(1)
     else:
         tag_filter = {"validation_scheme": scheme} if scheme else None
+        # CBB-042: rank only this model's runs (kitchen.model tag, or variant for older runs).
+        run_filter = (lambda r: resolved.owns_run(r.data.tags)) if resolved is not None else None
         try:
             run = get_best_run(
-                exp_name, metric, lower_is_better=lower_is_better, tag_filter=tag_filter
+                exp_name,
+                metric,
+                lower_is_better=lower_is_better,
+                tag_filter=tag_filter,
+                run_filter=run_filter,
             )
         except ValueError as exc:
             typer.echo(f"error: {exc}", err=True)
@@ -2941,6 +3040,21 @@ def promote(
     actual_run_id = run.info.run_id
     variant = run.data.tags.get("model_variant", "")
     variant_str = f" ({variant})" if variant else ""
+    if resolved is not None and not resolved.owns_run(run.data.tags):
+        from kitchen.config import MODEL_TAG
+
+        if run.data.tags.get(MODEL_TAG):
+            trained = f"for model {run.data.tags[MODEL_TAG]!r}"
+        else:
+            trained = f"with variant {variant!r}" if variant else "with no variant"
+        expected = f"variant {resolved.variant!r}" if resolved.variant else "no variant"
+        typer.echo(
+            f"error: run {actual_run_id[:8]} was trained {trained}, but model {model!r} "
+            f"uses {expected} — refusing to register it as {model_name!r}. Promote it under "
+            "its own model, or drop --model and pass --model-name to override.",
+            err=True,
+        )
+        raise typer.Exit(1)
 
     typer.echo(f"\nExperiment : {exp_name}")
     if metric:
@@ -3710,6 +3824,15 @@ def menu_run(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print the pipeline plan without executing")
     ] = False,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Run the pipeline for one `models:` entry: its variant's `recipes:` overlay "
+            "applies to stage args/cmd, and features/train/evaluate get `--model` (replacing "
+            "any `--model` in their args).",
+        ),
+    ] = None,
 ) -> None:
     """Run the menu's `pipeline` end-to-end: provision → stages → serve → monitor.
 
@@ -3728,17 +3851,27 @@ def menu_run(
     enter_project(project)  # load the menu + import src/<stage> from the project dir (DX-012)
 
     try:
-        menu = Menu.from_yaml(menu_file)
+        menu = (
+            _menu_run.menu_for_model(menu_file, model) if model else Menu.from_yaml(menu_file)
+        )
     except FileNotFoundError:
         typer.echo(f"error: menu not found: {menu_file}", err=True)
         raise typer.Exit(1)
     except ValidationError as exc:
         typer.echo(f"error: invalid menu — {exc}", err=True)
         raise typer.Exit(1)
+    except _menu_run.PipelineError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
 
     try:
         _menu_run.run_pipeline(
-            menu, menu_path=menu_file, state_bucket=state_bucket, dry_run=dry_run, echo=typer.echo
+            menu,
+            menu_path=menu_file,
+            state_bucket=state_bucket,
+            dry_run=dry_run,
+            echo=typer.echo,
+            model=model,
         )
     except (_menu_run.PipelineError, _subprocess.CalledProcessError) as exc:
         typer.echo(f"error: {exc}", err=True)
