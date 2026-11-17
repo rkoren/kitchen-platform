@@ -71,3 +71,6 @@ docs/architecture.md
 
 # stray MLflow test artifact (SEC-013 — was leaking a local path)
 mlruns_test.db
+
+# 1.x internal archive (dev-loop config/log, repo skills, backlog) — kept local like the originals
+docs/archive/

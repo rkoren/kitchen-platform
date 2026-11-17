@@ -15,7 +15,7 @@
 #   TF_STATE_BUCKET=<state-bucket> infra/verify-ci-policy.sh [infra-spec] [state-key]
 set -euo pipefail
 
-INFRA_SPEC="${1:-kitchen/infra.yaml}"
+INFRA_SPEC="${1:-recipes/stacks/kitchen-platform.yaml}"
 STATE_KEY="${2:-kitchen/terraform.tfstate}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 : "${TF_STATE_BUCKET:?set TF_STATE_BUCKET to the Terraform state bucket}"

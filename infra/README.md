@@ -27,5 +27,7 @@ is read-only (nothing is applied). Re-run it whenever the stack or the policy ch
 included from the AWS provider's documented apply behavior; a full guarantee of the apply path
 would need an actual `terraform apply` against a throwaway stack (out of scope here).
 
-The cheap always-on guard that `ManageS3` never regresses to `s3:*` is
-`kitchen/tests/test_ci_policy.py` (runs in the normal test gate).
+The cheap always-on guard that `ManageS3` never regresses to `s3:*` was
+`kitchen/tests/test_ci_policy.py` in kitchen 1.x (branch `1.x`); the deploy workflow it
+protected was removed in the 2.0 reset, and the stack spec now lives at
+`recipes/stacks/kitchen-platform.yaml`.
