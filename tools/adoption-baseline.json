@@ -1,0 +1,30 @@
+{
+  "recorded": "2026-11-16",
+  "rule_version": "1",
+  "rule": "tools/adoption.py docstring: quote-aware shell parsing; executed-code model calls; notebook execution; raw kaggle submit/push. Spot-checked on ~22 sampled calls.",
+  "note": "Pre-2.0 baseline. Gates compare against this only under the same rule_version; bump RULE_VERSION and recompute when the classifier changes. (The plan's 30/1,472 counted kitchen calls over ALL shell calls; this is the train/eval share.)",
+  "cbb-model": {
+    "all_transcripts_2026-10-21_to_2026-11-16": {
+      "rule_version": "1",
+      "project": "cbb-model",
+      "since": null,
+      "until": null,
+      "bash_calls": 3303,
+      "routed": 8,
+      "unrouted": 46,
+      "other": 3249,
+      "adoption": 0.1481
+    },
+    "november_only": {
+      "rule_version": "1",
+      "project": "cbb-model",
+      "since": "2026-11-01",
+      "until": null,
+      "bash_calls": 1980,
+      "routed": 0,
+      "unrouted": 33,
+      "other": 1947,
+      "adoption": 0.0
+    }
+  }
+}

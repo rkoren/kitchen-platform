@@ -1,29 +1,17 @@
-.PHONY: test lint fmt build clean hooks
+.PHONY: budget test adoption hooks
 
-# Run all tests
+# Size budgets (budget.toml) — the same check CI runs.
+budget:
+	python3 tools/check_budget.py
+
+# Tests for each package present.
 test:
-	cd kitchen && uv run pytest tests/ -v --cov=kitchen
-	cd recipes && uv run pytest tests/ -v --cov=recipes
+	uv run --directory recipes --extra dev python -m pytest -q
+	@if [ -f kitchen/pyproject.toml ]; then uv run --directory kitchen --all-extras python -m pytest -q; fi
 
-# Lint both packages
-lint:
-	cd kitchen && uv run ruff check .
-	cd recipes && uv run ruff check .
-
-# Format both packages
-fmt:
-	cd kitchen && uv run ruff format .
-	cd recipes && uv run ruff format .
-
-# Build distributable wheels and sdists
-build:
-	python -m build kitchen/ --outdir dist/
-	python -m build recipes/ --outdir dist/
-	twine check dist/*
-
-clean:
-	rm -rf dist/ kitchen/.pytest_cache recipes/.pytest_cache
-	find . -type d -name __pycache__ -exec rm -rf {} +
+# Adoption on a real project: make adoption PROJECT=~/cbb-model [SINCE=2026-11-01]
+adoption:
+	python3 tools/adoption.py --project $(PROJECT) $(if $(SINCE),--since $(SINCE),)
 
 # Install pre-commit hooks into the local git repo
 hooks:
