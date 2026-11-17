@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(kitchen show *)",
+      "Bash(kitchen status *)",
+      "Bash(kitchen compare *)",
+      "Bash(kitchen mark *)",
+      "Bash(kitchen kernel check *)"
+    ],
+    "ask": [
+      "Bash(kitchen promote *)",
+      "Bash(kitchen submit *)",
+      "Bash(kitchen kernel push *)"
+    ],
+    "deny": [
+      "Bash(kaggle competitions submit *)",
+      "Bash(kaggle kernels push *)",
+      "Bash(kaggle datasets create *)",
+      "Bash(kaggle datasets version *)",
+      "Bash(.venv/bin/kitchen *)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "kitchen show --brief --hook"}]}
+    ]
+  }
+}

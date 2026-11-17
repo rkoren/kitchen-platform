@@ -22,6 +22,15 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
   `gh-pages`; the recipes spec reference moved to `recipes/docs/`.
 
 ### Added
+- kitchen 2.0 alpha core (`kitchen/`, M2): a CLI tool projects never import. `kitchen run`
+  records any job or command (git sha, dirty patch, untracked snapshot, heredoc stdin) in an
+  append-only `.kitchen/ledger.jsonl`; frozen content-hashed splits (kfold, stratified, group,
+  leave-one-group-out, forward, holdout; composite ids); kitchen scores out-of-fold predictions
+  itself (or validates per-group `scores.csv`); one paired cluster-bootstrap verdict everywhere;
+  promotion gated on a `better` verdict, quarantine, scratch status and seed noise, and refused
+  under `KITCHEN_AUTONOMOUS=1`; detached runs that outlive the session; `show --brief` for agents.
+- Agent layer: `kitchen init --agent` installs a `/kitchen` playbook skill, a SessionStart hook
+  injecting the brief, and permission rules (promote/submit ask; raw Kaggle submit/push denied).
 - `budget.toml` + `tools/check_budget.py`: hard size budgets enforced in CI and pre-commit.
 - `tools/adoption.py`: measures the share of an agent's train/eval commands routed through
   kitchen in Claude Code transcripts; pre-2.0 baseline in `tools/adoption-baseline.json`.
