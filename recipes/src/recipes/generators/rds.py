@@ -4,7 +4,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from kitchen.recipes.schema import RDSSpec
+from recipes.schema import RDSSpec
 
 _env = Environment(
     loader=FileSystemLoader(Path(__file__).parent.parent / "templates"),
@@ -27,7 +27,9 @@ def generate(spec: RDSSpec) -> str:
         ctx["db_subnet_group_value"] = None
     # Security groups: logical names of in-spec security_group resources become TF
     # references; literal IDs are quoted. Both feed the one vpc_security_group_ids list.
-    sg_entries = [f"aws_security_group.{name.replace('-', '_')}.id" for name in spec.security_groups]
+    sg_entries = [
+        f"aws_security_group.{name.replace('-', '_')}.id" for name in spec.security_groups
+    ]
     sg_entries += [f'"{sgid}"' for sgid in spec.vpc_security_group_ids]
     ctx["sg_entries"] = sg_entries
     # Align the `=` in the settings block the way `terraform fmt` would: the optional

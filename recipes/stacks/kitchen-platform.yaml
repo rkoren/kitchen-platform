@@ -1,3 +1,9 @@
+# The AWS stack the kitchen 1.x CI (kitchen-ci.yml) deployed from kitchen/infra.yaml.
+# Still live in AWS after the deploy workflow was removed (owner decision 2026-11-16: decide later).
+# State: s3://$TF_STATE_BUCKET/kitchen/terraform.tfstate (repo secret TF_STATE_BUCKET).
+# Inspect:  recipes plan recipes/stacks/kitchen-platform.yaml --state-bucket <bucket>
+# Teardown (irreversible; S3 buckets must be emptied first): recipes destroy ... --state-bucket <bucket>
+
 name: kitchen
 region: us-east-1
 

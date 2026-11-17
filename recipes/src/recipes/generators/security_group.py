@@ -4,7 +4,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from kitchen.recipes.schema import SecurityGroupSpec
+from recipes.schema import SecurityGroupSpec
 
 _env = Environment(
     loader=FileSystemLoader(Path(__file__).parent.parent / "templates"),

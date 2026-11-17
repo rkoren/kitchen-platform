@@ -11,9 +11,8 @@ import yaml
 from jinja2 import Environment, FileSystemLoader
 from rich.console import Console
 
-from kitchen.menu import Menu, is_menu
-from kitchen.recipes.generators import generate_resource
-from kitchen.recipes.schema import RecipeSpec
+from recipes.generators import generate_resource
+from recipes.schema import RecipeSpec
 
 app = typer.Typer(help="YAML spec → Terraform config generator and provisioner.")
 console = Console()
@@ -25,9 +24,8 @@ _WORKSPACE_ROOT = Path.home() / ".recipes" / "tf"
 class ProvisionError(RuntimeError):
     """A provision (apply) failed — a terraform error or the destructive-collision guard.
 
-    Raised by :func:`apply_spec` so the in-process pipeline runner (``kitchen menu run``, S-7)
-    gets a real exception instead of a ``typer.Exit``; the ``apply`` CLI command converts it
-    back to a non-zero exit."""
+    Raised by :func:`apply_spec` so in-process callers get a real exception instead of a
+    ``typer.Exit``; the ``apply`` CLI command converts it back to a non-zero exit."""
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -39,11 +37,12 @@ def _load_spec(spec_path: str) -> RecipeSpec:
         console.print(f"[red]error:[/red] spec file not found: {spec_path}")
         raise typer.Exit(1)
     raw = yaml.safe_load(spec_file.read_text(encoding="utf-8"))
-    # A menu.yaml (unified manifest) carries a `recipes:` map; validate it through the single
-    # Menu model and project its infra recipes into a RecipeSpec, keyed by `project` for state
-    # (S-1, INT-014 — no more re-parsing). A standalone spec has `resources:` instead.
-    if is_menu(raw):
-        return Menu.model_validate(raw).to_recipe_spec()
+    if isinstance(raw, dict) and "resources" not in raw and ("recipes" in raw or "pipeline" in raw):
+        console.print(
+            "[red]error:[/red] this looks like a kitchen 1.x menu.yaml; standalone recipes reads "
+            "specs with a top-level `resources:` list (see recipes/examples/)"
+        )
+        raise typer.Exit(1)
     return RecipeSpec.model_validate(raw)
 
 
@@ -309,9 +308,7 @@ def doctor(
     # Terraform — required, and >= 1.10 for the S3-native state locking the backend uses.
     tf = shutil.which("terraform")
     if tf:
-        ver = subprocess.run(
-            [tf, "version", "-json"], check=False, capture_output=True, text=True
-        )
+        ver = subprocess.run([tf, "version", "-json"], check=False, capture_output=True, text=True)
         version = ""
         if ver.returncode == 0:
             try:
@@ -482,12 +479,11 @@ def apply_spec(
     allow_destroy: bool = False,
     confirm: Callable[[], None] | None = None,
 ) -> str:
-    """Provision a spec/menu in-process — the core `recipes apply` logic, no ``typer.Exit``.
+    """Provision a spec in-process — the core `recipes apply` logic, no ``typer.Exit``.
 
-    Shared by the ``apply`` CLI command (which passes a ``confirm`` prompt) and by the
-    ``kitchen menu run`` pipeline runner (S-7, INT-017), so a menu provisions without shelling
-    out to a second CLI. ``confirm`` (if given) is called after the plan is shown, before
-    anything is applied. Raises :class:`ProvisionError` on any failure; returns the spec name.
+    Used by the ``apply`` CLI command (which passes a ``confirm`` prompt) and importable by
+    other tools. ``confirm`` (if given) is called after the plan is shown, before anything is
+    applied. Raises :class:`ProvisionError` on any failure; returns the spec name.
     """
     spec = _load_spec(spec_path)
     workspace = _workspace(spec.name)

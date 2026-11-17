@@ -17,7 +17,7 @@ Point your editor's YAML tooling at it for inline validation and autocompletion,
 with the VS Code YAML extension:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/rkoren/kitchen-platform/main/docs/recipes/recipe.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/rkoren/kitchen-platform/main/recipes/docs/recipe.schema.json
 name: my-project
 region: us-east-1
 resources: []
@@ -159,7 +159,7 @@ Provisions a Lambda function. Supports both image-based (ECR) and zip-based depl
 | `schedule` | string | no | — | EventBridge `rate(...)` / `cron(...)` expression — emits a schedule rule + target + invoke permission so the function runs on a timer |
 
 !!! tip "Scheduled triggers (e.g. drift monitoring)"
-    Set `schedule` to a `rate(...)` or `cron(...)` expression to run the function on a timer — this generates the `aws_cloudwatch_event_rule` + `aws_cloudwatch_event_target` + `aws_lambda_permission` that make up the AWS-native "EventBridge + Lambda" path (e.g. `rate(7 days)` for a weekly drift report). See [monitoring.md](../kitchen/monitoring.md).
+    Set `schedule` to a `rate(...)` or `cron(...)` expression to run the function on a timer — this generates the `aws_cloudwatch_event_rule` + `aws_cloudwatch_event_target` + `aws_lambda_permission` that make up the AWS-native "EventBridge + Lambda" path (e.g. `rate(7 days)` for a weekly job).
 
 !!! tip "Serving over HTTP"
     Set `function_url: true` to get a direct HTTPS endpoint for the function — the simplest way to serve an inference Lambda. The URL is exposed as a Terraform output (`<name>_url`). Auth defaults to `AWS_IAM` (callers sign requests with SigV4); set `function_url_auth: NONE` for a public endpoint, which also adds the `lambda:InvokeFunctionUrl` permission for public access.
