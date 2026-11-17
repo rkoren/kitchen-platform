@@ -6,9 +6,11 @@ extracts every Bash tool call and classifies it. Shell text is parsed quote-awar
 heredoc bodies are set aside, so text inside strings, grep patterns or heredocs never counts as
 a command.
 
-  routed    train/eval work run through kitchen
-              2.0: kitchen run | predict | blend | submit | kernel push
-              1.x: kitchen run | sweep | score | stage | submit | menu run
+  routed    train/eval work run through kitchen 2.0
+              kitchen run | predict | blend | submit | kernel push (the bare `kitchen` command)
+  legacy    the same through kitchen 1.x: `.venv/bin/kitchen`, the 1.x-only verbs
+              (sweep | score | stage | menu run) or 1.x flags (--auto-promote, --variant, ...)
+              — counts AGAINST adoption: the gates measure 2.0
   unrouted  the same kind of work done outside kitchen
               - python script or `-m` module whose name marks a train/eval step
                 (train, fit, eval, score, cv, backtest, sweep, tune, predict, infer, bench,
@@ -21,8 +23,8 @@ a command.
               - raw `kaggle kernels push` / `kaggle competitions submit`
   other     everything else (tests, lint, installs, git, inspection, edits, data fetching, ...)
 
-A call is routed if any of its commands is routed, else unrouted if any is unrouted.
-adoption = routed / (routed + unrouted). Output carries counts only (no command text) unless
+A call takes the first label any of its commands has, in the order routed, legacy, unrouted.
+adoption = routed / (routed + legacy + unrouted). Output carries counts only (no command text) unless
 --sample is given for spot-checking.
 
 usage: tools/adoption.py --project ~/cbb-model [--since YYYY-MM-DD] [--until YYYY-MM-DD]
@@ -39,7 +41,16 @@ import sys
 import tokenize
 from pathlib import Path
 
-RULE_VERSION = "1"  # bump on ANY classification change, then recompute the baseline with it
+RULE_VERSION = "2"  # bump on ANY classification change, then recompute the baseline with it
+LEGACY_VERBS = {"sweep", "score", "stage", "menu run"}
+LEGACY_FLAGS = {
+    "--auto-promote",
+    "--skip-features",
+    "--variant",
+    "--override",
+    "--model",
+    "--from-run",
+}
 ROUTED_VERBS = {
     "run",
     "sweep",
@@ -163,7 +174,10 @@ def classify_command(tokens: list[str], body: str) -> str:
         while rest[:1] in (["-C"], ["--project"]):
             rest = rest[2:]
         verb = " ".join(rest[:2]) if rest[:1] in (["kernel"], ["menu"]) else " ".join(rest[:1])
-        return "routed" if verb in ROUTED_VERBS else "other"
+        if verb not in ROUTED_VERBS:
+            return "other"
+        legacy = ".venv/" in tokens[i] or verb in LEGACY_VERBS or bool(LEGACY_FLAGS & set(rest))
+        return "legacy" if legacy else "routed"
     if PYTHON.match(cmd):
         if rest[:1] == ["-m"] and len(rest) > 1:
             return "unrouted" if TRAIN_WORDS.search(rest[1]) and rest[1] != "pytest" else "other"
@@ -195,7 +209,7 @@ def classify_command(tokens: list[str], body: str) -> str:
 def classify(command: str) -> str:
     shell, body = split_heredocs(command)
     labels = {classify_command(toks, body) for toks in commands(shell)}
-    return "routed" if "routed" in labels else "unrouted" if "unrouted" in labels else "other"
+    return next((k for k in ("routed", "legacy", "unrouted") if k in labels), "other")
 
 
 def bash_calls(transcript_dir: Path, since: str | None, until: str | None):
@@ -230,10 +244,10 @@ def main() -> int:
     if not tdir.is_dir():
         print(f"no transcripts at {tdir}", file=sys.stderr)
         return 2
-    by_class: dict[str, list[str]] = {"routed": [], "unrouted": [], "other": []}
+    by_class: dict[str, list[str]] = {"routed": [], "legacy": [], "unrouted": [], "other": []}
     for cmd in bash_calls(tdir, a.since, a.until):
         by_class[classify(cmd)].append(cmd)
-    r, u = len(by_class["routed"]), len(by_class["unrouted"])
+    r, leg, u = (len(by_class[k]) for k in ("routed", "legacy", "unrouted"))
     out = {
         "rule_version": RULE_VERSION,
         "project": proj.name,
@@ -241,9 +255,10 @@ def main() -> int:
         "until": a.until,
         "bash_calls": sum(map(len, by_class.values())),
         "routed": r,
+        "legacy": leg,
         "unrouted": u,
         "other": len(by_class["other"]),
-        "adoption": round(r / (r + u), 4) if r + u else None,
+        "adoption": round(r / (r + leg + u), 4) if r + leg + u else None,
     }
     print(json.dumps(out, indent=2) if a.json else " ".join(f"{k}={v}" for k, v in out.items()))
     rng = random.Random(0)
