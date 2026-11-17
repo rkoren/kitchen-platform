@@ -2,7 +2,7 @@
 # Lines are physical lines (like `wc -l`). Raising ANY number here is an owner-merged PR that
 # touches only this file and states a one-line reason. Every module must be listed (strict).
 
-milestone = "M0"   # bump when a milestone starts; its cap applies to the package total
+milestone = "M2"   # bump when a milestone starts; its cap applies to the package total
 
 [package]
 path = "kitchen/src/kitchen"
