@@ -1,0 +1,38 @@
+# The AWS stack the kitchen 1.x CI (kitchen-ci.yml) deployed from kitchen/infra.yaml.
+# Still live in AWS after the deploy workflow was removed (owner decision 2026-11-16: decide later).
+# State: s3://$TF_STATE_BUCKET/kitchen/terraform.tfstate (repo secret TF_STATE_BUCKET).
+# Inspect:  recipes plan recipes/stacks/kitchen-platform.yaml --state-bucket <bucket>
+# Teardown (irreversible; S3 buckets must be emptied first): recipes destroy ... --state-bucket <bucket>
+
+name: kitchen
+region: us-east-1
+
+resources:
+  - type: s3
+    name: kitchen-dvc-store
+    versioning: true
+
+  - type: s3
+    name: kitchen-mlflow-artifacts
+
+  - type: ecr
+    name: kitchen-serve
+    scan_on_push: true
+    lambda_access: true
+
+  - type: iam_role
+    name: kitchen-exec
+    service: lambda.amazonaws.com
+    policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+  - type: lambda
+    name: kitchen-serve
+    role: kitchen-exec
+    ecr_repo: kitchen-serve
+    memory: 1024
+    timeout: 30
+    environment:
+      DVC_BUCKET: kitchen-dvc-store
+      MLFLOW_BUCKET: kitchen-mlflow-artifacts

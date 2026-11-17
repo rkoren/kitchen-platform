@@ -1,0 +1,62 @@
+# kitchen 2.0 size budgets — enforced by tools/check_budget.py (CI + pre-commit).
+# Lines are physical lines (like `wc -l`). Raising ANY number here is an owner-merged PR that
+# touches only this file and states a one-line reason. Every module must be listed (strict).
+
+milestone = "M0"   # bump when a milestone starts; its cap applies to the package total
+
+[package]
+path = "kitchen/src/kitchen"
+total = 3500       # 3,330 across modules + 170 reserve
+
+[package.milestone_caps]
+M0 = 0
+M1 = 0             # M1 is a throwaway spike outside the package
+M2 = 1800
+M3 = 2750
+C1 = 2750
+M4 = 3100
+M5 = 3350
+M6 = 3500
+
+[package.modules]  # module path (relative, no .py) -> cap
+__init__ = 10
+__main__ = 10
+cli = 380
+config = 190
+ledger = 190
+runner = 310
+splits = 150
+scoring = 250
+stats = 160
+blend = 170
+kaggle_ops = 320
+notebook = 220
+pack = 160
+remote = 230
+predict = 110
+context = 140
+loop = 210
+init = 120
+
+[tests]
+path = "kitchen/tests"
+total = 2000
+
+[skills]
+path = "kitchen/src/kitchen/agent"
+glob = "**/*.md"
+total = 550
+
+[deps]
+pyproject = "kitchen/pyproject.toml"
+max = 6
+
+[commands]
+max = 16           # enforced once kitchen/src/kitchen/cli.py defines COMMAND_PATHS
+
+[recipes]          # standalone IaC package: frozen at its extracted size (2026-11-16)
+path = "recipes/src/recipes"
+globs = ["**/*.py", "**/*.j2"]
+total = 1271
+tests_path = "recipes/tests"
+tests_total = 150

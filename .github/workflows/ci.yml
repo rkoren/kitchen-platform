@@ -1,0 +1,40 @@
+name: ci
+
+# kitchen 2.0 CI: size budgets (budget.toml) are a required check, then each package's tests.
+# The 1.x deploy pipeline (Terraform apply, ECR push, Lambda deploy) was removed in the 2.0 reset.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Enforce size budgets
+        run: python tools/check_budget.py
+
+  test:
+    runs-on: ubuntu-latest
+    needs: budget
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: recipes (standalone IaC package)
+        run: |
+          pip install --quiet -e "recipes[dev]"
+          pytest -q recipes/tests
+      - name: kitchen 2.0
+        if: hashFiles('kitchen/pyproject.toml') != ''
+        run: |
+          pip install --quiet -e "kitchen[dev]"
+          pytest -q kitchen/tests

@@ -6,6 +6,26 @@ All notable changes to `rkoren-kitchen` are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — kitchen 2.0 reset (M0)
+- kitchen 1.x is frozen on branch `1.x` (tag `kitchen-v1.2.0`); `rkoren-kitchen<2` keeps working
+  from PyPI. 2.0 is a clean-room rebuild as a small CLI harness for agent-driven ML competition
+  work.
+- `recipes` (YAML -> Terraform) is a standalone package again: `rkoren-recipes` 0.2.0 in
+  `recipes/`, without the 1.x `menu.yaml` coupling.
+
+### Removed
+- The 1.x package, its test suite, and `examples/`.
+- The deploy pipeline (`kitchen-ci.yml` Terraform/ECR/Lambda jobs, `ml-pipeline.yml`,
+  serving smoke test). The stack it deployed is still live; its spec is preserved at
+  `recipes/stacks/kitchen-platform.yaml`.
+- The 1.x docs site (`mkdocs.yml`, `docs.yml`, `docs/` pages). The published site stays frozen on
+  `gh-pages`; the recipes spec reference moved to `recipes/docs/`.
+
+### Added
+- `budget.toml` + `tools/check_budget.py`: hard size budgets enforced in CI and pre-commit.
+- `tools/adoption.py`: measures the share of an agent's train/eval commands routed through
+  kitchen in Claude Code transcripts; pre-2.0 baseline in `tools/adoption-baseline.json`.
+
 ## [1.2.0] - 2026-10-21
 
 ### Changed
