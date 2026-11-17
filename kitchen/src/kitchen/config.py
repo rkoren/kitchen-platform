@@ -60,7 +60,7 @@ class Config:
     def __init__(self, root: Path, data: dict):
         self.root, self.data = root, data
         self.main = main_checkout(root)
-        state = data.get("state_dir")
+        state = os.environ.get("KITCHEN_STATE_DIR") or data.get("state_dir")
         self.state = Path(state).expanduser() if state else self.main / ".kitchen"
         if "tracks" not in data and "split" in data:  # single-track shorthand
             data["tracks"] = {"main": {"split": data["split"], "metric": data.get("metric")}}

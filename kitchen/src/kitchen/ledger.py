@@ -67,6 +67,8 @@ class Ledger:
     @contextmanager
     def _locked(self):
         self.dir.mkdir(parents=True, exist_ok=True)
+        if not (self.dir / ".gitignore").exists():  # the state dir ignores itself: no project edits
+            (self.dir / ".gitignore").write_text("*\n")
         with open(self.dir / ".lock", "a") as fh:
             fcntl.flock(fh, fcntl.LOCK_EX)
             try:

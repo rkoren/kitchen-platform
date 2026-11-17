@@ -6,7 +6,7 @@ from pathlib import Path
 
 from kitchen import __version__
 
-TEMPLATE = """# kitchen.yaml — runs are recorded under .kitchen/ (see `kitchen --help`)
+TEMPLATE = """# kitchen.yaml — runs are recorded under .kitchen/ (it ignores itself; see `kitchen --help`)
 project: {name}
 python: .venv/bin/python        # interpreter used for {{python}} in job commands
 pythonpath: [src]               # prepended to PYTHONPATH for every run
@@ -34,16 +34,10 @@ MARKER = "<!-- kitchen -->"
 
 
 def scaffold(root: Path) -> list[str]:
-    wrote = []
-    if not (root / "kitchen.yaml").exists():
-        (root / "kitchen.yaml").write_text(TEMPLATE.format(name=root.name))
-        wrote.append("kitchen.yaml")
-    gitignore = root / ".gitignore"
-    lines = gitignore.read_text().splitlines() if gitignore.exists() else []
-    if not {".kitchen", ".kitchen/"} & set(lines):
-        gitignore.write_text("\n".join([*lines, ".kitchen/"]) + "\n")
-        wrote.append(".gitignore")
-    return wrote
+    if (root / "kitchen.yaml").exists():
+        return []
+    (root / "kitchen.yaml").write_text(TEMPLATE.format(name=root.name))
+    return ["kitchen.yaml"]
 
 
 def install_agent(root: Path) -> list[str]:

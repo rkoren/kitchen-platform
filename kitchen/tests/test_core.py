@@ -29,6 +29,7 @@ def test_ledger_allocates_unique_ids_and_survives_a_torn_line(tmp_path):
     assert st.runs["r0001"]["status"] == "ok" and st.runs["r0001"]["notes"] == ["n1"]
     assert st.runs["r0001"]["quarantine"] == "leak" and st.champions == {"main": "r0002"}
     assert led.set_champion("main", "r0002").resolve() == led.run_dir("r0002").resolve()
+    assert (tmp_path / ".gitignore").read_text() == "*\n"  # state never shows up in git status
 
 
 @pytest.mark.parametrize(
@@ -85,6 +86,10 @@ def test_split_is_hashed_immutable_and_supports_composite_ids(tmp_path):
     )
     cfg = Config.load(tmp_path)
     led = Ledger(cfg.state)
+    monkey = tmp_path / "elsewhere"
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("KITCHEN_STATE_DIR", str(monkey))
+        assert Config.load(tmp_path).state == monkey
     df, meta = splits.ensure(cfg, led, "s")
     assert list(df["id"]) == ["2003_1", "2003_2", "2004_1", "2004_2"] and "unused" not in df
     assert splits.ensure(cfg, led, "s")[1]["id"] == meta["id"]
