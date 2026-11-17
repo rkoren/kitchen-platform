@@ -52,6 +52,7 @@ def project(tmp_path: Path) -> Path:
     (tmp_path / "train.py").write_text(TRAIN)
     (tmp_path / "kitchen.yaml").write_text(f"""project: toy
 python: {sys.executable}
+pythonpath: [lib]
 splits:
   cv: {{data: data/train.csv, id: id, target: y, scheme: logo, group: season}}
 tracks:

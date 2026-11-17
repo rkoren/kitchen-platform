@@ -134,9 +134,8 @@ class Config:
                     env.setdefault(key.strip(), value.strip().strip("'\""))
         prefix = [str(self.path(p)) for p in self.data.get("pythonpath") or []]
         if prefix:
-            env["PYTHONPATH"] = os.pathsep.join(
-                prefix + [env["PYTHONPATH"]] * bool(env.get("PYTHONPATH"))
-            )
+            rest = [env["PYTHONPATH"]] if env.get("PYTHONPATH") else []
+            env["PYTHONPATH"] = os.pathsep.join(prefix + rest)
         return env
 
 
